@@ -1,0 +1,246 @@
+library Qagrifolia;
+{$R+,I+,Q+}
+
+// This is a template for creating your own DLL within Delphi (in 12 easy steps!)
+// to be used as a "User-defined DLL" in RAMAS Metapop 4.0 or later.
+// (See also RAMAS Metapop help file; look under Density dependence, or click
+// Help in the "Density dependence" dialog under the Model menu.)
+
+(************************** STEP ONE ********************************)
+// Save this file with another name so you don't write over it.
+// If you do this in Delphi, the library name (at the top of the file)
+// will also change.  If not, then make sure it matches the filename.
+//
+// The following lines should remain in this file. Make sure that the files
+// DLL_Intf.pas and DLL_Intf.dcu are in the same folder as your DLL source
+// code (i.e., this file).  Depending on what your DLL does, you may need to
+// add other units to this "Uses" statement.
+
+uses
+  DLL_Intf;
+
+(************************** STEP TWO ********************************)
+// Determine the functions and equations you will use in the DLL.
+//
+// Based on these, determine the number of user-defined parameters.
+// These are the parameters that you (or any other user using your DLL) may
+// want to modify from within RAMAS Metapop (without having to change the
+// source code in this file and recompile it).  All user parameters are
+// population-specific.
+//
+// Note that you can use many of the parameters already in RAMAS Metapop.
+// For example, if your function requires a carrying capacity, you can use the
+// CarryingCapacity parameter in RAMAS Metapop, and you do not have to define
+// a new parameter in this DLL.   See the declaration of procedure
+// ComputeDensityDependence below for a list of RAMAS Metapop's parameters
+// you can use).
+//
+// Enter the number of user parameters below.
+
+const
+  UserParameterCount = 11;
+
+(************************** STEP THREE ********************************)
+// Enter the following information for the user parameters below.
+//   UserParameterNames (descriptive names with up to 10 characters)
+//   UserParameterMinimums (minimum values allowed)
+//   UserParameterMaximums (maximum values allowed)
+//   UserParameterDefaults (default values used when a new population is added)
+//   UserParameterDecimals (number of digits allowed after decimal point)
+//
+// The names will be displayed in the "User-defined" tab of the Populations dialog
+// under the Model menu of RAMAS Metapop, which is where the user will enter
+// the values for each parameter in each population.
+//
+// The example below defines 2 parameters (albeit with non-descriptive names),
+// which range from 0 to 1 and 0 to 50, respectively.  The default values for both
+// are zero, and they are specified with 4 and 0 decimal digits, respectively.
+
+const
+  UserParameterNames   : array[1..UserParameterCount] of PAnsiChar = (
+    'Par1','Par2','Par3','Par4','Par5','Par6','Par7','Par8','Par9','Par10','Par11');
+  UserParameterMinimums: array[1..UserParameterCount] of Double = (
+    0, 0, 0, 0, 0,0,0,0,0,0,0);
+  UserParameterMaximums: array[1..UserParameterCount] of Double = (
+    1, 50, 50, 50, 50,50,50,50,50,50,50);
+  UserParameterDefaults: array[1..UserParameterCount] of Double = (
+    0, 0, 0, 0 ,0,0,0,0,0,0,0);
+  UserParameterDecimals: array[1..UserParameterCount] of Cardinal = (
+    4, 4, 4, 4, 4,4,4,4,4,4,4);
+
+// The following Procedure should remain
+
+//---------------------------------------------------------------------------
+procedure GetUserParametersInfo(
+  var names   : TPCharArrayPtr;
+  var minimums: TDoubleArrayPtr;
+  var maximums: TDoubleArrayPtr;
+  var defaults: TDoubleArrayPtr;
+  var decimals: TCardinalArrayPtr;
+  var count   : Integer); stdcall;
+begin
+  names    := @UserParameterNames;
+  minimums := @UserParameterMinimums;
+  maximums := @UserParameterMaximums;
+  defaults := @UserParameterDefaults;
+  decimals := @UserParameterDecimals;
+  count    := High(UserParameterNames);
+end; //GetUserParametersInfo
+
+
+
+procedure ComputeDensityDependence(
+//This DLL should NOT change the values of the following parameters:
+      ThisReplication   : Cardinal; //current replication of the simulation
+      Replications      : Cardinal; //number of replications in this simulation
+      Timestep          : Cardinal; //current time step of the simulation
+      Duration          : Cardinal; //duration (number of time steps) in this simulation
+      PopIndex          : Cardinal; //index for this population
+      Stages            : Cardinal; //number of stages in the model
+
+      SexStructure      : SexStructureType; //which sex(es) modeled; see manual
+
+      // The following 3 parameters should be used ONLY if SexStructure=TwoSexes
+      FemaleStages      : Cardinal;         //number of female stages
+      MatingSystem      : MatingSystemType; //see manual
+      AverageMates      : Double;           //females per male (if polygynous) or
+                                            // males per female (if polyandrous)
+                                            // =-1 if "unlimited"; =1 (if monogamous)
+
+      // stage arrays (vectors of stage-specific parameters)
+      AvgWeight         : TSingleArrayPtr;  //average weight of individuals in stage
+      Exclude           : TBooleanArrayPtr; //whether stage is excluded from total N
+      BasisForDD        : TBooleanArrayPtr; //whether stage is used as a basis for
+                                            // dens dep (used only if DDbasis=selectedstages)
+      Reproductive      : TDoubleArrayPtr;  //proportion of reproductive individuals
+
+      //DD parameters
+      DDaffects         : DDactionType;     //which vital rates affected by DD
+      DDbasis           : DDBasisType;      //which abundance is DD based on
+      Rmax              : Double;           //maximum growth rate for this population
+      CarryingCapacity  : Double;           //K for this population
+
+      //Abundance parameters
+      N                 : Integer;          //total abundance of this population
+      Nstage            : TLongIntArrayPtr; //abundance in each stage
+      //Note: N = sum of Nstage (even if exclude=True for some stages)
+
+      ConstraintsMatrix : TDoubleMatrixPtr; //see manual
+
+      UserParams        : TDoubleArrayPtr;  //user-defined parameters
+
+      //This DLL can change the following parameters
+      TMatrix           : TDoubleMatrixPtr; //Transition matrix for this population
+      //Incorporates "Relative survival" and "Relative fecundity" parameters
+
+      //Error handling:
+  var userDDErrorCode     : Integer;      //code for error in this function (see below)
+  var userDDErrorMsg      : TCharArray);  // message string about the error (see below)
+      //code=0 : no error
+      //code=1 : display the message at the end of simulation
+      //code>1 : terminate simulation immediately and display the message
+      //code<0 : display the message immediately, continue simulation, set code=0,
+      //         and delete the message (thus, 1 message displayed per function call)
+
+  stdcall; // THIS LINE MUST REMAIN
+
+
+// Here, declare any variables that the procedure will use.
+
+var
+  i,j : Integer;
+  reduce, PopSize, PopSize2, rtemp: real;
+
+const
+  ci     : array[1..6] of real = (0.1,0.2,0.3,0.5,0.7,0.9);
+  wi     : array[1..6] of real = (0.00,0.0025,0.025,0.125,0.25,1.0);
+
+
+begin //procedure ComputeDensityDependence
+
+
+(************************** STEP TEN ********************************)
+// Write your function here.  This procedure should modify only the
+// following variables:
+//   Tmatrix: the transition (or stage) matrix for the particular population
+//            at the particular time step.
+//   userDDErrorCode: an integer that informs the program about errors
+//            (see above).
+//   userDDErrorMsg: a string that is displayed by the program if the error
+//            code<>0 (see above).
+// It is possible for a DLL to modify other variables as well (see Territory.DPR
+// for an example), but this is not recommended because it can easily cause
+// errors that are difficult to detect.
+//
+
+// Weighted-population size
+ PopSize := 0;
+// Estimate population size with no density dependence
+ PopSize2 := 0;
+ rtemp := 0;
+ for i := 1 to Stages do
+   begin
+   rtemp := 0;
+   for j := 1 to Stages do
+     rtemp := rtemp + (TMatrix^[i]^[j] * Nstage^[j]);
+   PopSize := PopSize + wi[i]*NStage^[i];
+   PopSize2 := PopSize2 + rtemp * wi[i];
+   end;
+
+ if (PopSize2>CarryingCapacity) then reduce := CarryingCapacity/PopSize2
+ else if (PopSize>CarryingCapacity) then reduce := CarryingCapacity/PopSize
+ else reduce :=1;
+
+ if PopSize > CarryingCapacity then
+       Tmatrix^[1]^[1] := Tmatrix^[1]^[1] * (1-(1-ci[1])*(1-reduce));
+       for i := 2 to Stages do {columns}
+          for j := 1 to Stages do {rows}
+            Tmatrix^[i]^[j] :=  Tmatrix^[i]^[j] * (1-(1-ci[j])*(1-reduce));
+end; // Procedure ComputeDensityDependence
+
+
+(************************** STEP ELEVEN ********************************)
+// This is the end of the Procedure ComputeDensityDependence, in which
+// you implemented your function.  The rest of the file should remain as is.
+// Now, build the project (select "Build" under the Project menu in Delphi).
+// If there are no errors, there will be a DLL created.
+
+
+(************************** STEP TWELVE ********************************)
+// Test your DLL. One way to do this is by running it within Delphi step by step.
+// Before you can run a DLL in this way, you need to tell Delphi where the main
+// program (RAMAS Metapop) is.  Specify the path and filename (for example,
+// C:\Program files\RAMASGIS\Metapop.exe) as the "Host application" in the
+// "Parameters" dialog under the Run menu of Delphi, and click "OK".
+// Then specify a "breakpoint" for the program to pause when your DLL is called.
+// For example, add a breakpoint to the "begin" statement of Procedure
+// ComputeDensityDependence.
+// Then press F8.  When RAMAS Metapop starts, open a file or enter a new model
+// that refers to your DLL (In RAMAS Metapop, under the Model menu, select
+// "Density dependence".  All populations should have the same density dependence
+// type, which should be "User-defined", and the "Filename for user-defined function"
+// should point to your DLL.)  When you select Run in RAMAS Metapop, the program will
+// call your DLL, and the execution will pause at the first breakpoint you added
+// above.  You can then press F7 and F8 to go step by step through your program.
+// Add "watches" in Delphi to monitor the values of variables.
+
+
+exports
+  ComputeDensityDependence,
+  GetUserParametersInfo;
+
+// the following code lets the compiler verify that the function definitions
+// match the type definitions
+var
+  ComputeDensityDependenceFunctionCheck : ComputeDensityDependenceFunctionType;
+  GetUserParametersInfoFunctionCheck    : GetUserParametersInfoFunctionType;
+
+begin
+  ComputeDensityDependenceFunctionCheck := ComputeDensityDependence;
+  if Assigned(ComputeDensityDependenceFunctionCheck) then
+    ;
+
+  GetUserParametersInfoFunctionCheck := GetUserParametersInfo;
+  if Assigned(GetUserParametersInfoFunctionCheck) then
+    ;
+end.

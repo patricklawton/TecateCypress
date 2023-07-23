@@ -1,0 +1,7 @@
+.ipynb_checkpoints
+grids
+maps
+runs
+__pycache__
+run*.bat
+testing.ipynb
