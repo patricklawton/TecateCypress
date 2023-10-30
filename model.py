@@ -31,7 +31,6 @@ def read_from_doc(doc_fn, key):
         else:
             sys.exit("{} key not found in run document".format(key))
 
-
 # For copying uncropped maps to crop directory
 def crop_and_copy_maps(mapsdir, modeldir, ul_coord, lr_coord):
     # Get list of maps to crop (only .asc files) 
@@ -98,6 +97,10 @@ class Model:
         if not os.path.isdir(runsdir):
             os.mkdir(runsdir)
         rundirs = os.listdir(runsdir)
+        try:
+            rundirs.remove('.DS_Store')
+        except:
+            pass
         rundirs = sorted([int(d) for d in rundirs])
         if len(rundirs) == 0:
             run_exists = False
@@ -130,10 +133,13 @@ class Model:
             with open(run_doc_fn,'w') as run_doc_file:
                 json.dump({'run_dir': run_dir}, run_doc_file)
         else:
-            with open(run_doc_fn,'r') as run_doc_file:
+            with open(run_doc_fn,'r+') as run_doc_file:
                 doc = json.load(run_doc_file)
                 if doc.get('run_dir') != run_dir:
-                    sys.exit("Inconsistent run_dir in run document")
+                    #sys.exit("Inconsistent run_dir in run document")
+                    print("Inconsistent run_dir in run document")
+                    #doc.update({'run_dir': run_dir})
+                    #json.dump(doc, run_doc_file)
                     
         # Add run_dir to instance variable
         self.run_dir = run_dir
@@ -596,6 +602,7 @@ class Model:
 
         # Calculate the centroids of each patch
         for frame, t in enumerate(np.arange(proj_info['ti'],proj_info['tf'],self.timestep)):
+            # Get this frames' patchmap
             patchmapfn = os.path.join(self.run_dir,'frame'+str(frame)+'_patchmap.ASC')
             patchmap = np.loadtxt(patchmapfn, skiprows=6)
             num_patches_frame = int(max(np.unique(patchmap)))
@@ -603,6 +610,7 @@ class Model:
             patch_ids_frame = np.array(hist_df_sub['new2old'])[:num_patches_frame]
             # Loop over all possible patch ids
             for patch_new in np.arange(num_pops)[1:]:
+                # If patch exists in this frame, find its centroid
                 if (str(int(patch_new)) in patch_ids_frame) or ((frame == 0) and (patch_new <= num_patches_frame)):
                     # Find id in patchmap
                     if frame == 0:
@@ -615,6 +623,7 @@ class Model:
                     sum_x = np.sum(patch_coords[:, 0])
                     sum_y = np.sum(patch_coords[:, 1])
                     x, y = sum_x/length, sum_y/length
+                # Otherwise, set the centroid to the origin as a placeholder
                 else:
                     x, y = (0.0, 0.0)
                 if frame == 0:
@@ -622,32 +631,6 @@ class Model:
                         centroids['pop'+str(int(patch_new))].append([x,y])
                 else:
                     centroids['pop'+str(int(patch_new))].append([x,y])
-
-        #for frame, t in enumerate(np.arange(proj_info['ti'],proj_info['tf'],self.timestep)):
-        #    patchmapfn = os.path.join(self.run_dir,'frame'+str(frame)+'_patchmap.ASC')
-        #    patchmap = np.loadtxt(patchmapfn, skiprows=6)
-        #    for patch in np.unique(patchmap)[1:]:
-        #        row = hist_df.loc[(hist_df['patch']==str(int(patch))) & (hist_df['iter']==str(int(frame+1)))]
-        #        patch_new = row['new2old'].values[0]
-        #        if patch_new == '0':
-        #            patch_new = str(int(patch))
-        #        patch_coords = np.argwhere(patchmap==patch)
-        #        length = patch_coords.shape[0]
-        #        sum_x = np.sum(patch_coords[:, 0])
-        #        sum_y = np.sum(patch_coords[:, 1])
-        #        x, y = sum_x/length, sum_y/length
-        #        if frame == 0:
-        #            for b_i in range(self.burn_in_period):
-        #                centroids['pop'+patch_new].append([x,y])
-        #        else:
-        #            centroids['pop'+patch_new].append([x,y])
-        #    # Write centroid of zero for patches not appearing in this timestep
-        #    for i in range(int(num_pops - patch)):
-        #        if frame == 0:
-        #            for b_i in range(self.burn_in_period):
-        #                centroids['pop'+str(int(patch+i))].append([0.0,0.0])
-        #        else:
-        #            centroids['pop'+str(int(patch+i))].append([0.0,0.0])
 
         # Write to results file
         resultsfn = os.path.join(self.run_dir, 'results.h5')

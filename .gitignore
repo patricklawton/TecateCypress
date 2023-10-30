@@ -3,5 +3,9 @@ grids
 maps
 runs
 __pycache__
+*.swp
+*.mp4
+*.zip
+*.DS_Store
 run*.bat
 testing.ipynb
