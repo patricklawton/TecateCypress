@@ -2,6 +2,7 @@
 grids
 maps
 runs
+figs
 __pycache__
 *.swp
 *.mp4
