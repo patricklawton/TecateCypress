@@ -16,12 +16,13 @@ for rundir in os.listdir(os.path.join(os.getcwd(),'runs')):
         if doc.get('abundance_stats_written') != True:
             inst.write_abundance_stats()
             write_to_doc(docfn, 'abundance_stats_written', True)
-        if doc.get('patch_centroids_written') != True:
-            inst.write_patch_centroids()
-            write_to_doc(docfn, 'patch_centroids_written', True)
-        if doc.get('fire_prob_written') != True:
-            inst.write_fire_prob()
-            write_to_doc(docfn, 'fire_prob_written', True)
-        if doc.get('patch_K_written') != True:
-            inst.write_patch_K()
-            write_to_doc(docfn, 'patch_K_written', True)
+        if inst.spatial:
+            if doc.get('patch_centroids_written') != True:
+                inst.write_patch_centroids()
+                write_to_doc(docfn, 'patch_centroids_written', True)
+            if doc.get('fire_prob_written') != True:
+                inst.write_fire_prob()
+                write_to_doc(docfn, 'fire_prob_written', True)
+            if doc.get('patch_K_written') != True:
+                inst.write_patch_K()
+                write_to_doc(docfn, 'patch_K_written', True)

@@ -65,32 +65,36 @@ with open(os.path.join(os.getcwd(), 'project_info.json'), 'r') as info_file:
 
 class Model:
     def __init__(self, **kwargs):
-        # Coordinates in pixels relative to upper left corner of full SDM
-        self.ul_coord = kwargs['ul_coord'] #Upper-left corner 		
-        self.lr_coord = kwargs['lr_coord'] #Upper-right corner
-        self.land_use = kwargs['land_use'] 
-        self.climate_model = kwargs['climate_model']
-        self.climate_scenario = kwargs['climate_scenario']
-        self.FDM_type = kwargs['FDM_type']
         self.spcode = kwargs['spcode']
         self.spname = kwargs['spname']
-        self.grid = kwargs['grid']
-        self.grid_length = kwargs['grid_length']
-        self.grid_sep = kwargs['grid_sep']
         self.timestep = kwargs['timestep']
-        self.cell_length = kwargs['cell_length']
-        self.hs_threshold = kwargs['hs_threshold']
-        self.n_distance = kwargs['n_distance'] #Neighborhood distance
         self.K_cell = kwargs['K_cell'] #Maximum carrying-capacity per cell
-        self.min_patch_hs = kwargs['min_patch_hs']
         self.R_max = kwargs['R_max'] #Maximum growth rate
         self.init_ab_frac = kwargs['init_ab_frac'] #Initial abundance per hs*K_cell
         self.rel_F = kwargs['rel_F'] #Relative fecundity
         self.rel_S = kwargs['rel_S'] #Relative survival
-        self.dist_metric = kwargs['dist_metric'] #For inter-patch distance
-        self.habitat_change = kwargs['habitat_change'] #Change in K, F,and S btwn frames
         self.burn_in_period = kwargs['burn_in_period'] #In timesteps
-        self.dispersal = kwargs['dispersal']
+        self.spatial = kwargs['spatial']
+        if self.spatial:
+            # Coordinates in pixels relative to upper left corner of full SDM
+            self.ul_coord = kwargs['ul_coord'] #Upper-left corner 		
+            self.lr_coord = kwargs['lr_coord'] #Upper-right corner
+            self.land_use = kwargs['land_use'] 
+            self.climate_model = kwargs['climate_model']
+            self.climate_scenario = kwargs['climate_scenario']
+            self.FDM_type = kwargs['FDM_type']
+            self.grid = kwargs['grid']
+            self.grid_length = kwargs['grid_length']
+            self.grid_sep = kwargs['grid_sep']
+            self.cell_length = kwargs['cell_length']
+            self.hs_threshold = kwargs['hs_threshold']
+            self.n_distance = kwargs['n_distance'] #Neighborhood distance
+            self.min_patch_hs = kwargs['min_patch_hs']
+            self.dist_metric = kwargs['dist_metric'] #For inter-patch distance
+            self.habitat_change = kwargs['habitat_change'] #Change in K, F,and S btwn frames
+            self.dispersal = kwargs['dispersal']
+        else:
+            self.fire_prob = kwargs['fire_prob']
         
         # Compare existing simulation runs to desired run
         runsdir = os.path.join(os.getcwd(),'runs')
@@ -110,8 +114,18 @@ class Model:
             for d in rundirs:
                 with open(os.path.join(os.getcwd(),'runs',str(d),'run_info.json'), 'r') as run_info_prev:
                     run_info_prev = json.load(run_info_prev)
-                    info_check = [self.__dict__[key]==val for key,val in run_info_prev.items()]
-                    info_check.append(list(self.__dict__.keys()) == list(run_info_prev.keys()))
+                    #info_check = [self.__dict__[key]==val for key,val in run_info_prev.items()]
+                    #info_check.append(list(self.__dict__.keys()) == list(run_info_prev.keys()))
+                    # Check each key value pair from previous runs' info
+                    info_check = []
+                    for key, val in run_info_prev.items():
+                        if (key in list(self.__dict__.keys())) and (self.__dict__[key] == val):
+                            info_check.append(True)
+                        else:
+                            info_check.append(False)
+                    # Also check for any new keys in current run
+                    keys_match = np.all(key in list(run_info_prev.keys()) for key in self.__dict__.keys())
+                    info_check.append(keys_match)
                     if np.all(info_check):
                         run_exists = True
                         run_num = d
@@ -158,10 +172,31 @@ class Model:
 
     def init_popmodel(self):
         # Copy template file into run folder, change as needed
-        shutil.copy2('./template.mp', self.run_dir)
         '''
         Mostly skip this for now, assume the template file is fine
         '''
+        if self.spatial == False:
+            shutil.copy2('./template.mp', os.path.join(self.run_dir, 'final.mp'))
+            mpfn = os.path.join(self.run_dir,'final.mp')
+            with open(mpfn, 'r') as mp:
+                mpdata = mp.readlines()
+            #for ln_idx, ln in enumerate(mpdata):
+            #    # Population 1 always appears on this line
+            #    if ln_idx == 44:
+            #        ln_splt = ln.split(',')
+            ln_idx = 44 #Population 1 always appears on this line
+            ln_splt = mpdata[ln_idx].split(',')
+            # Update the initial abundance
+            ln_splt[3] = str(1000 * self.K_cell * self.init_ab_frac)
+            # Update the fire probability
+            ln_splt[12] = str(self.fire_prob) 
+            mpdata[ln_idx] = ','.join(ln_splt)
+            # Rewrite mp file
+            with open(mpfn, 'w') as mp:
+                for ln in mpdata:
+                    mp.write(ln)
+        else:
+            shutil.copy2('./template.mp', self.run_dir)
         # Copy the RAMAS config file
         shutil.copy2('./RAMASGIS.CFG', self.run_dir)
 
@@ -457,7 +492,7 @@ class Model:
                 fdm = np.loadtxt(fdmfn, skiprows=6)
             # Translate 30-yr prob in FDM to 1-yr prob
             '''For now using Gregs approach'''
-            fdm = np.ones(fdm.shape)-(np.ones(fdm.shape)-fdm)**(1/30)
+            fdm = np.ones(fdm.shape)-(np.ones(fdm.shape)-fdm)**(self.timestep/30)
             # Read in patchmap and get patch ids used in this frame
             patchmapfn = os.path.join(self.run_dir,'frame'+str(frame)+'_patchmap.ASC')
             patchmap = np.loadtxt(patchmapfn, skiprows=6)

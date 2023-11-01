@@ -32,7 +32,7 @@ No
 SelectedStages
 No
 UD
-G:\My Drive\Research\Regan\Tecate cypress\density dependence\tecate64.dll
+C:\Users\12488\Research\Regan\Tecate cypress\density dependence\tecate64.dll
 2
 years
 OnlyFemale

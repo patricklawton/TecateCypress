@@ -38,6 +38,7 @@ with open(batfn, 'w') as bat:
             if doc.get('pch_files_written') != True:
                 inst.write_pch()
                 write_to_doc(docfn, 'pch_files_written', True) 
-            if res_check != True: 
+            #if res_check != True: 
+            if True:
                 batln = 'START /WAIT "title" "{}\Metapop.exe" "{}\\final.mp" /RUN=YES\n'.format(proj_info['ramas_loc'], inst.run_dir)
                 bat.write(batln)     
