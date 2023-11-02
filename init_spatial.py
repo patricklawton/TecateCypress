@@ -42,7 +42,7 @@ if run_info['spatial']:
 #climate_model = ['cnrm'] #cnrm, hades
 #climate_scenario = ['rcp45','rcp85'] #rcp45, rcp85
 # Scan over fire probabilities with correponding FRIs from 5 to 80 years
-fire_probs = run_info['timestep'] / np.arange(4,80,2)
+fire_probs = run_info['timestep'] / np.arange(4,142,2)
 #fire_probs = [2/40]
 
 if run_info['spatial']:

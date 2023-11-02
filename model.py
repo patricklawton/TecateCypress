@@ -158,6 +158,24 @@ class Model:
         # Add run_dir to instance variable
         self.run_dir = run_dir
 
+    def check_results(self, doc_key, data_keys, overwrite=False):
+        # Check if data has already been written
+        run_doc_fn = os.path.join(self.run_dir,'run_doc.json')
+        with open(run_doc_fn, 'r') as doc_file:
+            doc = json.load(doc_file)
+        if (overwrite == False) and doc.get(doc_key):
+            print('Data written, not overwriting')
+            return False
+        else:
+            resultsfn = os.path.join(self.run_dir, 'results.h5')
+            # Delete old results before overwriting
+            if overwrite and doc.get(doc_key):
+                print('Overwriting data')
+                with h5py.File(resultsfn, 'a') as results:
+                    for data_key in data_keys:
+                        del results[data_key]
+            return True
+
     # Function to get number of populations
     def get_num_pops(self):
         mpfn = os.path.join(self.run_dir,'final.mp')
@@ -562,6 +580,13 @@ class Model:
                 mp.write(ln)
 
     def write_abundance_stats(self, overwrite=False):
+        abundance = {}
+        abund_keys = ['mean','stdev','min','max']
+
+        # Check for previous results, delete if overwriting
+        check_results = self.check_results('abundance_stats_written', abund_keys, overwrite)
+        if not check_results: return 
+
         num_frames = int(np.round((proj_info['tf']-proj_info['ti'])/self.timestep))+self.burn_in_period
         mpfn = os.path.join(self.run_dir,'final.mp')
         init_abundances = []
@@ -577,8 +602,6 @@ class Model:
                 if ln == 'Pop. ALL\n':
                     res_idx_i = ln_idx
                     break
-        abundance = {}
-        abund_keys = ['mean','stdev','min','max']
         for key in abund_keys:
             abundance[key] = {}
             for pop_idx in range(num_pops):
@@ -614,18 +637,26 @@ class Model:
                             ln_splt.append(float(val))
                     for key_idx, abund_key in enumerate(abund_keys):
                         abundance[abund_key]['pop'+str(pop_idx)].append(ln_splt[key_idx])
+
+        # Write data to h5 file in run directory
         resultsfn = os.path.join(self.run_dir, 'results.h5')
-        mode = 'w' if overwrite else 'a'
-        with h5py.File(resultsfn, mode) as results:
+        with h5py.File(resultsfn, 'a') as results:
             for abund_key in abundance.keys():
                 for pop_idx in range(num_pops):
                     dset_name = abund_key+'/pop'+str(pop_idx)
                     dset = abundance[abund_key]['pop'+str(pop_idx)]
                     results.create_dataset(dset_name, data=dset)
+        # Update run doc
+        docfn = os.path.join(self.run_dir,'run_doc.json')
+        write_to_doc(docfn, 'abundance_stats_written', True)
 
     def write_patch_centroids(self, overwrite=False):
         # Store patch centroid coordinates at each timestep
         '''Could combine this with write_pch to save time from reading in patchmap'''
+        # Check for previous results, delete if overwriting
+        check_results = self.check_results('patch_centroids_written', ['patch_centroids'], overwrite)
+        if not check_results: return 
+
         # Initialize data
         num_pops = self.get_num_pops()
         centroids = {}
@@ -669,18 +700,23 @@ class Model:
 
         # Write to results file
         resultsfn = os.path.join(self.run_dir, 'results.h5')
-        mode = 'w' if overwrite else 'a'
-        with h5py.File(resultsfn, mode) as results:
+        with h5py.File(resultsfn, 'a') as results:
             for pop_idx in range(num_pops):
                 dset_name = 'patch_centroids/pop'+str(pop_idx)
                 dset = centroids['pop'+str(pop_idx)]
                 results.create_dataset(dset_name, data=dset)
+        # Update run doc
+        docfn = os.path.join(self.run_dir,'run_doc.json')
+        write_to_doc(docfn, 'patch_centroids_written', True)
 
     def write_fire_prob(self, overwrite=False):
+        # Check for previous results, delete if overwriting
+        check_results = self.check_results('fire_prob_written', ['fire_prob'], overwrite)
+        if not check_results: return 
+
         num_pops = self.get_num_pops()
         resultsfn = os.path.join(self.run_dir, 'results.h5')
-        mode = 'w' if overwrite else 'a'
-        with h5py.File(resultsfn, mode) as results:
+        with h5py.File(resultsfn, 'a') as results:
             for patch in np.arange(1, num_pops):
                 patch = str(int(patch))
                 pchfn = os.path.join(self.run_dir, 'pop'+patch+'.PCH')
@@ -689,8 +725,15 @@ class Model:
                 patch_probs = [float(ln.split()[-1]) for ln in pch]
                 dset_name = 'fire_prob/pop'+patch
                 results.create_dataset(dset_name, data=patch_probs)
+        # Update run doc
+        docfn = os.path.join(self.run_dir,'run_doc.json')
+        write_to_doc(docfn, 'fire_prob_written', True)
     
     def write_patch_K(self, overwrite=False):
+        # Check for previous results, delete if overwriting
+        check_results = self.check_results('patch_K_written', ['K'], overwrite)
+        if not check_results: return 
+
         num_pops = self.get_num_pops()
         resultsfn = os.path.join(self.run_dir, 'results.h5')
         mode = 'w' if overwrite else 'a'
@@ -703,4 +746,7 @@ class Model:
                 patch_ks = [float(ln.split()[-1]) for ln in kch]
                 dset_name = 'K/pop'+patch
                 results.create_dataset(dset_name, data=patch_ks)
+        # Update run doc
+        docfn = os.path.join(self.run_dir,'run_doc.json')
+        write_to_doc(docfn, 'patch_K_written', True)
 
