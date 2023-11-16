@@ -13,6 +13,9 @@ def check_for_results(inst):
                 break
     return res_check
 
+# Whether or not to overwrite existing data
+overwrite = False
+
 # Read in shared ('project level') data
 with open(os.path.join(os.getcwd(), 'project_info.json'), 'r') as info_file:
     proj_info = json.load(info_file)
@@ -25,20 +28,16 @@ with open(batfn, 'w') as bat:
         with open(docfn, 'r+') as doc_file, open(infofn, 'r') as info_file:
             doc = json.load(doc_file)
             info = json.load(info_file)
-            #run_check = [doc.get('patchmaps_extracted') == True, 
-            #             doc.get('pch_files_written') == True]
-            #if not run_check == [True for i in range(len(run_check))]:
-            #    inst = Model(**info)
-			#    res_check = check_for_results(inst)
             inst = Model(**info)
-            res_check = check_for_results(inst)
-            if doc.get('patchmaps_extracted') != True:
-                inst.init_patch_data()
-                write_to_doc(docfn, 'patchmaps_extracted', True)
-            if doc.get('pch_files_written') != True:
-                inst.write_pch()
-                write_to_doc(docfn, 'pch_files_written', True) 
-            #if res_check != True: 
-            if True:
-                batln = 'START /WAIT "title" "{}\Metapop.exe" "{}\\final.mp" /RUN=YES\n'.format(proj_info['ramas_loc'], inst.run_dir)
-                bat.write(batln)     
+            #if inst.spatial and inst.fixed_habitat and inst.fixed_fire:
+            if rundir == str(74):
+                overwrite = True
+            else:
+                overwrite = False
+            if inst.spatial:
+                inst.init_patch_data(overwrite=overwrite)
+                inst.init_fire(overwrite=overwrite)
+                res_check = check_for_results(inst)
+                if (res_check == False) or overwrite: 
+                    batln = 'START /WAIT "title" "{}\Metapop.exe" "{}\\final.mp" /RUN=YES\n'.format(proj_info['ramas_loc'], inst.run_dir)
+                    bat.write(batln)     

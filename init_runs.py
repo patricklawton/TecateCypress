@@ -22,7 +22,7 @@ run_info['rel_S'] = 1 #Relative survival
 run_info['min_patch_hs'] = 5
 run_info['burn_in_period'] = 30 #In timesteps
 # Boolean for spatial simulations and additional parameters
-run_info['spatial'] = False
+run_info['spatial'] = True
 if run_info['spatial']:
     run_info['ul_coord'] = [1500, 2800] #Upper-left corner, in pixels relative to upper left corner of full SDM
     run_info['lr_coord'] = [2723, 3905] #Lower-right corner
@@ -36,15 +36,28 @@ if run_info['spatial']:
     run_info['dist_metric'] = 'Default: Center to center' #For inter-patch distance calcs
     run_info['habitat_change'] = 'same until next' #Assume the same for K, F, S and between all frames
     run_info['dispersal'] = False
+    # Decide if running on a fixed fire prob and/or habitat map
+    run_info['fixed_fire'] = True
+    if run_info['fixed_fire']:
+        # Frame here refers to the FDM period, e.g. frame 0 -> 1980-2009
+        run_info['fire_frame'] = 0
+    run_info['fixed_habitat'] = False
+    if run_info['fixed_habitat']:
+        run_info['habitat_frame'] = 1
+else:
+    # Scan over fire probabilities with correponding FRIs from 5 to 80 years
+    fire_probs = run_info['timestep'] / np.arange(4,142,2)
+    #fire_probs = [2/40]
 
 # Varying model parameters
-#land_use = ['LU'] #RAW, LU, LULUC
-#climate_model = ['cnrm'] #cnrm, hades
-#climate_scenario = ['rcp45','rcp85'] #rcp45, rcp85
-# Scan over fire probabilities with correponding FRIs from 5 to 80 years
-fire_probs = run_info['timestep'] / np.arange(4,142,2)
-#fire_probs = [2/40]
+land_use = ['LU'] #RAW, LU, LULUC
+climate_model = ['cnrm'] #cnrm, hades, None
+climate_scenario = ['rcp45'] #rcp45, rcp85, None
 
+# Whether or not to overwrite existing data
+overwrite = True
+
+# Initialize runs
 if run_info['spatial']:
     # Erase bat file from previous set of runs
     batfn = os.path.join(os.getcwd(),'run_spatials.bat')
@@ -56,11 +69,9 @@ if run_info['spatial']:
         run_info.update({'climate_model':comb[1]})
         run_info.update({'climate_scenario':comb[2]})
         model = Model(**run_info)
-        model.init_popmodel()
+        model.init_popmodel(overwrite=overwrite)
         model.init_maps()
-        if not os.path.isfile(os.path.join(model.run_dir,'final-hist.TXT')):
-            print('Initializing spatial data')
-            model.init_spatial()
+        model.init_spatial(overwrite=overwrite)
 else:
     # No spatial batch file necessary, just create simulation run batch file
     batfn = os.path.join(os.getcwd(),'run_sims.bat')
@@ -68,6 +79,6 @@ else:
         for fire_prob in fire_probs:
             run_info.update({'fire_prob': fire_prob})
             model = Model(**run_info)
-            model.init_popmodel()
+            model.init_popmodel(overwrite=overwrite)
             batln = 'START /WAIT "title" "{}\Metapop.exe" "{}\\final.mp" /RUN=YES\n'.format(proj_info['ramas_loc'], model.run_dir)
             bat.write(batln)     
