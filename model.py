@@ -16,6 +16,14 @@ from contextlib import ExitStack
 # Global constants
 pop_idx_i = 44 #Pop 1 always appears on this line in mp files
 
+# Open run
+def open_run(runnum):
+    infofn = os.path.join(os.getcwd(), 'runs', str(runnum), 'run_info.json')
+    with open(infofn, 'r') as info_file:
+        run_info = json.load(info_file)
+    run = Model(**run_info)
+    return run
+
 # Function to add data to run document (run_doc.json) 
 def write_to_doc(doc_fn, key, val):
     with open(doc_fn,'r+') as doc_file:
@@ -132,9 +140,6 @@ class Model:
                             info_check.append(False)
                     # Also check for any new keys in current run
                     keys_match = np.all([key in list(run_info_prev.keys()) for key in self.__dict__.keys()])
-                    #print('keys_match', keys_match)
-                    #print(run_info_prev.keys())
-                    #break
                     info_check.append(keys_match)
                     if np.all(info_check):
                         run_exists = True
@@ -160,10 +165,7 @@ class Model:
             with open(run_doc_fn,'r+') as run_doc_file:
                 doc = json.load(run_doc_file)
                 if doc.get('run_dir') != run_dir:
-                    #sys.exit("Inconsistent run_dir in run document")
-                    print("Inconsistent run_dir in run document")
-                    #doc.update({'run_dir': run_dir})
-                    #json.dump(doc, run_doc_file)
+                    if proj_info['verbose']: print("Inconsistent run_dir in run document")
                     
         # Add run_dir and docfn to instance variable
         self.run_dir = run_dir
@@ -190,7 +192,7 @@ class Model:
     # Function to get number of populations
     def get_num_pops(self):
         mpfn = os.path.join(self.run_dir,'final.mp')
-        with open(mpfn, 'r') as mp:
+        with open(mpfn, encoding="utf8", errors='ignore') as mp:
             for ln_idx, ln in enumerate(mp):
                 # Final population always appears on the line before "Migration\n"
                 if ln == "Migration\n":
@@ -348,9 +350,6 @@ class Model:
         # Continue if spatial data incomplete or overwriting
         if (not spatial_finished) or overwrite:
             # Open/make the .bat and .pdy files
-            #batfn = os.path.join(os.getcwd(), 'run_spatials.bat')
-            #pdyfn = os.path.join(self.run_dir, 'patchdynamics.pdy')
-            #with open(batfn, 'a') as bat, open(pdyfn, 'w') as pdy:
             with ExitStack() as stack:    
                 batfn = os.path.join(os.getcwd(), 'run_spatials.bat')
                 bat = stack.enter_context(open(batfn, 'a'))
@@ -364,13 +363,8 @@ class Model:
                     pdy.write(('pop'+'\n')*3)
                     pdy.write(str(len(times))+'\n')
 
-                #for frame, t in enumerate(times):
                 for frame, t in zip(frames, times):
                     # Write ptc file
-                    #if self.fixed_habitat:
-                    #    #ptcfn = os.path.join(self.run_dir, 'frame'+str(self.habitat_frame)+'.ptc')
-                    #    frame = self.habitat_frame
-                    ##else:
                     ptcfn = os.path.join(self.run_dir, 'frame'+str(frame)+'.ptc')
                     with open(ptcfn, 'w') as ptc:
                         # Normally file contains "map=ÿ" at the end of the first line, I'm omitting 
@@ -553,13 +547,6 @@ class Model:
         FDM_dir = read_from_doc(self.docfn, 'FDM_dir')
         cropdir = read_from_doc(self.docfn, 'cropdir')
 
-        #with open(mpfn, 'r') as mp:
-        #    pop_idx_i = 44 #Pop 1 always appears on this line
-        #    for ln_idx, ln in enumerate(mp):
-        #        # Final population always appears on the line before "Migration\n"
-        #        if ln == "Migration\n":
-        #            num_pops = ln_idx-pop_idx_i+1 #Plus 1 for metapopulation (i.e. Pop 0)
-        #            break
         num_pops = self.get_num_pops() 
 
         # Process the fdm time ranges from filenames
@@ -653,12 +640,6 @@ class Model:
             mpfn = os.path.join(self.run_dir,'final.MP')
             with open(mpfn, 'r') as mp:
                 mpdata = mp.readlines()
-            #ln_idx_i = 44
-            #for ln_idx, ln in enumerate(mpdata):
-            #    if ln == 'Migration\n':
-            #        ln_idx_f = ln_idx
-            #        break
-            #for ln_idx, ln in enumerate(itertools.islice(mpdata, pop_idx_i, pop_idx_i+num_pops-1)):
             for patch in range(num_pops)[1:]:
                 #ln_idx = pop_idx_i + patch - 1
                 ln = mpdata[pop_idx_i + patch - 1]
@@ -683,7 +664,6 @@ class Model:
             mpfn = os.path.join(self.run_dir,'final.MP')
             with open(mpfn, 'r') as mp:
                 mpdata = mp.readlines()
-            #mpslice = itertools.islice(mpdata, pop_idx_i, pop_idx_i+num_pops-1)
 
             # Read in patchmap 
             patchmapfn = os.path.join(self.run_dir,'frame'+str(self.habitat_frame)+'_patchmap.ASC')
