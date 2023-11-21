@@ -29,13 +29,12 @@ with open(batfn, 'w') as bat:
             doc = json.load(doc_file)
             info = json.load(info_file)
             inst = Model(**info)
-            #if inst.spatial and inst.fixed_habitat and inst.fixed_fire:
-            if rundir == str(74):
-                overwrite = True
-            else:
-                overwrite = False
             if inst.spatial:
                 inst.init_patch_data(overwrite=overwrite)
+                if rundir in ['73', '74']:
+                    overwrite = True 
+                else:
+                    overwrite = False
                 inst.init_fire(overwrite=overwrite)
                 res_check = check_for_results(inst)
                 if (res_check == False) or overwrite: 

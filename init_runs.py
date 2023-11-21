@@ -55,7 +55,7 @@ climate_model = ['cnrm'] #cnrm, hades, None
 climate_scenario = ['rcp45'] #rcp45, rcp85, None
 
 # Whether or not to overwrite existing data
-overwrite = True
+overwrite = False
 
 # Initialize runs
 if run_info['spatial']:

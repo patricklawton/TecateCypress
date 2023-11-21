@@ -39,7 +39,7 @@ def read_from_doc(doc_fn, key):
         doc = json.load(doc_file)
         val = doc.get(key)
         if val == None:
-            print("{} key not found in run document".format(key))
+            if proj_info['verbose']: print("{} key not found in run document".format(key))
         return val
 
 # For copying uncropped maps to crop directory
@@ -446,7 +446,7 @@ class Model:
     
     def init_patch_data(self, overwrite=False):
         if read_from_doc(self.docfn, 'patch_data_initialized') and (overwrite == False):
-            print('patch data initialized, not overwriting')
+            if proj_info['verbose']: print('patch data initialized, not overwriting')
             return
 
         if not self.fixed_habitat:
@@ -539,7 +539,7 @@ class Model:
 
     def init_fire(self, overwrite=False):
         if read_from_doc(self.docfn, 'fire_initialized') and (overwrite == False):
-            print('fire initialized, not overwriting')
+            if proj_info['verbose']: print('fire initialized, not overwriting')
             return
 
         # Get data locations from run document
@@ -559,6 +559,9 @@ class Model:
             except:
                 # Hardcoded bc info is not in filename, also missing period 2010-2039
                 fdm_rngs.append([1980,2039])
+        sorted_indices = sorted(range(len(fdm_rngs)), key=fdm_rngs.__getitem__)
+        fdm_rngs = [fdm_rngs[i] for i in sorted_indices]
+        fdmfns = [fdmfns[i] for i in sorted_indices]
             
         if self.fixed_fire:
             # Read in fixed fire map 
