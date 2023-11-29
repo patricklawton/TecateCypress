@@ -9,4 +9,5 @@ __pycache__
 *.zip
 *.DS_Store
 run*.bat
-testing.ipynb
+test*
+*.pch

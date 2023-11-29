@@ -30,11 +30,11 @@ with open(batfn, 'w') as bat:
             info = json.load(info_file)
             inst = Model(**info)
             if inst.spatial:
-                inst.init_patch_data(overwrite=overwrite)
-                if rundir in ['73', '74']:
+                if rundir in ['0', '74']:
                     overwrite = True 
                 else:
                     overwrite = False
+                #inst.init_patch_data(overwrite=overwrite)
                 inst.init_fire(overwrite=overwrite)
                 res_check = check_for_results(inst)
                 if (res_check == False) or overwrite: 

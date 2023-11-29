@@ -43,6 +43,7 @@ if run_info['spatial']:
         run_info['fire_frame'] = 0
     run_info['fixed_habitat'] = False
     if run_info['fixed_habitat']:
+        run_info['burn_in_frame'] = 0
         run_info['habitat_frame'] = 1
 else:
     # Scan over fire probabilities with correponding FRIs from 5 to 80 years

@@ -107,6 +107,7 @@ class Model:
             self.fixed_habitat = kwargs['fixed_habitat']
             if self.fixed_habitat:
                 self.habitat_frame = kwargs['habitat_frame']
+                self.burn_in_frame = kwargs['burn_in_frame']
             self.fixed_fire = kwargs['fixed_fire']
             if self.fixed_fire:
                 self.fire_frame = kwargs['fire_frame']
@@ -177,13 +178,13 @@ class Model:
         with open(self.docfn, 'r') as doc_file:
             doc = json.load(doc_file)
         if (overwrite == False) and doc.get(doc_key):
-            print('Data written, not overwriting')
+            if proj_info['verbose']: print('Data written, not overwriting')
             return False
         else:
             resultsfn = os.path.join(self.run_dir, 'results.h5')
             # Delete old results before overwriting
             if overwrite and doc.get(doc_key):
-                print('Overwriting data')
+                if proj_info['verbose']: print('Overwriting data')
                 with h5py.File(resultsfn, 'a') as results:
                     for data_key in data_keys:
                         del results[data_key]
@@ -199,6 +200,19 @@ class Model:
                     num_pops = ln_idx-pop_idx_i+1 #Plus 1 for metapopulation (i.e. Pop 0)
                     break
         return num_pops
+   
+    # Get the time and frame arrays
+    def get_times_frames(self):
+        times = np.arange(proj_info['ti'],proj_info['tf'],self.timestep)
+        frames = np.arange(len(times))
+        if self.fixed_habitat:
+            if self.habitat_frame == self.burn_in_frame:
+                times = [times[self.habitat_frame]]
+                frames = [self.habitat_frame]
+            else:
+                times = [times[frame] for frame in [self.burn_in_frame, self.habitat_frame]]
+                frames = [self.burn_in_frame, self.habitat_frame]
+        return times, frames
 
     def init_popmodel(self, overwrite=False):
         # Copy template file into run folder, change as needed
@@ -322,30 +336,35 @@ class Model:
         write_to_doc(self.docfn, 'FDM_dir', FDM_dir)
         write_to_doc(self.docfn, 'cropdir', cropdir)
 
-    def init_spatial(self, overwrite=False):
+    def init_spatial(self, overwrite=False, burn_in_frame=0):
         # Get data locations from run document
         SDM_dir = read_from_doc(self.docfn, 'SDM_dir')
         FDM_dir = read_from_doc(self.docfn, 'FDM_dir')
         cropdir = read_from_doc(self.docfn, 'cropdir')
 
-        # Define time array
+        # Define time and frame arrays
         times = np.arange(proj_info['ti'],proj_info['tf'],self.timestep)
         frames = np.arange(len(times))
         if self.fixed_habitat:
-            times = [times[self.habitat_frame]]
-            frames = [self.habitat_frame]
+            if self.habitat_frame == self.burn_in_frame:
+                times = [times[self.habitat_frame]]
+                frames = [self.habitat_frame]
+            else:
+                times = [times[frame] for frame in [self.burn_in_frame, self.habitat_frame]]
+                frames = [self.burn_in_frame, self.habitat_frame]
+        sim_steps = int(round((proj_info['tf']-proj_info['ti'])/self.timestep))
 
         # Check for completion of this run's spatial data
         spatial_finished = []
-        for frame in range(len(times)):
+        for frame in frames:
             # 5 ptc output files, only checking one here
             fn = os.path.join(self.run_dir, 'frame{}.SCL'.format(frame))
             spatial_finished.append(os.path.isfile(fn))
-        if not self.fixed_habitat:
+        if (self.fixed_habitat == False) or (self.burn_in_frame != self.habitat_frame):
             fn = os.path.join(self.run_dir, 'final-hist.TXT')
             spatial_finished.append(os.path.isfile(fn))
         spatial_finished = np.all(spatial_finished)
-        print('spatial_finished', spatial_finished)
+        if proj_info['verbose']: print('spatial_finished', spatial_finished)
 
         # Continue if spatial data incomplete or overwriting
         if (not spatial_finished) or overwrite:
@@ -353,7 +372,7 @@ class Model:
             with ExitStack() as stack:    
                 batfn = os.path.join(os.getcwd(), 'run_spatials.bat')
                 bat = stack.enter_context(open(batfn, 'a'))
-                if not self.fixed_habitat:
+                if (self.fixed_habitat == False) or (self.burn_in_frame != self.habitat_frame):
                     pdyfn = os.path.join(self.run_dir, 'patchdynamics.pdy')
                     pdy = stack.enter_context(open(pdyfn, 'w'))
                     # Write initial lines to .pdy file
@@ -361,7 +380,8 @@ class Model:
                     pdy.write('\n'*5)
                     pdy.write('final.mp'+'\n')
                     pdy.write(('pop'+'\n')*3)
-                    pdy.write(str(len(times))+'\n')
+                    '''I think I should maybe do minus one here'''
+                    pdy.write(str(sim_steps)+'\n')
 
                 for frame, t in zip(frames, times):
                     # Write ptc file
@@ -428,15 +448,27 @@ class Model:
                     ptc_path = os.path.join(self.run_dir, 'frame'+str(frame)+'.ptc')
                     batln = 'START /WAIT "title" "{}\SpatialData.exe" "{}" /RUN=YES\n'.format(proj_info['ramas_loc'], ptc_path)
                     bat.write(batln)
-                    if not self.fixed_habitat:
+                    #if not self.fixed_habitat:
+                    if self.fixed_habitat == False: #or (self.burn_in_frame != self.habitat_frame):
                         pdy.write('frame'+str(frame)+'.ptc\n')
-                        if frame == 0:
+                        if frame == frames[0]:
                             pdy.write('1\n')
                         else:
                             pdy.write(str(frame+self.burn_in_period)+'\n')
                         pdy.write((self.habitat_change+'\n')*3)
+                    elif self.burn_in_frame != self.habitat_frame:
+                        if frame == self.burn_in_frame:
+                            pdy.write('frame'+str(burn_in_frame)+'.ptc\n')
+                            pdy.write('1\n')
+                            pdy.write((self.habitat_change+'\n')*3)
+                        else:
+                            for i in range(sim_steps)[1:]:
+                                pdy.write('frame'+str(self.habitat_frame)+'.ptc\n')
+                                pdy.write(str(i+self.burn_in_period)+'\n')
+                                pdy.write((self.habitat_change+'\n')*3)
                 # Write final lines to .bat file
-                if not self.fixed_habitat:
+                if (self.fixed_habitat == False) or (self.burn_in_frame != self.habitat_frame):
+                #if not self.fixed_habitat:
                     pdy_path = os.path.join(self.run_dir, 'patchdynamics.pdy')
                     batln = 'START /WAIT "title" "{}\HabDyn.exe" "{}" /RUN=YES\n'.format(proj_info['ramas_loc'], pdy_path)
                     bat.write(batln)
@@ -449,26 +481,32 @@ class Model:
             if proj_info['verbose']: print('patch data initialized, not overwriting')
             return
 
-        if not self.fixed_habitat:
+        # Define time and frame arrays
+        times = np.arange(proj_info['ti'],proj_info['tf'],self.timestep)
+        frames = np.arange(len(times))
+        if self.fixed_habitat:
+            if self.habitat_frame == self.burn_in_frame:
+                times = [times[self.habitat_frame]]
+                frames = [self.habitat_frame]
+            else:
+                times = [times[frame] for frame in [self.burn_in_frame, self.habitat_frame]]
+                frames = [self.burn_in_frame, self.habitat_frame]
+
+        if (self.fixed_habitat == False) or (self.burn_in_frame != self.habitat_frame):
 		    # Process hist file created by pdy file
             with open(os.path.join(self.run_dir, 'final-hist.TXT')) as hf:
                 for ln_i,ln in enumerate(hf):
                     if ln_i < round((proj_info['tf']-proj_info['ti'])/self.timestep)+2:
+                    #if ln_i < len(frames) + 2:
                         pass
                     elif ln_i == round((proj_info['tf']-proj_info['ti'])/self.timestep)+2:
+                    #elif ln_i == len(frames) + 2:
                         hist_df = pd.DataFrame(columns=ln.split())
                     else:
                         # Parse line
                         hist_df.loc[len(hist_df)] = ln.split()
             hist_df.to_pickle(os.path.join(self.run_dir, 'final-hist.pkl')) 
         
-        # Define time array
-        times = np.arange(proj_info['ti'],proj_info['tf'],self.timestep)
-        frames = np.arange(len(times))
-        if self.fixed_habitat:
-            times = [times[self.habitat_frame]]
-            frames = [self.habitat_frame]
-
         # Extract patch maps from ptc files
         for frame, t in zip(frames, times):
             # Remove existing patchmap if it exists
@@ -507,7 +545,8 @@ class Model:
                         pass
                     rowlen = len(row.split())
 
-            if self.fixed_habitat:
+            #if self.fixed_habitat:
+            if self.fixed_habitat and (self.burn_in_frame == self.habitat_frame):
                 # Remove existing metapop file if it exists
                 mpfn = os.path.join(self.run_dir,'final')
                 if os.path.isfile(mpfn+'.mp'):
@@ -548,6 +587,7 @@ class Model:
         cropdir = read_from_doc(self.docfn, 'cropdir')
 
         num_pops = self.get_num_pops() 
+        times, frames = self.get_times_frames()
 
         # Process the fdm time ranges from filenames
         fdmfns = os.listdir(os.path.join(os.getcwd(),'maps',cropdir,FDM_dir))
@@ -567,6 +607,7 @@ class Model:
             # Read in fixed fire map 
             fdmfn = os.path.join(os.getcwd(),'maps',cropdir,FDM_dir,fdmfns[self.fire_frame])
             if fdmfn[-3:] == 'txt':
+                # Assume these are cropped .asc maps with no header
                 fdm = np.loadtxt(fdmfn)
             else:
                 # Assume these are uncropped .asc maps
@@ -575,94 +616,7 @@ class Model:
             '''For now using Gregs approach'''
             fdm = np.ones(fdm.shape)-(np.ones(fdm.shape)-fdm)**(self.timestep/30)
 
-        if not self.fixed_habitat:
-            # Read in hist file dataframe
-            hist_df = pd.read_pickle(os.path.join(self.run_dir, 'final-hist.pkl')) 
-
-            # Calculate and write per patch fire probabilities frame by frame
-            for frame, t in enumerate(np.arange(proj_info['ti'],proj_info['tf'],self.timestep)): 
-                if not self.fixed_fire:
-                    # Read in fire map for this frame
-                    '''Can probably find fdm index using np.nonzero, but this works for now'''
-                    fdm_idx = [i for i,rng in enumerate(fdm_rngs) if ((t<=max(rng)) and (t>=min(rng)))][0]
-                    fdmfn = os.path.join(os.getcwd(),'maps',cropdir,FDM_dir,fdmfns[fdm_idx])
-                    if fdmfn[-3:] == 'txt':
-                        fdm = np.loadtxt(fdmfn)
-                    else:
-                        # Assume these are uncropped .asc maps
-                        fdm = np.loadtxt(fdmfn, skiprows=6)
-                    # Translate 30-yr prob in FDM to 1-yr prob
-                    '''For now using Gregs approach'''
-                    fdm = np.ones(fdm.shape)-(np.ones(fdm.shape)-fdm)**(self.timestep/30)
-
-                # Read in patchmap and get patch ids used in this frame
-                patchmapfn = os.path.join(self.run_dir,'frame'+str(frame)+'_patchmap.ASC')
-                patchmap = np.loadtxt(patchmapfn, skiprows=6)
-                num_patches_frame = int(max(np.unique(patchmap)))
-                hist_df_sub = hist_df.loc[(hist_df['iter'] == str(int(frame + 1)))]
-                patch_ids_frame = np.array(hist_df_sub['new2old'])[:num_patches_frame]
-                # Store the initial patchmap
-                if frame == 0:
-                    patchmap_0 = patchmap
-                patchmap_0, patchmap, fdm = adjustmaps([patchmap_0,patchmap,fdm])
-
-                # Loop over all possible patch ids
-                for patch_new in np.arange(num_pops)[1:]:
-                    if (str(int(patch_new)) in patch_ids_frame) or ((frame == 0) and (patch_new <= num_patches_frame)):
-                        # Find id in patchmap
-                        if frame == 0:
-                            patch = int(patch_new)
-                        else:
-                            row = hist_df.loc[(hist_df['new2old']==str(int(patch_new))) & (hist_df['iter']==str(int(frame+1)))]
-                            patch = int(row['patch'].values[0])
-                        # Calculate average probability
-                        if self.dispersal:
-                            #patchmap, fdm = adjustmaps([patchmap,fdm])
-                            prob = np.mean(fdm[patchmap==patch])
-                        else:
-                            #patchmap_0, patchmap, fdm = adjustmaps([patchmap_0,patchmap,fdm])
-                            prob = np.mean(fdm[(patchmap==patch) & (patchmap_0>0)])
-                        if np.isnan(prob):
-                            prob = 0.0
-                    else:
-                        prob = 0.0
-
-                    pchfn = os.path.join(self.run_dir,'pop'+str(int(patch_new))+'.PCH')
-                    pch_check = os.path.isfile(pchfn)
-                    fmode = 'w' if frame == 0 else 'a'
-                    with open(pchfn, fmode) as pch:
-                        if frame == 0:
-                            pch.write('1.0 {}\n'.format(prob))
-                            # Write timesteps for the rest of the burn in period
-                            for b_i in range(self.burn_in_period - 1):
-                                pch.write('  {}\n'.format(prob))
-                        else:
-                            pch.write('  {}\n'.format(prob))
-
-            # Specify pch files in final mp file
-            mpfn = os.path.join(self.run_dir,'final.MP')
-            with open(mpfn, 'r') as mp:
-                mpdata = mp.readlines()
-            for patch in range(num_pops)[1:]:
-                #ln_idx = pop_idx_i + patch - 1
-                ln = mpdata[pop_idx_i + patch - 1]
-                ln_splt = ln.split(',')
-                # Assume the following give the only options for pop number sep string
-                for sep in [' ','A','S']:
-                    pop_elem = ln_splt[0].split(sep)
-                    if (len(pop_elem)==2) and (sep==' '):
-                        pop_num = pop_elem[-1]
-                    elif len(pop_elem) == 2:
-                        pop_num = pop_elem[0]
-                pchfn = 'pop'+pop_num+'.PCH'
-                # Assume .PCH file specified in element 12 of the Pop line
-                ln_splt[12] = pchfn
-                mpdata[pop_idx_i + patch - 1] = ','.join(ln_splt)
-            with open(mpfn, 'w') as mp:
-                for ln in mpdata:
-                    mp.write(ln)
-
-        elif self.fixed_habitat and self.fixed_fire: 
+        if self.fixed_habitat and (self.burn_in_frame == self.habitat_frame): 
             # Open full mp file for editing
             mpfn = os.path.join(self.run_dir,'final.MP')
             with open(mpfn, 'r') as mp:
@@ -689,7 +643,100 @@ class Model:
                     mp.write(ln)
 
         else:
-            sys.exit("Dynamic fire with fixed SDM not implemented ")
+        #if not self.fixed_habitat:
+            # Read in hist file dataframe
+            hist_df = pd.read_pickle(os.path.join(self.run_dir, 'final-hist.pkl')) 
+
+            # Calculate and write per patch fire probabilities frame by frame
+            _iter = 0
+            #for frame, t in enumerate(np.arange(proj_info['ti'],proj_info['tf'],self.timestep)): 
+            for frame, t in zip(frames, times):
+                if not self.fixed_fire:
+                    # Read in fire map for this frame
+                    '''Can probably find fdm index using np.nonzero, but this works for now'''
+                    fdm_idx = [i for i,rng in enumerate(fdm_rngs) if ((t<=max(rng)) and (t>=min(rng)))][0]
+                    fdmfn = os.path.join(os.getcwd(),'maps',cropdir,FDM_dir,fdmfns[fdm_idx])
+                    if fdmfn[-3:] == 'txt':
+                        fdm = np.loadtxt(fdmfn)
+                    else:
+                        # Assume these are uncropped .asc maps
+                        fdm = np.loadtxt(fdmfn, skiprows=6)
+                    # Translate 30-yr prob in FDM to 1-yr prob
+                    '''For now using Gregs approach'''
+                    fdm = np.ones(fdm.shape)-(np.ones(fdm.shape)-fdm)**(self.timestep/30)
+
+                # Read in patchmap and get patch ids used in this frame
+                patchmapfn = os.path.join(self.run_dir,'frame'+str(frame)+'_patchmap.ASC')
+                patchmap = np.loadtxt(patchmapfn, skiprows=6)
+                num_patches_frame = int(max(np.unique(patchmap)))
+                hist_df_sub = hist_df.loc[(hist_df['iter'] == str(int(frame + 1)))]
+                patch_ids_frame = np.array(hist_df_sub['new2old'])[:num_patches_frame]
+                # Store the initial patchmap
+                if frame == frames[0]:
+                    patchmap_0 = patchmap
+                patchmap_0, patchmap, fdm = adjustmaps([patchmap_0,patchmap,fdm])
+
+                # Loop over all possible patch ids
+                for patch_new in np.arange(num_pops)[1:]:
+                    if (str(int(patch_new)) in patch_ids_frame) or ((_iter == 0) and (patch_new <= num_patches_frame)):
+                        # Find id in patchmap
+                        if _iter == 0:
+                            patch = int(patch_new)
+                        else:
+                            row = hist_df.loc[(hist_df['new2old']==str(int(patch_new))) & (hist_df['iter']==str(int(_iter+1)))]
+                            patch = int(row['patch'].values[0])
+                        # Calculate average probability
+                        if self.dispersal:
+                            prob = np.mean(fdm[patchmap==patch])
+                        else:
+                            prob = np.mean(fdm[(patchmap==patch) & (patchmap_0>0)])
+                        if np.isnan(prob):
+                            prob = 0.0
+                    else:
+                        prob = 0.0
+
+                    pchfn = os.path.join(self.run_dir,'pop'+str(int(patch_new))+'.PCH')
+                    pch_check = os.path.isfile(pchfn)
+                    fmode = 'w' if frame == frames[0] else 'a'
+                    with open(pchfn, fmode) as pch:
+                        if frame == frames[0]:
+                            for b_i in range(self.burn_in_period):
+                                pch.write('1.0 {}\n'.format(prob))
+                        else:
+                            if self.fixed_habitat and (frame == self.habitat_frame):
+                                '''Why the -1 idk'''
+                                i_final = int(round((proj_info['tf']-proj_info['ti'])/self.timestep)) - 1
+                                for i in range(i_final):
+                                    pch.write('1.0 {}\n'.format(prob))
+                            else:
+                                pch.write('1.0 {}\n'.format(prob))
+                _iter += 1
+
+            # Specify pch files in final mp file
+            mpfn = os.path.join(self.run_dir,'final.MP')
+            with open(mpfn, 'r') as mp:
+                mpdata = mp.readlines()
+            for patch in range(num_pops)[1:]:
+                ln = mpdata[pop_idx_i + patch - 1]
+                ln_splt = ln.split(',')
+                # Assume the following give the only options for pop number sep string
+                for sep in [' ','A','S']:
+                    pop_elem = ln_splt[0].split(sep)
+                    if (len(pop_elem)==2) and (sep==' '):
+                        pop_num = pop_elem[-1]
+                    elif len(pop_elem) == 2:
+                        pop_num = pop_elem[0]
+                pchfn = 'pop'+pop_num+'.PCH'
+                # Assume .PCH file specified in element 12 of the Pop line
+                ln_splt[12] = pchfn
+                mpdata[pop_idx_i + patch - 1] = ','.join(ln_splt)
+            with open(mpfn, 'w') as mp:
+                for ln in mpdata:
+                    mp.write(ln)
+
+
+        #else:
+        #    sys.exit("Dynamic fire with fixed SDM not implemented ")
 
         # Update run doc
         write_to_doc(self.docfn, 'fire_initialized', True)
@@ -777,42 +824,7 @@ class Model:
         for pop_idx in range(num_pops):
             centroids['pop'+str(pop_idx)] = []
 
-        if not self.fixed_habitat:
-            # Read in hist file dataframe
-            hist_df = pd.read_pickle(os.path.join(self.run_dir, 'final-hist.pkl')) 
-
-            # Calculate the centroids of each patch
-            for frame, t in enumerate(np.arange(proj_info['ti'],proj_info['tf'],self.timestep)):
-                # Get this frames' patchmap
-                patchmapfn = os.path.join(self.run_dir,'frame'+str(frame)+'_patchmap.ASC')
-                patchmap = np.loadtxt(patchmapfn, skiprows=6)
-                num_patches_frame = int(max(np.unique(patchmap)))
-                hist_df_sub = hist_df.loc[(hist_df['iter'] == str(int(frame + 1)))]
-                patch_ids_frame = np.array(hist_df_sub['new2old'])[:num_patches_frame]
-                # Loop over all possible patch ids
-                for patch_new in np.arange(num_pops)[1:]:
-                    # If patch exists in this frame, find its centroid
-                    if (str(int(patch_new)) in patch_ids_frame) or ((frame == 0) and (patch_new <= num_patches_frame)):
-                        # Find id in patchmap
-                        if frame == 0:
-                            patch = int(patch_new)
-                        else:
-                            row = hist_df.loc[(hist_df['new2old']==str(int(patch_new))) & (hist_df['iter']==str(int(frame+1)))]
-                            patch = int(row['patch'].values[0])
-                        patch_coords = np.argwhere(patchmap==patch)
-                        length = patch_coords.shape[0]
-                        sum_x = np.sum(patch_coords[:, 0])
-                        sum_y = np.sum(patch_coords[:, 1])
-                        x, y = sum_x/length, sum_y/length
-                    # Otherwise, set the centroid to the origin as a placeholder
-                    else:
-                        x, y = (0.0, 0.0)
-                    if frame == 0:
-                        for b_i in range(self.burn_in_period):
-                            centroids['pop'+str(int(patch_new))].append([x,y])
-                    else:
-                        centroids['pop'+str(int(patch_new))].append([x,y])
-        else:
+        if self.fixed_habitat and (self.burn_in_frame == self.habitat_frame): 
             # Read in patchmap 
             patchmapfn = os.path.join(self.run_dir,'frame'+str(self.habitat_frame)+'_patchmap.ASC')
             patchmap = np.loadtxt(patchmapfn, skiprows=6) 
@@ -825,6 +837,51 @@ class Model:
                 sum_y = np.sum(patch_coords[:, 1])
                 x, y = sum_x/length, sum_y/length
                 centroids['pop'+str(patch)].append([x,y])
+        else:
+            # Read in hist file dataframe
+            hist_df = pd.read_pickle(os.path.join(self.run_dir, 'final-hist.pkl')) 
+
+            times, frames = self.get_times_frames() 
+
+            # Calculate the centroids of each patch
+            #for frame, t in enumerate(np.arange(proj_info['ti'],proj_info['tf'],self.timestep)):
+            _iter = 0
+            for frame, t in zip(frames, times):
+                # Get this frames' patchmap
+                patchmapfn = os.path.join(self.run_dir,'frame'+str(frame)+'_patchmap.ASC')
+                patchmap = np.loadtxt(patchmapfn, skiprows=6)
+                num_patches_frame = int(max(np.unique(patchmap)))
+                hist_df_sub = hist_df.loc[(hist_df['iter'] == str(int(_iter + 1)))]
+                patch_ids_frame = np.array(hist_df_sub['new2old'])[:num_patches_frame]
+                # Loop over all possible patch ids
+                for patch_new in np.arange(num_pops)[1:]:
+                    # If patch exists in this frame, find its centroid
+                    if (str(int(patch_new)) in patch_ids_frame) or ((_iter == 0) and (patch_new <= num_patches_frame)):
+                        # Find id in patchmap
+                        if frame == frames[0]:
+                            patch = int(patch_new)
+                        else:
+                            row = hist_df.loc[(hist_df['new2old']==str(int(patch_new))) & (hist_df['iter']==str(int(_iter+1)))]
+                            patch = int(row['patch'].values[0])
+                        patch_coords = np.argwhere(patchmap==patch)
+                        length = patch_coords.shape[0]
+                        sum_x = np.sum(patch_coords[:, 0])
+                        sum_y = np.sum(patch_coords[:, 1])
+                        x, y = sum_x/length, sum_y/length
+                    # Otherwise, set the centroid to the origin as a placeholder
+                    else:
+                        x, y = (0.0, 0.0)
+                    if frame == frames[0]:
+                        for b_i in range(self.burn_in_period):
+                            centroids['pop'+str(int(patch_new))].append([x,y])
+                    else:
+                        if self.fixed_habitat and (frame == self.habitat_frame):
+                            i_final = int(round((proj_info['tf']-proj_info['ti'])/self.timestep)) - 1
+                            for i in range(i_final):
+                                centroids['pop'+str(int(patch_new))].append([x,y])
+                        else:
+                            centroids['pop'+str(int(patch_new))].append([x,y])
+                _iter += 1
 
         # Write to results file
         resultsfn = os.path.join(self.run_dir, 'results.h5')
@@ -847,7 +904,8 @@ class Model:
         for pop_idx in range(num_pops):
             fire_probs['pop'+str(pop_idx)] = []
 
-        if self.fixed_habitat and self.fixed_fire:
+        #if self.fixed_habitat and self.fixed_fire:
+        if self.fixed_habitat and (self.burn_in_frame == self.habitat_frame): 
             mpfn = os.path.join(self.run_dir,'final.MP')
             with open(mpfn, 'r') as mp:
                 mpdata = mp.readlines()
@@ -885,7 +943,8 @@ class Model:
         for pop_idx in range(num_pops):
             Ks['pop'+str(pop_idx)] = []
 
-        if self.fixed_habitat and self.fixed_fire:
+        #if self.fixed_habitat and self.fixed_fire:
+        if self.fixed_habitat and (self.burn_in_frame == self.habitat_frame): 
             mpfn = os.path.join(self.run_dir,'final.MP')
             with open(mpfn, 'r') as mp:
                 mpdata = mp.readlines()
