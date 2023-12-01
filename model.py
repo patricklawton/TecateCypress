@@ -412,10 +412,6 @@ class Model:
                         ptc.write('0\n1\n'*2) #For catastrophes, will replace with .PCH files downstream
                         ptc.write('No\n\n') #Not sure what this is for
                         ptc.write(self.dist_metric+'\n')
-                        #if self.grid:
-                        #    ptc.write('2\n')
-                        #else:
-                        #    ptc.write('1\n')
                         num_maps = sum([True, self.grid, ((self.dispersal==False) and (frame!=frames[0]))])
                         ptc.write(str(num_maps)+'\n')
                         ptc.write('Habitat\n') #Name of SDM input map
@@ -457,14 +453,12 @@ class Model:
                         ptc.write('-End of file-\n')
 
                     # Write line(s) to .bat and .pdy files
-                    #ptc_path = os.path.join(self.run_dir, 'frame'+str(frame)+'.ptc')
                     batln = 'START /WAIT "title" "{}\SpatialData.exe" "{}" /RUN=YES\n'.format(proj_info['ramas_loc'], ptcfn)
                     bat.write(batln)
                     if (frame == frames[0]) and (self.dispersal == False):
                         # Line to extract the initial patchmap to refernce in subsequent frames
                         batln = 'python extract_patchmap_0.py {}\n'.format(self.run_dir.split('\\')[-1])
                         bat.write(batln)
-                    #if not self.fixed_habitat:
                     if self.fixed_habitat == False: #or (self.burn_in_frame != self.habitat_frame):
                         pdy.write('frame'+str(frame)+'.ptc\n')
                         if frame == frames[0]:
@@ -484,7 +478,6 @@ class Model:
                                 pdy.write((self.habitat_change+'\n')*3)
                 # Write final lines to .bat file
                 if (self.fixed_habitat == False) or (self.burn_in_frame != self.habitat_frame):
-                #if not self.fixed_habitat:
                     pdy_path = os.path.join(self.run_dir, 'patchdynamics.pdy')
                     batln = 'START /WAIT "title" "{}\HabDyn.exe" "{}" /RUN=YES\n'.format(proj_info['ramas_loc'], pdy_path)
                     bat.write(batln)
@@ -544,7 +537,6 @@ class Model:
             pg.click(x=left+0.5*width, y=top+0.75*height+190)
             time.sleep(0.1)
             pg.write(patchfn)
-            #time.sleep(2)
             pg.press('enter')
             # Wait for file to finish writing before continuing
             while not os.path.isfile(patchfn+'.ASC'):
@@ -563,7 +555,6 @@ class Model:
                         pass
                     rowlen = len(row.split())
 
-            #if self.fixed_habitat:
             if self.fixed_habitat and (self.burn_in_frame == self.habitat_frame):
                 # Remove existing metapop file if it exists
                 mpfn = os.path.join(self.run_dir,'final')
@@ -753,10 +744,6 @@ class Model:
                 for ln in mpdata:
                     mp.write(ln)
 
-
-        #else:
-        #    sys.exit("Dynamic fire with fixed SDM not implemented ")
-
         # Update run doc
         write_to_doc(self.docfn, 'fire_initialized', True)
 
@@ -863,7 +850,6 @@ class Model:
             times, frames = self.get_times_frames() 
 
             # Calculate the centroids of each patch
-            #for frame, t in enumerate(np.arange(proj_info['ti'],proj_info['tf'],self.timestep)):
             _iter = 0
             for frame, t in zip(frames, times):
                 # Get this frames' patchmap
@@ -937,7 +923,6 @@ class Model:
                 pchfn = os.path.join(self.run_dir, 'pop'+str(patch)+'.PCH')
                 with open(pchfn, 'r') as pchfile:
                     pch = pchfile.readlines()
-                #patch_probs = [float(ln.split()[-1]) for ln in pch]
                 for ln in pch:
                     fire_probs['pop'+str(patch)].append(float(ln.split()[-1]))
 
@@ -962,7 +947,6 @@ class Model:
         for pop_idx in range(num_pops):
             Ks['pop'+str(pop_idx)] = []
 
-        #if self.fixed_habitat and self.fixed_fire:
         if self.fixed_habitat and (self.burn_in_frame == self.habitat_frame): 
             mpfn = os.path.join(self.run_dir,'final.MP')
             with open(mpfn, 'r') as mp:
