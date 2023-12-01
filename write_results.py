@@ -11,6 +11,6 @@ for runnum in os.listdir(os.path.join(os.getcwd(),'runs')):
         overwrite = False
     run.write_abundance_stats(overwrite=overwrite)
     if run.spatial:
-        #run.write_patch_centroids(overwrite=overwrite)
+        run.write_patch_centroids(overwrite=overwrite)
         run.write_fire_prob(overwrite=overwrite)
-        #run.write_patch_K(overwrite=overwrite)
+        run.write_patch_K(overwrite=overwrite)

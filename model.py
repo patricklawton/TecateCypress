@@ -363,7 +363,7 @@ class Model:
         if (self.fixed_habitat == False) or (self.burn_in_frame != self.habitat_frame):
             fn = os.path.join(self.run_dir, 'final-hist.TXT')
             spatial_finished.append(os.path.isfile(fn))
-        spatial_finished = np.all(spatial_finished)
+        spatial_finished = False if overwrite else np.all(spatial_finished)
         if proj_info['verbose']: print('spatial_finished', spatial_finished)
 
         # Continue if spatial data incomplete or overwriting
@@ -391,10 +391,13 @@ class Model:
                         ptc.write('Landscape input file (4.1)\n')
                         ptc.write('\n'*5)
                         ptc.write(str(self.cell_length)+'\n')
+                        ptcln = '[Habitat]'
                         if self.__dict__.get('grid'):
-                            ptc.write('[Habitat]*[Grid]'+'\n'*2)
-                        else:
-                            ptc.write('[Habitat]'+'\n'*2)
+                            ptcln += '*[Grid]'
+                        if (self.fixed_habitat==False) and (self.dispersal==False) and (frame!=frames[0]):
+                            ptcln += '*gte([Initial],0.0000000001)'
+                        ptcln += '\n'*2
+                        ptc.write(ptcln)
                         ptc.write(str(self.hs_threshold)+'\n')
                         ptc.write(str(self.n_distance)+'\n')
                         ptc.write('Blue,False\n')
@@ -409,10 +412,12 @@ class Model:
                         ptc.write('0\n1\n'*2) #For catastrophes, will replace with .PCH files downstream
                         ptc.write('No\n\n') #Not sure what this is for
                         ptc.write(self.dist_metric+'\n')
-                        if self.grid:
-                            ptc.write('2\n')
-                        else:
-                            ptc.write('1\n')
+                        #if self.grid:
+                        #    ptc.write('2\n')
+                        #else:
+                        #    ptc.write('1\n')
+                        num_maps = sum([True, self.grid, ((self.dispersal==False) and (frame!=frames[0]))])
+                        ptc.write(str(num_maps)+'\n')
                         ptc.write('Habitat\n') #Name of SDM input map
                         if cropdir == 'crop0':
                             mapfn = os.path.join(os.getcwd(),'maps',cropdir,SDM_dir,self.spname+'_'+str(t)+'.asc')
@@ -433,6 +438,13 @@ class Model:
                             with open(gridfn, 'r') as grid: #Read num cols from asc
                                 line = grid.readline().split(' ')
                                 ptc.write(line[1]+'\n')
+                        if (self.dispersal == False) and (frame != frames[0]):
+                            ptc.write('Initial\n') #Name of initially occupied patch map
+                            initialfn = os.path.join(self.run_dir, 'frame{}_patchmap.ASC'.format(frames[0]))
+                            ptc.write(initialfn+'\n')
+                            ptc.write('ARC/INFO,ConstantMap\n')
+                            ptc.write('Blue\n')
+                            ptc.write(str(self.lr_coord[0]-self.ul_coord[0])+'\n')
                         '''This next line is a mess, I'll figure this out later
                         At least know 18 is the time since last fire, EX is the dens dep
                         I think most/all of these are things specified in the linked .mp'''
@@ -445,9 +457,13 @@ class Model:
                         ptc.write('-End of file-\n')
 
                     # Write line(s) to .bat and .pdy files
-                    ptc_path = os.path.join(self.run_dir, 'frame'+str(frame)+'.ptc')
-                    batln = 'START /WAIT "title" "{}\SpatialData.exe" "{}" /RUN=YES\n'.format(proj_info['ramas_loc'], ptc_path)
+                    #ptc_path = os.path.join(self.run_dir, 'frame'+str(frame)+'.ptc')
+                    batln = 'START /WAIT "title" "{}\SpatialData.exe" "{}" /RUN=YES\n'.format(proj_info['ramas_loc'], ptcfn)
                     bat.write(batln)
+                    if (frame == frames[0]) and (self.dispersal == False):
+                        # Line to extract the initial patchmap to refernce in subsequent frames
+                        batln = 'python extract_patchmap_0.py {}\n'.format(self.run_dir.split('\\')[-1])
+                        bat.write(batln)
                     #if not self.fixed_habitat:
                     if self.fixed_habitat == False: #or (self.burn_in_frame != self.habitat_frame):
                         pdy.write('frame'+str(frame)+'.ptc\n')
@@ -526,7 +542,9 @@ class Model:
             # Export the patchmap ASC file
             pg.click(x=left+0.5*width, y=top+0.75*height)
             pg.click(x=left+0.5*width, y=top+0.75*height+190)
+            time.sleep(0.1)
             pg.write(patchfn)
+            #time.sleep(2)
             pg.press('enter')
             # Wait for file to finish writing before continuing
             while not os.path.isfile(patchfn+'.ASC'):
@@ -555,6 +573,7 @@ class Model:
                 pg.click(x=left+0.5*width, y=top+0.75*height)
                 pg.click(x=left+0.5*width, y=top+0.75*height+150)
                 pg.write(mpfn)
+                time.sleep(0.25)
                 pg.press('enter')
                 # Wait for file to write before continuing
                 while not os.path.isfile(patchfn+'.ASC'):

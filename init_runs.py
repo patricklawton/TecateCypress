@@ -37,7 +37,7 @@ if run_info['spatial']:
     run_info['habitat_change'] = 'same until next' #Assume the same for K, F, S and between all frames
     run_info['dispersal'] = False
     # Decide if running on a fixed fire prob and/or habitat map
-    run_info['fixed_fire'] = True
+    run_info['fixed_fire'] = False
     if run_info['fixed_fire']:
         # Frame here refers to the FDM period, e.g. frame 0 -> 1980-2009
         run_info['fire_frame'] = 0
@@ -56,7 +56,7 @@ climate_model = ['cnrm'] #cnrm, hades, None
 climate_scenario = ['rcp45'] #rcp45, rcp85, None
 
 # Whether or not to overwrite existing data
-overwrite = False
+overwrite = True
 
 # Initialize runs
 if run_info['spatial']:
