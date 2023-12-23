@@ -22,7 +22,7 @@ run_info['rel_S'] = 1 #Relative survival
 run_info['min_patch_hs'] = 5
 run_info['burn_in_period'] = 30 #In timesteps
 # Boolean for spatial simulations and additional parameters
-run_info['spatial'] = True
+run_info['spatial'] = False
 if run_info['spatial']:
     run_info['ul_coord'] = [1500, 2800] #Upper-left corner, in pixels relative to upper left corner of full SDM
     run_info['lr_coord'] = [2723, 3905] #Lower-right corner
@@ -37,18 +37,19 @@ if run_info['spatial']:
     run_info['habitat_change'] = 'same until next' #Assume the same for K, F, S and between all frames
     run_info['dispersal'] = False
     # Decide if running on a fixed fire prob and/or habitat map
-    run_info['fixed_fire'] = False
+    run_info['fixed_fire'] = True
     if run_info['fixed_fire']:
         # Frame here refers to the FDM period, e.g. frame 0 -> 1980-2009
         run_info['fire_frame'] = 0
-    run_info['fixed_habitat'] = False
+    run_info['fixed_habitat'] = True
     if run_info['fixed_habitat']:
         run_info['burn_in_frame'] = 0
-        run_info['habitat_frame'] = 1
+        run_info['habitat_frame'] = 0
 else:
     # Scan over fire probabilities with correponding FRIs from 5 to 80 years
-    fire_probs = run_info['timestep'] / np.arange(4,142,2)
-    #fire_probs = [2/40]
+    fire_probs = run_info['timestep'] / np.arange(2,142,2)
+    fire_probs = np.concatenate(([0.0], fire_probs))
+    #fire_probs = [0.3]
 
 # Varying model parameters
 land_use = ['LU'] #RAW, LU, LULUC
@@ -56,7 +57,7 @@ climate_model = ['cnrm'] #cnrm, hades, None
 climate_scenario = ['rcp45'] #rcp45, rcp85, None
 
 # Whether or not to overwrite existing data
-overwrite = True
+overwrite = False
 
 # Initialize runs
 if run_info['spatial']:

@@ -1,7 +1,6 @@
 import os
 import json
-from model import Model
-from model import write_to_doc
+from model import Model, write_to_doc, check_for_results
 
 def check_for_results(inst):
     res_check = False
@@ -30,7 +29,7 @@ with open(batfn, 'w') as bat:
             info = json.load(info_file)
             inst = Model(**info)
             if inst.spatial:
-                if rundir in ['0', '74']:
+                if rundir in ['76']:
                     overwrite = True 
                 else:
                     overwrite = False

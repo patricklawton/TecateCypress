@@ -42,6 +42,16 @@ def read_from_doc(doc_fn, key):
             if proj_info['verbose']: print("{} key not found in run document".format(key))
         return val
 
+def check_for_results(run):
+    res_check = False
+    mpfn = os.path.join(run.run_dir, 'final.mp')
+    with open(mpfn, 'r') as mp:
+        for line in mp:
+            if 'Simulation results' in line:
+                res_check = True
+                break
+    return res_check
+
 # For copying uncropped maps to crop directory
 def crop_and_copy_maps(mapsdir, modeldir, ul_coord, lr_coord):
     # Get list of maps to crop (only .asc files) 
@@ -146,7 +156,11 @@ class Model:
                         run_exists = True
                         run_num = d
             if run_exists == False:
-                run_num = str(d+1)
+                gap_indices = [rundirs[i]+1 for i in range(len(rundirs)-1) if rundirs[i+1]-rundirs[i] > 1]
+                if len(gap_indices) > 0:
+                    run_num = gap_indices[0]
+                else:
+                    run_num = str(d+1)
         run_dir = os.path.join(os.getcwd(),'runs',str(run_num))
         if proj_info['verbose']: 
             print('using existing run: {}, run_num={}, run_dir={}'.format(run_exists,run_num,run_dir))
@@ -231,9 +245,13 @@ class Model:
             ln_idx = 44 #Population 1 always appears on this line
             ln_splt = mpdata[ln_idx].split(',')
             # Update the initial abundance
-            ln_splt[3] = str(1000 * self.K_cell * self.init_ab_frac)
+            num_cells = 1000
+            ln_splt[3] = str(num_cells * self.K_cell * self.init_ab_frac)
+            ln_splt[5] = str(1.0)
+            ln_splt[6] = str(num_cells * self.K_cell)
             # Update the fire probability
             ln_splt[12] = str(self.fire_prob) 
+            ln_splt[21] = str(1.0) 
             mpdata[ln_idx] = ','.join(ln_splt)
             # Rewrite mp file
             with open(mpfn, 'w') as mp:
@@ -752,6 +770,7 @@ class Model:
         abund_keys = ['mean','stdev','min','max']
 
         # Check for previous results, delete if overwriting
+        if not check_for_results(self): return
         check_results = self.check_results('abundance_stats_written', abund_keys, overwrite)
         if not check_results: return 
 
