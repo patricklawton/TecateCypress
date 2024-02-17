@@ -32,9 +32,9 @@ priors = [
     Uniform(tensor([0.75]), tensor([2.5])),
     # epsilon_r
     Uniform(tensor([0.75]), tensor([2.])),
-    Uniform(tensor([0.1]), tensor([2.5])),
+    Uniform(tensor([0.1]), tensor([2.5]))#,
     # N_1(0)
-    Uniform(tensor([200.]), tensor([16000.]))
+    #Uniform(tensor([200.]), tensor([16000.]))
 ]
 prior = MultipleIndependent(priors)
 
@@ -47,7 +47,10 @@ def simulator(params):
     eta = params[11]
     beta_r = params[12]
     sigm_r = params[13]; tau_r = params[14]
-    N_1_0 = params[15]
+    #N_1_0 = params[15]
+
+    # For generating env stochasticity multipliers
+    rng = np.random.default_rng()
 
     # Initialize empty results array
     results = np.empty(3)
@@ -55,6 +58,7 @@ def simulator(params):
 
     t_vec = np.arange(1,6)
     N_vec = np.zeros(len(t_vec))
+    N_1_0 = rng.integers(200,1400)
     N_vec[0] = N_1_0
     N_vec = N_vec.astype(int)
     # print(N_vec, '\n')
@@ -63,9 +67,6 @@ def simulator(params):
     r_tstar = np.exp(-beta_r*t_vec)
     K_a = K_seedling * np.exp(-kappa*t_vec) + K_adult
     nu_a = alph_nu * np.exp(-beta_nu*t_vec) + gamm_nu
-
-    # For generating env stochasticity multipliers
-    rng = np.random.default_rng()
 
     for age_i, t in enumerate(t_vec[:-1]):
         # print('t={}'.format(t))
@@ -108,9 +109,9 @@ potential_fn, parameter_transform = likelihood_estimator_based_potential(
 
 mcmc_parameters = dict(
     method = "slice_np_vectorized",
-    num_chains=1,
+    num_chains=50,
     thin=10,
-    warmup_steps=50,
+    warmup_steps=100,
     init_strategy="proposal"#,
     #init_width=0.1
 )
@@ -118,5 +119,6 @@ posterior = MCMCPosterior(
     potential_fn, proposal=prior, **mcmc_parameters
     #theta_transform=parameter_transform
 )
-num_samples = 50000
+num_samples = 30000
 nle_samples = posterior.sample(sample_shape=(num_samples,))
+torch.save(nle_samples, 'posterior_samples.pkl')
