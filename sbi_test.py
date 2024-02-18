@@ -58,7 +58,7 @@ def simulator(params):
 
     t_vec = np.arange(1,6)
     N_vec = np.zeros(len(t_vec))
-    N_1_0 = rng.integers(200,1400)
+    N_1_0 = rng.integers(200,14000)
     N_vec[0] = N_1_0
     N_vec = N_vec.astype(int)
     # print(N_vec, '\n')
@@ -109,16 +109,18 @@ potential_fn, parameter_transform = likelihood_estimator_based_potential(
 
 mcmc_parameters = dict(
     method = "slice_np_vectorized",
-    num_chains=50,
+    num_chains=20,
     thin=10,
-    warmup_steps=100,
-    init_strategy="proposal"#,
+    warmup_steps=50,
+    init_strategy="proposal"
     #init_width=0.1
 )
 posterior = MCMCPosterior(
-    potential_fn, proposal=prior, **mcmc_parameters
-    #theta_transform=parameter_transform
+    potential_fn, proposal=prior,
+    #theta_transform=parameter_transform,
+    **mcmc_parameters
 )
-num_samples = 30000
+#num_samples = 30000
+num_samples = 500
 nle_samples = posterior.sample(sample_shape=(num_samples,))
-torch.save(nle_samples, 'posterior_samples.pkl')
+torch.save(nle_samples, 'posterior_samples_test.pkl')
