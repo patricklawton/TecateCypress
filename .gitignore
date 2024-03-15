@@ -13,3 +13,6 @@ test*
 *.pch
 sbi-logs/*
 script_pseudo.txt
+*copy*
+*.pkl
+*log*
