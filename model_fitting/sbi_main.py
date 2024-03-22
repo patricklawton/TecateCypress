@@ -16,7 +16,7 @@ from simulator import simulator
 overwrite_estimator = True
 
 defaults = np.array([0.2, 0.8, 0.45])
-ranges = np.array([[0.01, 0.6], [0.1,0.9], [0.05,0.95]])
+ranges = np.array([[0.01, 0.6], [0.1,1.7], [0.05,0.95]])
 priors = [
     # alph_m
     Uniform(tensor([ranges[0][0]]), tensor([ranges[0][1]])),
@@ -32,7 +32,7 @@ simulator = utils.user_input_checks.process_simulator(simulator, prior, is_numpy
 
 if (os.path.isfile('likelihood_estimator.pkl') == False) or overwrite_estimator:
     inferer = SNLE(prior, show_progress_bars=True, density_estimator="mdn")
-    theta, x = simulate_for_sbi(simulator, proposal=prior, num_simulations=2000)
+    theta, x = simulate_for_sbi(simulator, proposal=prior, num_simulations=3000)
     inferer = inferer.append_simulations(theta, x)
     likelihood_estimator = inferer.train()
     # Write likelihood estimator to file
@@ -62,6 +62,6 @@ posterior = MCMCPosterior(
     #theta_transform=parameter_transform,
     **mcmc_parameters
 )
-num_samples = 300
+num_samples = 500
 nle_samples = posterior.sample(sample_shape=(num_samples,))
 torch.save(nle_samples, 'posterior_samples.pkl')

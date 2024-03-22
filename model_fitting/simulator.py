@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+from scipy.stats import moment
 
 fixed = {'beta_m': 0.26, 'gamm_m': 0.01, 'tau_m': 0.01, 'beta_nu': 0.1, 'gamm_nu': 0.1,
          'K_seedling': 60000, 'kappa': 0.4, 'K_adult': 10000, 'eta': 0.02, 'mu_m': 0.0}
@@ -62,7 +63,8 @@ def simulator(params):
         if (np.ma.is_masked(N_vec)) and (sum(np.ma.getmask(N_vec)[:,0]) > 3):
             #print('invalid sim')
             results[0:res_len] = np.ones(len(census_yrs)-1)*10
-            results[res_len:res_len*2] = np.ones(len(census_yrs)-1)*-1
+            #results[res_len:res_len*2] = np.ones(len(census_yrs)-1)*-1
+            results[res_len:res_len*2] = np.ones(len(census_yrs)-1)*20
             results[res_len*2:res_len*3] = np.ones(len(census_yrs)-1)*20
             break
         elif t+1 in census_yrs:
@@ -71,8 +73,10 @@ def simulator(params):
             census_final = N_vec.sum(axis=1)
             mortality = ((census_init - census_final) / census_init) / delta_t
             results[res_i] = np.mean(mortality)
-            results[res_len + res_i] = np.min(mortality)
-            results[res_len*2 + res_i] = np.max(mortality)
+            #results[res_len + res_i] = np.min(mortality)
+            #results[res_len*2 + res_i] = np.max(mortality)
+            results[res_len + res_i] = moment(mortality, moment=2)
+            results[res_len*2 + res_i] = moment(mortality, moment=3)
             # Reset for next census
             res_i += 1
             census_init = census_final
