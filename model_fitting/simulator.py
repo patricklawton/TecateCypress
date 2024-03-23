@@ -18,7 +18,6 @@ def simulator(params):
 
     # Initialize empty results array
     census_yrs = np.array([1,2,6,8,11,14])
-    #results = np.empty((3, len(census_yrs)-1))
     res_len = len(census_yrs) - 1
     results = np.empty(res_len * 3)
     res_i = 0
@@ -61,11 +60,11 @@ def simulator(params):
                 #print(N_vec)
         # If enough populations extirpated, consider parameter set invalid
         if (np.ma.is_masked(N_vec)) and (sum(np.ma.getmask(N_vec)[:,0]) > 3):
-            #print('invalid sim')
             results[0:res_len] = np.ones(len(census_yrs)-1)*10
-            #results[res_len:res_len*2] = np.ones(len(census_yrs)-1)*-1
+            results[res_len:res_len*2] = np.ones(len(census_yrs)-1)*-1
             results[res_len:res_len*2] = np.ones(len(census_yrs)-1)*20
-            results[res_len*2:res_len*3] = np.ones(len(census_yrs)-1)*20
+            #results[res_len*2:res_len*3] = np.ones(len(census_yrs)-1)*20
+            #results[res_len:res_len*2 + 1] = np.ones(len(census_yrs))*20
             break
         elif t+1 in census_yrs:
             # Calculate and store mortality stats
@@ -73,12 +72,21 @@ def simulator(params):
             census_final = N_vec.sum(axis=1)
             mortality = ((census_init - census_final) / census_init) / delta_t
             results[res_i] = np.mean(mortality)
+            ### min/max
             #results[res_len + res_i] = np.min(mortality)
             #results[res_len*2 + res_i] = np.max(mortality)
+            ### moments
             results[res_len + res_i] = moment(mortality, moment=2)
             results[res_len*2 + res_i] = moment(mortality, moment=3)
+            #if (t+1) == 2:
+            #    skew_t2 = moment(mortality, moment=3)   
+            ### percentiles
+            #nan_mort = np.ma.filled(mortality, np.nan)
+            #results[res_len + res_i] = np.nanpercentile(nan_mort, 20)
+            #results[res_len*2 + res_i] = np.nanpercentile(nan_mort, 80)
             # Reset for next census
             res_i += 1
             census_init = census_final
             census_yr_init = t+1
+    #results[res_len*2] = skew_t2
     return results

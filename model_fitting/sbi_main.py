@@ -12,8 +12,41 @@ import pickle
 import pandas as pd
 import os
 from simulator import simulator
+from scipy.stats import moment
 
+overwrite_observations = True
 overwrite_estimator = True
+
+if (os.path.isfile('observations/observations.npy') == False) or overwrite_observations:
+    # First, compute and store summary statistics of observed data
+    census_yrs = [2,6,8,11,14]
+    fn = 'observations/mortality.csv'
+    mortality_o = pd.read_csv(fn, header=None)
+    mortality_o[0] = [round(v) for v in mortality_o[0]]
+    ### avg, min, max
+    #mort_o = mortality_o
+    #res_len = len(census_yrs)
+    #observations = np.empty(res_len*3)
+    #observations[0:res_len] = [mort_o[mort_o[0] == yr][1].to_numpy().mean() for yr in census_yrs]
+    #observations[res_len:res_len*2] = [mort_o[mort_o[0] == yr][1].to_numpy().min() for yr in census_yrs]
+    #observations[res_len*2:res_len*3] = [mort_o[mort_o[0] == yr][1].to_numpy().max() for yr in census_yrs]
+    ### first 3 moments
+    m1 = []; m2 = []; m3 = []
+    for t_i, t in enumerate(census_yrs):
+        mort_sub = mortality_o[mortality_o[0]==t][1].to_numpy()
+        est_mean = np.mean(mort_sub)
+        m1.append(est_mean)
+        m2.append(moment(mort_sub, moment=2))
+        m3.append(moment(mort_sub, moment=3))
+    observations = np.concatenate((m1,m2,m3))
+    ### mean, 10th, 90th percentiles
+    #res_len = len(census_yrs)
+    #observations = np.empty(res_len*3)
+    #mort_subs = [mortality_o[mortality_o[0]==t][1].to_numpy() for t in census_yrs]
+    #observations[0:res_len] = [np.mean(ms) for ms in mort_subs] 
+    #observations[res_len:res_len*2] = [np.percentile(ms, 20) for ms in mort_subs]
+    #observations[res_len*2:res_len*3] = [np.percentile(ms, 80) for ms in mort_subs]
+    np.save('observations/observations.npy', observations)
 
 defaults = np.array([0.2, 0.8, 0.45])
 ranges = np.array([[0.01, 0.6], [0.1,1.7], [0.05,0.95]])
@@ -32,7 +65,7 @@ simulator = utils.user_input_checks.process_simulator(simulator, prior, is_numpy
 
 if (os.path.isfile('likelihood_estimator.pkl') == False) or overwrite_estimator:
     inferer = SNLE(prior, show_progress_bars=True, density_estimator="mdn")
-    theta, x = simulate_for_sbi(simulator, proposal=prior, num_simulations=3000)
+    theta, x = simulate_for_sbi(simulator, proposal=prior, num_simulations=500000)
     inferer = inferer.append_simulations(theta, x)
     likelihood_estimator = inferer.train()
     # Write likelihood estimator to file
@@ -62,6 +95,6 @@ posterior = MCMCPosterior(
     #theta_transform=parameter_transform,
     **mcmc_parameters
 )
-num_samples = 500
+num_samples = 10000
 nle_samples = posterior.sample(sample_shape=(num_samples,))
 torch.save(nle_samples, 'posterior_samples.pkl')
