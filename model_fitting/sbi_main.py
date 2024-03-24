@@ -14,7 +14,7 @@ import os
 from simulator import simulator
 from scipy.stats import moment
 
-overwrite_observations = True
+overwrite_observations = False
 overwrite_estimator = True
 
 if (os.path.isfile('observations/observations.npy') == False) or overwrite_observations:
