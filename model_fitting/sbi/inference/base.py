@@ -490,7 +490,6 @@ def simulate_for_sbi(
     Returns: Sampled parameters $\theta$ and simulation-outputs $x$.
     """
 
-    print("HERE!!!")
     theta = proposal.sample((num_simulations,))
 
     x = simulate_in_batches(
