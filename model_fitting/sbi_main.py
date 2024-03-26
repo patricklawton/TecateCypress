@@ -14,8 +14,8 @@ import os
 from simulator import simulator
 from scipy.stats import moment
 
-overwrite_observations = True
-overwrite_estimator = False
+overwrite_observations = False
+overwrite_estimator = True
 
 if (os.path.isfile('observations/observations.npy') == False) or overwrite_observations:
     # First, compute and store summary statistics of observed data
@@ -49,14 +49,17 @@ if (os.path.isfile('observations/observations.npy') == False) or overwrite_obser
     np.save('observations/observations.npy', observations)
 
 defaults = np.array([0.2, 0.8, 0.45])
-ranges = np.array([[0.01, 0.6], [0.1,1.7], [0.05,3.5]])
+ranges = np.array([[0.01, 0.6], [0.01, 0.9], [0.1,1.7], [0.05,3.5]])
 priors = [
     # alph_m
     Uniform(tensor([ranges[0][0]]), tensor([ranges[0][1]])),
-    # sigm_m
+    # beta_m
+    ###FIX
     Uniform(tensor([ranges[1][0]]), tensor([ranges[1][1]])),
-    # alph_nu
+    # sigm_m
     Uniform(tensor([ranges[2][0]]), tensor([ranges[2][1]])),
+    # alph_nu
+    Uniform(tensor([ranges[3][0]]), tensor([ranges[3][1]])),
 ]
 prior = MultipleIndependent(priors)
 
@@ -95,6 +98,6 @@ posterior = MCMCPosterior(
     #theta_transform=parameter_transform,
     **mcmc_parameters
 )
-num_samples = 50000
+num_samples = 10000
 nle_samples = posterior.sample(sample_shape=(num_samples,))
 torch.save(nle_samples, 'posterior_samples.pkl')

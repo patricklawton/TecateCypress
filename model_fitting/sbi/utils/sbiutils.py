@@ -717,10 +717,7 @@ def check_transform(
     ), """Mismatch between transformed and untransformed space. Note that you cannot
     use a transforms when using a MultipleIndependent prior with a Dirichlet prior."""
 
-    print(theta)
-    print(transform(theta_unconstrained))
     theta = theta.type(torch.float64)
-    print(theta)
     assert torch.allclose(
         theta, transform(theta_unconstrained).double(), atol=atol  # type: ignore
     ), "Original and re-transformed parameters must be close to each other."

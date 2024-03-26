@@ -2,14 +2,14 @@ import numpy as np
 import pandas as pd
 from scipy.stats import moment
 
-fixed = {'beta_m': 0.26, 'gamm_m': 0.01, 'tau_m': 0.01, 'beta_nu': 0.1, 'gamm_nu': 0.1,
+fixed = {'gamm_m': 0.01, 'tau_m': 0.01, 'beta_nu': 0.1, 'gamm_nu': 0.1,
          'K_seedling': 60000, 'kappa': 0.4, 'K_adult': 10000, 'eta': 0.02, 'mu_m': 0.0}
 
 def simulator(params):
     # Assign parameter labels
-    alph_m = params[0]; beta_m = fixed['beta_m']; gamm_m = fixed['gamm_m']
-    sigm_m = params[1]; tau_m = fixed['tau_m']
-    alph_nu = params[2]; beta_nu = fixed['beta_nu']; gamm_nu = fixed['gamm_nu']
+    alph_m = params[0]; beta_m = params[1]; gamm_m = fixed['gamm_m']
+    sigm_m = params[2]; tau_m = fixed['tau_m']
+    alph_nu = params[3]; beta_nu = fixed['beta_nu']; gamm_nu = fixed['gamm_nu']
     K_seedling = fixed['K_seedling']; kappa = fixed['kappa']; K_adult = fixed['K_adult']
     eta = fixed['eta']; mu_m = fixed['mu_m']
 
