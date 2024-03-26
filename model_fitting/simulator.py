@@ -3,7 +3,7 @@ import pandas as pd
 from scipy.stats import moment
 
 fixed = {'gamm_m': 0.01, 'tau_m': 0.01, 'beta_nu': 0.1, 'gamm_nu': 0.1,
-         'K_seedling': 60000, 'kappa': 0.4, 'K_adult': 10000, 'eta': 0.02, 'mu_m': 0.0}
+         'K_seedling': 60000, 'kappa': 0.4, 'K_adult': 16000, 'eta': 0.02, 'mu_m': 0.0}
 
 def simulator(params):
     # Assign parameter labels
@@ -34,7 +34,8 @@ def simulator(params):
     census_yr_init = t_vec[0]
 
     m_a = alph_m * np.exp(-beta_m*t_vec) + gamm_m
-    K_a = K_seedling * np.exp(-kappa*t_vec) + K_adult
+    #K_a = K_seedling * np.exp(-kappa*t_vec) + K_adult
+    K_a = K_adult
     nu_a = alph_nu * np.exp(-beta_nu*t_vec) + gamm_nu
 
     for age_i, t in enumerate(t_vec[:-1]):

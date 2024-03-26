@@ -49,18 +49,27 @@ if (os.path.isfile('observations/observations.npy') == False) or overwrite_obser
     np.save('observations/observations.npy', observations)
 
 defaults = np.array([0.2, 0.8, 0.45])
-ranges = np.array([[0.01, 0.6], [0.01, 0.9], [0.1,1.7], [0.05,3.5]])
-priors = [
-    # alph_m
-    Uniform(tensor([ranges[0][0]]), tensor([ranges[0][1]])),
-    # beta_m
-    ###FIX
-    Uniform(tensor([ranges[1][0]]), tensor([ranges[1][1]])),
-    # sigm_m
-    Uniform(tensor([ranges[2][0]]), tensor([ranges[2][1]])),
-    # alph_nu
-    Uniform(tensor([ranges[3][0]]), tensor([ranges[3][1]])),
-]
+ranges = np.array([
+                   # alph_m
+                   [0.01, 0.6], 
+                   # beta_m
+                   [0.01, 0.9], 
+                   # sigm_m
+                   [0.1,1.7], 
+                   # alph_nu
+                   [0.05,3.5]
+])
+#priors = [
+#    # alph_m
+#    Uniform(tensor([ranges[0][0]]), tensor([ranges[0][1]])),
+#    # beta_m
+#    Uniform(tensor([ranges[1][0]]), tensor([ranges[1][1]])),
+#    # sigm_m
+#    Uniform(tensor([ranges[2][0]]), tensor([ranges[2][1]])),
+#    # alph_nu
+#    Uniform(tensor([ranges[3][0]]), tensor([ranges[3][1]])),
+#]
+priors = [Uniform(tensor([rng[0]]), tensor([rng[1]])) for rng in ranges]
 prior = MultipleIndependent(priors)
 
 prior, theta_numel, prior_returns_numpy = utils.user_input_checks.process_prior(prior)
@@ -68,7 +77,7 @@ simulator = utils.user_input_checks.process_simulator(simulator, prior, is_numpy
 
 if (os.path.isfile('likelihood_estimator.pkl') == False) or overwrite_estimator:
     inferer = SNLE(prior, show_progress_bars=True, density_estimator="mdn")
-    theta, x = simulate_for_sbi(simulator, proposal=prior, num_simulations=250000)
+    theta, x = simulate_for_sbi(simulator, proposal=prior, num_simulations=200000)
     inferer = inferer.append_simulations(theta, x)
     likelihood_estimator = inferer.train()
     # Write likelihood estimator to file
