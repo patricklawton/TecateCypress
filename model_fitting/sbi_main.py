@@ -15,7 +15,7 @@ from simulator import simulator
 from scipy.stats import moment
 
 overwrite_observations = False
-overwrite_estimator = True
+overwrite_estimator = False
 
 if (os.path.isfile('observations/observations.npy') == False) or overwrite_observations:
     # First, compute and store summary statistics of observed data
@@ -48,7 +48,6 @@ if (os.path.isfile('observations/observations.npy') == False) or overwrite_obser
     #observations[res_len*2:res_len*3] = [np.percentile(ms, 80) for ms in mort_subs]
     np.save('observations/observations.npy', observations)
 
-defaults = np.array([0.2, 0.8, 0.45])
 ranges = np.array([
                    # alph_m
                    [0.01, 0.6], 
@@ -57,18 +56,8 @@ ranges = np.array([
                    # sigm_m
                    [0.1,1.7], 
                    # alph_nu
-                   [0.05,3.5]
+                   [0.01,2.]
 ])
-#priors = [
-#    # alph_m
-#    Uniform(tensor([ranges[0][0]]), tensor([ranges[0][1]])),
-#    # beta_m
-#    Uniform(tensor([ranges[1][0]]), tensor([ranges[1][1]])),
-#    # sigm_m
-#    Uniform(tensor([ranges[2][0]]), tensor([ranges[2][1]])),
-#    # alph_nu
-#    Uniform(tensor([ranges[3][0]]), tensor([ranges[3][1]])),
-#]
 priors = [Uniform(tensor([rng[0]]), tensor([rng[1]])) for rng in ranges]
 prior = MultipleIndependent(priors)
 
@@ -77,7 +66,7 @@ simulator = utils.user_input_checks.process_simulator(simulator, prior, is_numpy
 
 if (os.path.isfile('likelihood_estimator.pkl') == False) or overwrite_estimator:
     inferer = SNLE(prior, show_progress_bars=True, density_estimator="mdn")
-    theta, x = simulate_for_sbi(simulator, proposal=prior, num_simulations=200000)
+    theta, x = simulate_for_sbi(simulator, proposal=prior, num_simulations=300000)
     inferer = inferer.append_simulations(theta, x)
     likelihood_estimator = inferer.train()
     # Write likelihood estimator to file
@@ -107,6 +96,6 @@ posterior = MCMCPosterior(
     #theta_transform=parameter_transform,
     **mcmc_parameters
 )
-num_samples = 10000
+num_samples = 30000
 nle_samples = posterior.sample(sample_shape=(num_samples,))
 torch.save(nle_samples, 'posterior_samples.pkl')
