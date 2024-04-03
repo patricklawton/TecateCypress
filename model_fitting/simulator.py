@@ -49,42 +49,36 @@ def simulator(params):
             # Draw env. stoch. terms and combine for final survival prob.
             epsilon_m = rng.lognormal(np.zeros_like(t_vec)+mu_m, sigm_m*np.exp(-tau_m*t_vec))
             survival_probs = np.exp(-m_a_N * epsilon_m)
-            num_survivors = rng.binomial(N_pop, survival_probs)
-            num_survivors = np.roll(num_survivors, 1)
-            # Finally, update abundances
-            N_vec[pop_i] = num_survivors
-            # Note if population was extirpated
-            if np.sum(num_survivors) == 0:
-                #print('pop {} extirpated'.format(pop_i))
-                N_vec[pop_i, :] = np.ma.masked
-                census_init[pop_i] = np.ma.masked
-                #print(N_vec)
+            try:
+                # Ensure survival probs are feasible, otherwise mark sim invalid 
+                assert(np.all(survival_probs >= 0) and np.all(survival_probs <= 1))
+                num_survivors = rng.binomial(N_pop, survival_probs)
+                num_survivors = np.roll(num_survivors, 1)
+                # Update abundances
+                N_vec[pop_i] = num_survivors
+                # Note if population was extirpated
+                if np.sum(num_survivors) == 0:
+                    N_vec[pop_i, :] = np.ma.masked
+                    census_init[pop_i] = np.ma.masked
+            except:
+                N_vec[:, :] = np.ma.masked
         # If enough populations extirpated, consider parameter set invalid
         if (np.ma.is_masked(N_vec)) and (sum(np.ma.getmask(N_vec)[:,0]) > 3):
-            results[0:res_len] = np.ones(len(census_yrs)-1)*10
-            results[res_len:res_len*2] = np.ones(len(census_yrs)-1)*-1
-            results[res_len:res_len*2] = np.ones(len(census_yrs)-1)*20
-            #results[res_len*2:res_len*3] = np.ones(len(census_yrs)-1)*20
-            #results[res_len:res_len*2 + 1] = np.ones(len(census_yrs))*20
+            results[0:res_len] = np.ones(len(census_yrs)-1)*np.nan
+            results[res_len:res_len*2] = np.ones(len(census_yrs)-1)*np.nan
+            results[res_len*2:res_len*3] = np.ones(len(census_yrs)-1)*np.nan
             break
         elif t+1 in census_yrs:
             # Calculate and store mortality stats
             delta_t = (t+1) - census_yr_init
             census_final = N_vec.sum(axis=1)
             mortality = ((census_init - census_final) / census_init) / delta_t
+            # Use the first three moments
             results[res_i] = np.mean(mortality)
-            ### min/max
-            #results[res_len + res_i] = np.min(mortality)
-            #results[res_len*2 + res_i] = np.max(mortality)
-            ### moments
             results[res_len + res_i] = moment(mortality, moment=2)
             results[res_len*2 + res_i] = moment(mortality, moment=3)
             #if (t+1) == 2:
             #    skew_t2 = moment(mortality, moment=3)   
-            ### percentiles
-            #nan_mort = np.ma.filled(mortality, np.nan)
-            #results[res_len + res_i] = np.nanpercentile(nan_mort, 20)
-            #results[res_len*2 + res_i] = np.nanpercentile(nan_mort, 80)
             # Reset for next census
             res_i += 1
             census_init = census_final

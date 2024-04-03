@@ -6,7 +6,7 @@ from sbi.inference import likelihood_estimator_based_potential, MCMCPosterior
 from sbi import utils as utils
 from sbi import analysis as analysis
 from torch.distributions import Uniform
-from sbi.utils import MultipleIndependent
+from sbi.utils import MultipleIndependent, RestrictionEstimator
 from torch import tensor
 import pickle
 import pandas as pd
@@ -15,8 +15,9 @@ from simulator import simulator
 from scipy.stats import moment
 
 overwrite_observations = False
-overwrite_training = False
-overwrite_posterior = False
+overwrite_prior = True
+overwrite_training = True
+overwrite_posterior = True
 
 if (os.path.isfile('observations/observations.npy') == False) or overwrite_observations:
     # First, compute and store summary statistics of observed data
@@ -35,6 +36,32 @@ if (os.path.isfile('observations/observations.npy') == False) or overwrite_obser
     observations = np.concatenate((m1,m2,m3))
     np.save('observations/observations.npy', observations)
 
+if (os.path.isfile('prior.pkl') == False) or overwrite_prior:
+    ranges = np.array([
+                       # alph_m
+                       [0.01, 0.6], 
+                       # beta_m
+                       [0.01, 0.9], 
+                       # sigm_m
+                       [0.1,1.7], 
+                       # alph_nu
+                       [0.01,2.]
+    ])
+    priors = [Uniform(tensor([rng[0]]), tensor([rng[1]])) for rng in ranges]
+    prior = MultipleIndependent(priors)
+    prior, theta_numel, prior_returns_numpy = utils.user_input_checks.process_prior(prior)
+    simulator = utils.user_input_checks.process_simulator(simulator, prior, is_numpy_simulator=True)
+    theta, x = simulate_for_sbi(simulator, proposal=prior, num_simulations=10000, num_workers=8)
+    restriction_estimator = RestrictionEstimator(prior=prior)
+    restriction_estimator.append_simulations(theta, x)
+    classifier = restriction_estimator.train()
+    prior = restriction_estimator.restrict_prior()
+    with open("prior.pkl", "wb") as handle:
+        pickle.dump(prior, handle)
+else:
+    with open("prior.pkl", "rb") as handle:
+        prior = pickle.load(handle)
+
 ranges = np.array([
                    # alph_m
                    [0.01, 0.6], 
@@ -47,13 +74,12 @@ ranges = np.array([
 ])
 priors = [Uniform(tensor([rng[0]]), tensor([rng[1]])) for rng in ranges]
 prior = MultipleIndependent(priors)
-
 prior, theta_numel, prior_returns_numpy = utils.user_input_checks.process_prior(prior)
 simulator = utils.user_input_checks.process_simulator(simulator, prior, is_numpy_simulator=True)
 inferer = SNPE(prior, show_progress_bars=True, density_estimator="mdn")
 
 if (os.path.isfile('theta_training.pkl') == False) or overwrite_training:
-    theta, x = simulate_for_sbi(simulator, proposal=prior, num_simulations=100000, num_workers=8)
+    theta, x = simulate_for_sbi(simulator, proposal=prior, num_simulations=10000, num_workers=8)
     with open("theta_training.pkl", "wb") as handle:
         pickle.dump(theta, handle)
     with open("x_training.pkl", "wb") as handle:
