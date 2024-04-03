@@ -84,6 +84,7 @@ class SliceSampler(MCMCSampler):
         self.init_width = init_width
         self.width = None
         self.tuning = tuning
+        #self.tuning = 0
 
     def gen(
         self,

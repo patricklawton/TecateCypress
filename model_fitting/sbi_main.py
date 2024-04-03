@@ -66,7 +66,7 @@ simulator = utils.user_input_checks.process_simulator(simulator, prior, is_numpy
 
 if (os.path.isfile('likelihood_estimator.pkl') == False) or overwrite_estimator:
     inferer = SNLE(prior, show_progress_bars=True, density_estimator="mdn")
-    theta, x = simulate_for_sbi(simulator, proposal=prior, num_simulations=300000)
+    theta, x = simulate_for_sbi(simulator, proposal=prior, num_simulations=20000)
     inferer = inferer.append_simulations(theta, x)
     likelihood_estimator = inferer.train()
     # Write likelihood estimator to file
@@ -89,13 +89,11 @@ mcmc_parameters = dict(
     thin=10,
     warmup_steps=50,
     init_strategy="proposal"
-    #init_width=0.1
 )
 posterior = MCMCPosterior(
     potential_fn, proposal=prior,
-    #theta_transform=parameter_transform,
     **mcmc_parameters
 )
-num_samples = 30000
+num_samples = 3000
 nle_samples = posterior.sample(sample_shape=(num_samples,))
 torch.save(nle_samples, 'posterior_samples.pkl')
