@@ -11,40 +11,13 @@ from sbi.utils import MultipleIndependent
 from torch import tensor
 from simulator import simulator
 
-ranges = np.array([
-                   # alph_m
-                   [0.01, 0.6], 
-                   # beta_m
-                   [0.01, 0.9], 
-                   # sigm_m
-                   [0.1,1.7], 
-                   # alph_nu
-                   [0.01,2.]
-])
-priors = [Uniform(tensor([rng[0]]), tensor([rng[1]])) for rng in ranges]
-prior = MultipleIndependent(priors)
+with open("prior.pkl", "rb") as handle:
+    prior = pickle.load(handle)
 prior, theta_numel, prior_returns_numpy = utils.user_input_checks.process_prior(prior)
 simulator = utils.user_input_checks.process_simulator(simulator, prior, is_numpy_simulator=True)
 
-# Read likelihood estimator from file
-with open("likelihood_estimator_big.pkl", "rb") as handle:
-    likelihood_estimator = pickle.load(handle)
-
-x_o = np.load('observations/observations.npy')
-x_o = torch.Tensor(x_o)
-potential_fn, parameter_transform = likelihood_estimator_based_potential(
-    likelihood_estimator, prior, x_o
-)
-mcmc_parameters = dict(
-    method = "slice_np_vectorized",
-    num_chains=20,
-    thin=10,
-    warmup_steps=50,
-    init_strategy="proposal"
-)
-posterior = MCMCPosterior(
-    potential_fn, proposal=prior, **mcmc_parameters
-)
+with open("posterior.pkl", "rb") as handle:
+    posterior = pickle.load(handle)
 
 num_simulations = 300  # choose a number of sbc runs, should be ~100s or ideally 1000
 # generate ground truth parameters and corresponding simulated observations for SBC.
@@ -54,5 +27,5 @@ xs = simulator(thetas)
 num_posterior_samples = 1_000
 ranks, dap_samples = run_sbc(
     thetas, xs, posterior, num_posterior_samples=num_posterior_samples,
-    num_workers=2, reduce_fns=posterior.log_prob,
+    num_workers=1, reduce_fns=posterior.log_prob,
 )

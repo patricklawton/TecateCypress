@@ -1,12 +1,12 @@
 import torch
 import numpy as np
 import sbi
-from sbi.inference import SNLE, prepare_for_sbi, simulate_for_sbi
+from sbi.inference import SNPE, prepare_for_sbi, simulate_for_sbi
 from sbi.inference import likelihood_estimator_based_potential, MCMCPosterior
 from sbi import utils as utils
 from sbi import analysis as analysis
 from torch.distributions import Uniform
-from sbi.utils import MultipleIndependent
+from sbi.utils import MultipleIndependent, RestrictionEstimator
 from torch import tensor
 import pickle
 import pandas as pd
@@ -14,8 +14,9 @@ import os
 from simulator import simulator
 from scipy.stats import moment
 
-overwrite_observations = False
-overwrite_estimator = False
+overwrite_observations = True
+overwrite_simulations = True
+overwrite_posterior = True
 
 if (os.path.isfile('observations/observations.npy') == False) or overwrite_observations:
     # First, compute and store summary statistics of observed data
@@ -23,14 +24,7 @@ if (os.path.isfile('observations/observations.npy') == False) or overwrite_obser
     fn = 'observations/mortality.csv'
     mortality_o = pd.read_csv(fn, header=None)
     mortality_o[0] = [round(v) for v in mortality_o[0]]
-    ### avg, min, max
-    #mort_o = mortality_o
-    #res_len = len(census_yrs)
-    #observations = np.empty(res_len*3)
-    #observations[0:res_len] = [mort_o[mort_o[0] == yr][1].to_numpy().mean() for yr in census_yrs]
-    #observations[res_len:res_len*2] = [mort_o[mort_o[0] == yr][1].to_numpy().min() for yr in census_yrs]
-    #observations[res_len*2:res_len*3] = [mort_o[mort_o[0] == yr][1].to_numpy().max() for yr in census_yrs]
-    ### first 3 moments
+    # Use the first 3 moments
     m1 = []; m2 = []; m3 = []
     for t_i, t in enumerate(census_yrs):
         mort_sub = mortality_o[mortality_o[0]==t][1].to_numpy()
@@ -39,14 +33,9 @@ if (os.path.isfile('observations/observations.npy') == False) or overwrite_obser
         m2.append(moment(mort_sub, moment=2))
         m3.append(moment(mort_sub, moment=3))
     observations = np.concatenate((m1,m2,m3))
-    ### mean, 10th, 90th percentiles
-    #res_len = len(census_yrs)
-    #observations = np.empty(res_len*3)
-    #mort_subs = [mortality_o[mortality_o[0]==t][1].to_numpy() for t in census_yrs]
-    #observations[0:res_len] = [np.mean(ms) for ms in mort_subs] 
-    #observations[res_len:res_len*2] = [np.percentile(ms, 20) for ms in mort_subs]
-    #observations[res_len*2:res_len*3] = [np.percentile(ms, 80) for ms in mort_subs]
     np.save('observations/observations.npy', observations)
+x_o = np.load('observations/observations.npy')
+x_o = torch.Tensor(x_o)
 
 ranges = np.array([
                    # alph_m
@@ -58,42 +47,60 @@ ranges = np.array([
                    # alph_nu
                    [0.01,2.]
 ])
-priors = [Uniform(tensor([rng[0]]), tensor([rng[1]])) for rng in ranges]
-prior = MultipleIndependent(priors)
-
-prior, theta_numel, prior_returns_numpy = utils.user_input_checks.process_prior(prior)
-simulator = utils.user_input_checks.process_simulator(simulator, prior, is_numpy_simulator=True)
-
-if (os.path.isfile('likelihood_estimator.pkl') == False) or overwrite_estimator:
-    inferer = SNLE(prior, show_progress_bars=True, density_estimator="mdn")
-    theta, x = simulate_for_sbi(simulator, proposal=prior, num_simulations=20000)
-    inferer = inferer.append_simulations(theta, x)
-    likelihood_estimator = inferer.train()
-    # Write likelihood estimator to file
-    with open("likelihood_estimator.pkl", "wb") as handle:
-        pickle.dump(likelihood_estimator, handle)
+if (os.path.isfile('all_theta.pkl') == False) or overwrite_simulations:
+    priors = [Uniform(tensor([rng[0]]), tensor([rng[1]])) for rng in ranges]
+    prior = MultipleIndependent(priors)
+    prior, theta_numel, prior_returns_numpy = utils.user_input_checks.process_prior(prior)
+    with open("prior.pkl", "wb") as handle:
+        pickle.dump(prior, handle)
+    simulator = utils.user_input_checks.process_simulator(simulator, prior, is_numpy_simulator=True)
+    theta, x = simulate_for_sbi(simulator, proposal=prior, num_simulations=50000, num_workers=8)
+    restriction_estimator = RestrictionEstimator(prior=prior)
+    restriction_estimator.append_simulations(theta, x)
+    classifier = restriction_estimator.train()
+    restricted_prior = restriction_estimator.restrict_prior()
+    with open("restricted_prior.pkl", "wb") as handle:
+        pickle.dump(restricted_prior, handle)
+    new_theta, new_x = simulate_for_sbi(simulator, restricted_prior, 150000)
+    restriction_estimator.append_simulations(
+        new_theta, new_x
+    )  # Gather the new simulations in the `restriction_estimator`.
+    (
+        all_theta,
+        all_x,
+        _,
+    ) = restriction_estimator.get_simulations()  # Get all simulations run so far.
+    with open("all_theta.pkl", "wb") as handle:
+        pickle.dump(all_theta, handle)
+    with open("all_x.pkl", "wb") as handle:
+        pickle.dump(all_x, handle)
 else:
-    # Read likelihood estimator from file
-    with open("likelihood_estimator.pkl", "rb") as handle:
-        likelihood_estimator = pickle.load(handle)
+    with open("prior.pkl", "rb") as handle:
+        prior = pickle.load(handle)
+    with open("restricted_prior.pkl", "rb") as handle:
+        restricted_prior = pickle.load(handle)
+    with open("all_theta.pkl", "rb") as handle:
+        all_theta = pickle.load(handle)
+    with open("all_x.pkl", "rb") as handle:
+        all_x = pickle.load(handle)
 
-x_o = np.load('observations/observations.npy')
-x_o = torch.Tensor(x_o)
-potential_fn, parameter_transform = likelihood_estimator_based_potential(
-    likelihood_estimator, prior, x_o
-)
+if (os.path.isfile('posterior.pkl') == False) or overwrite_posterior:
+    inferer = SNPE(prior, show_progress_bars=True, density_estimator="mdn")
+    inferer = inferer.append_simulations(all_theta, all_x)
+    density_estimator = inferer.train()
+    posterior = inferer.build_posterior(density_estimator)
+    posterior.set_default_x(x_o)
+    with open("posterior.pkl", "wb") as handle:
+        pickle.dump(posterior, handle)
+else:
+    with open("posterior.pkl", "rb") as handle:
+        posterior = pickle.load(handle)
 
-mcmc_parameters = dict(
-    method = "slice_np_vectorized",
-    num_chains=20,
-    thin=10,
-    warmup_steps=50,
-    init_strategy="proposal"
+num_samples = 1_000_000
+npe_samples = posterior.sample(sample_shape=(num_samples,))
+torch.save(npe_samples, 'posterior_samples.pkl')
+labels = ['alph_m', 'beta_m', 'sigm_m','alph_nu']
+_ = analysis.pairplot(
+    npe_samples, limits=ranges, figsize=(10, 10), labels=labels
 )
-posterior = MCMCPosterior(
-    potential_fn, proposal=prior,
-    **mcmc_parameters
-)
-num_samples = 3000
-nle_samples = posterior.sample(sample_shape=(num_samples,))
-torch.save(nle_samples, 'posterior_samples.pkl')
+_[0].savefig('figs/npe_test.png', bbox_inches='tight')
