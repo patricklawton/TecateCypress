@@ -28,7 +28,7 @@ thetas, xs = simulate_for_sbi(simulator, proposal=prior, num_simulations=num_sim
 thetas = thetas[~torch.any(xs.isnan(),dim=1)]
 xs = xs[~torch.any(xs.isnan(),dim=1)]
 
-num_posterior_samples = 1_000
+num_posterior_samples = 20_000
 ranks, dap_samples = run_sbc(
     thetas, xs, posterior, num_posterior_samples=num_posterior_samples,
     num_workers=8, reduce_fns='marginals'#posterior.log_prob,
