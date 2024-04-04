@@ -21,22 +21,25 @@ simulator = utils.user_input_checks.process_simulator(simulator, prior, is_numpy
 with open("posterior.pkl", "rb") as handle:
     posterior = pickle.load(handle)
 
-num_simulations = 2000  # choose a number of sbc runs, should be ~100s or ideally 1000
+num_simulations = 1_000  # choose a number of sbc runs, should be ~100s or ideally 1000
 # generate ground truth parameters and corresponding simulated observations for SBC.
 thetas, xs = simulate_for_sbi(simulator, proposal=prior, num_simulations=num_simulations, num_workers=8)
 # filter out invalid parameter samples
 thetas = thetas[~torch.any(xs.isnan(),dim=1)]
 xs = xs[~torch.any(xs.isnan(),dim=1)]
 
-num_posterior_samples = 5_000
+num_posterior_samples = 1_000
 ranks, dap_samples = run_sbc(
     thetas, xs, posterior, num_posterior_samples=num_posterior_samples,
     num_workers=8, reduce_fns='marginals'#posterior.log_prob,
 )
-
+with open('ranks.pkl', 'wb') as handle:
+    pickle.dump(ranks, handle)
 check_stats = check_sbc(
     ranks, thetas, dap_samples, num_posterior_samples=num_posterior_samples
 )
+with open('sbc_stats.pkl', 'wb') as handle:
+    pickle.dump(check_stats, handle)
 with open('sbc-log.txt', 'w') as handle:
     handle.write(
         f"""kolmogorov-smirnov p-values \n

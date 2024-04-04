@@ -14,9 +14,10 @@ import os
 from simulator import simulator
 from scipy.stats import moment
 
-overwrite_observations = True
-overwrite_simulations = True
-overwrite_posterior = True
+overwrite_observations = False
+overwrite_simulations = False
+add_simulations = True
+overwrite_posterior = False
 
 if (os.path.isfile('observations/observations.npy') == False) or overwrite_observations:
     # First, compute and store summary statistics of observed data
@@ -83,8 +84,17 @@ else:
         all_theta = pickle.load(handle)
     with open("all_x.pkl", "rb") as handle:
         all_x = pickle.load(handle)
+    if add_simulations:
+        simulator = utils.user_input_checks.process_simulator(simulator, prior, is_numpy_simulator=True)
+        new_theta, new_x = simulate_for_sbi(simulator, restricted_prior, 100_000, num_workers=8)
+        all_theta = torch.cat((all_theta, new_theta), 0)
+        all_x = torch.cat((all_x, new_x), 0)
+        with open("all_theta.pkl", "wb") as handle:
+            pickle.dump(all_theta, handle)
+        with open("all_x.pkl", "wb") as handle:
+            pickle.dump(all_x, handle)
 
-if (os.path.isfile('posterior.pkl') == False) or overwrite_posterior:
+if (os.path.isfile('posterior.pkl') == False) or overwrite_posterior or add_simulations:
     inferer = SNPE(prior, show_progress_bars=True, density_estimator="mdn")
     inferer = inferer.append_simulations(all_theta, all_x)
     density_estimator = inferer.train()
