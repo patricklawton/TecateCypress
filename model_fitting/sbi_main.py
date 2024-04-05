@@ -113,4 +113,4 @@ labels = ['alph_m', 'beta_m', 'sigm_m','alph_nu']
 _ = analysis.pairplot(
     npe_samples, limits=ranges, figsize=(10, 10), labels=labels
 )
-_[0].savefig('figs/npe_test.png', bbox_inches='tight')
+_[0].savefig('sbi_figs/posterior_pairplot.png', bbox_inches='tight')
