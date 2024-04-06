@@ -98,7 +98,7 @@ class PosteriorBasedPotential(BasePotential):
 
         with torch.set_grad_enabled(track_gradients):
             posterior_log_prob = self.posterior_estimator.log_prob(
-                theta, context=x_repeated
+                theta.float(), context=x_repeated
             )
 
             # Force probability to be zero outside prior support.
