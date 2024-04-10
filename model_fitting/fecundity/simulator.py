@@ -46,7 +46,8 @@ for i in range(numbins):
     bin_errors.append(err)
 
 def save_observations():
-    observations = np.concatenate((mean_fecundities, bin_errors))
+    #observations = np.concatenate((mean_fecundities, bin_errors))
+    observations = np.concatenate((mean_fecundities, bin_errors, [0.2]))
     np.save('fecundity/observations/observations.npy', observations)
 
 def simulator(params):
@@ -54,7 +55,12 @@ def simulator(params):
     sigm_max = params[3]; eta_sigm = params[4]; a_sigm_star = params[5]
 
     # Read this in from file(s) in the actual script
-    a_vec = np.concatenate((np.repeat(stand_age_bren, num_sites), stand_age_dunn))
+    #a_vec = np.concatenate((np.repeat(stand_age_bren, num_sites), stand_age_dunn))
+    a_vec = np.concatenate((
+                            np.repeat(stand_age_bren, num_sites), 
+                            stand_age_dunn,
+                            [numbins*binwidth + 1, (numbins+1)*binwidth]
+                           ))
     a_vec.sort()
 
     rho_a = rho_max / (1+np.exp(-eta_rho*(a_vec-a_mature)))
@@ -62,17 +68,20 @@ def simulator(params):
     sigm_a = sigm_max / (1+np.exp(-eta_sigm*(a_vec-a_sigm_star)))
     epsilon_rho = rng.lognormal(np.zeros_like(a_vec), sigm_a)
     fecundities = rng.poisson(rho_a*epsilon_rho)
-    # fecundities = rng.poisson(rho_a)
 
     mean_fecundities = np.zeros(numbins)
     bin_stdevs = np.zeros(numbins)
-    results = np.empty(numbins*2)
+    results = np.empty(numbins*2 + 1)
     for i in range(numbins):
         filt = ((a_vec > binwidth*i) & (a_vec <= binwidth*(i+1)))
         fecundities_bin = fecundities[filt]
         mean_fecundities[i] = fecundities_bin.mean()
         bin_stdevs[i] = np.std(fecundities_bin, ddof=1)
-
     results[0:numbins] = mean_fecundities
     results[numbins:numbins*2] = bin_stdevs
+
+    # Fecundity should level out by end of last bin
+    # check using mean epsilon value
+    mean_diff = rho_a[-1]*np.exp(sigm_a[-1]**2 / 2) - rho_a[-2]*np.exp(sigm_a[-2]**2 / 2)
+    results[-1] = mean_diff
     return results

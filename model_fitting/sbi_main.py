@@ -48,8 +48,8 @@ for pr in processes:
                            [0.01, 0.8],
                            [15, 80]
         ])
-        restrictor_sims = 5_000
-        training_sims = 5_000
+        #restrictor_sims = 50_000
+        training_sims = 20_000
         num_samples = 1_000_000 
 
     # First, compute and store summary statistics of observed data
@@ -82,23 +82,25 @@ for pr in processes:
         with open(pr+"/prior.pkl", "wb") as handle:
             pickle.dump(prior, handle)
         simulator = utils.user_input_checks.process_simulator(simulator, prior, is_numpy_simulator=True)
-        theta, x = simulate_for_sbi(simulator, proposal=prior, num_simulations=restrictor_sims, num_workers=8)
-        print(x[0])
-        restriction_estimator = RestrictionEstimator(prior=prior)
-        restriction_estimator.append_simulations(theta, x)
-        classifier = restriction_estimator.train()
-        restricted_prior = restriction_estimator.restrict_prior()
-        with open(pr+"/restricted_prior.pkl", "wb") as handle:
-            pickle.dump(restricted_prior, handle)
-        new_theta, new_x = simulate_for_sbi(simulator, restricted_prior, training_sims)
-        restriction_estimator.append_simulations(
-            new_theta, new_x
-        )  # Gather the new simulations in the `restriction_estimator`.
-        (
-            all_theta,
-            all_x,
-            _,
-        ) = restriction_estimator.get_simulations()  # Get all simulations run so far.
+        if pr == 'mortality':
+            theta, x = simulate_for_sbi(simulator, proposal=prior, num_simulations=restrictor_sims, num_workers=8)
+            restriction_estimator = RestrictionEstimator(prior=prior)
+            restriction_estimator.append_simulations(theta, x)
+            classifier = restriction_estimator.train()
+            restricted_prior = restriction_estimator.restrict_prior()
+            with open(pr+"/restricted_prior.pkl", "wb") as handle:
+                pickle.dump(restricted_prior, handle)
+            new_theta, new_x = simulate_for_sbi(simulator, restricted_prior, training_sims, num_workers=8)
+            restriction_estimator.append_simulations(
+                new_theta, new_x
+            )  # Gather the new simulations in the `restriction_estimator`.
+            (
+                all_theta,
+                all_x,
+                _,
+            ) = restriction_estimator.get_simulations()  # Get all simulations run so far.
+        elif pr == 'fecundity':
+            all_theta, all_x = simulate_for_sbi(simulator, proposal=prior, num_simulations=training_sims, num_workers=8)
         with open(pr+"/all_theta.pkl", "wb") as handle:
             pickle.dump(all_theta, handle)
         with open(pr+"/all_x.pkl", "wb") as handle:
@@ -106,15 +108,18 @@ for pr in processes:
     else:
         with open(pr+"/prior.pkl", "rb") as handle:
             prior = pickle.load(handle)
-        with open(pr+"/restricted_prior.pkl", "rb") as handle:
-            restricted_prior = pickle.load(handle)
         with open(pr+"/all_theta.pkl", "rb") as handle:
             all_theta = pickle.load(handle)
         with open(pr+"/all_x.pkl", "rb") as handle:
             all_x = pickle.load(handle)
         if add_simulations:
             simulator = utils.user_input_checks.process_simulator(simulator, prior, is_numpy_simulator=True)
-            new_theta, new_x = simulate_for_sbi(simulator, restricted_prior, 100_000, num_workers=8)
+            if pr == 'mortality':
+                with open(pr+"/restricted_prior.pkl", "rb") as handle:
+                    restricted_prior = pickle.load(handle)
+                new_theta, new_x = simulate_for_sbi(simulator, restricted_prior, 100_000, num_workers=8)
+            elif pr == 'fecundity':
+                new_theta, new_x = simulate_for_sbi(simulator, prior, 100_000, num_workers=8)
             all_theta = torch.cat((all_theta, new_theta), 0)
             all_x = torch.cat((all_x, new_x), 0)
             with open(pr+"/all_theta.pkl", "wb") as handle:
