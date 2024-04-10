@@ -82,7 +82,7 @@ def simulator(params):
 
     # If final mean fecundity gt 10 std away from observed mean,
     # mark parameter set as invalid
-    if results[numbins] > observations[numbins]*(10*observations[numbins*2]):
+    if results[numbins] > observations[numbins] + (10*observations[numbins*2]):
         results[:] = np.nan
     else:
         # Fecundity should level out by end of last bin

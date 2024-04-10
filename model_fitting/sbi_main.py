@@ -11,7 +11,6 @@ from torch import tensor
 import pickle
 import pandas as pd
 import os
-#from simulator import simulator
 from scipy.stats import moment
 
 overwrite_observations = True
@@ -48,7 +47,7 @@ for pr in processes:
                            [0.01, 0.8],
                            [15, 80]
         ])
-        #restrictor_sims = 50_000
+        restrictor_sims = 10_000
         training_sims = 20_000
         num_samples = 1_000_000 
 
@@ -82,7 +81,8 @@ for pr in processes:
         with open(pr+"/prior.pkl", "wb") as handle:
             pickle.dump(prior, handle)
         simulator = utils.user_input_checks.process_simulator(simulator, prior, is_numpy_simulator=True)
-        if pr == 'mortality':
+        #if pr == 'mortality':
+        if True:
             theta, x = simulate_for_sbi(simulator, proposal=prior, num_simulations=restrictor_sims, num_workers=8)
             restriction_estimator = RestrictionEstimator(prior=prior)
             restriction_estimator.append_simulations(theta, x)
@@ -99,8 +99,8 @@ for pr in processes:
                 all_x,
                 _,
             ) = restriction_estimator.get_simulations()  # Get all simulations run so far.
-        elif pr == 'fecundity':
-            all_theta, all_x = simulate_for_sbi(simulator, proposal=prior, num_simulations=training_sims, num_workers=8)
+        #elif pr == 'fecundity':
+        #    all_theta, all_x = simulate_for_sbi(simulator, proposal=prior, num_simulations=training_sims, num_workers=8)
         with open(pr+"/all_theta.pkl", "wb") as handle:
             pickle.dump(all_theta, handle)
         with open(pr+"/all_x.pkl", "wb") as handle:
@@ -114,12 +114,13 @@ for pr in processes:
             all_x = pickle.load(handle)
         if add_simulations:
             simulator = utils.user_input_checks.process_simulator(simulator, prior, is_numpy_simulator=True)
-            if pr == 'mortality':
+            #if pr == 'mortality':
+            if True:
                 with open(pr+"/restricted_prior.pkl", "rb") as handle:
                     restricted_prior = pickle.load(handle)
                 new_theta, new_x = simulate_for_sbi(simulator, restricted_prior, 100_000, num_workers=8)
-            elif pr == 'fecundity':
-                new_theta, new_x = simulate_for_sbi(simulator, prior, 100_000, num_workers=8)
+            #elif pr == 'fecundity':
+            #    new_theta, new_x = simulate_for_sbi(simulator, prior, 100_000, num_workers=8)
             all_theta = torch.cat((all_theta, new_theta), 0)
             all_x = torch.cat((all_x, new_x), 0)
             with open(pr+"/all_theta.pkl", "wb") as handle:
