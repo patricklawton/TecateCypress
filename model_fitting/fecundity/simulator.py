@@ -15,8 +15,8 @@ for i in range(len(fecundity_err_bren)):
     if (prefire_density[i] == 0) or (rec_density[i] == 0):
         fecundity_err = 0
     else:
-        # fecundity_err = fecundity_bren[i] * np.sqrt((prefire_density_se[i]/prefire_density[i])**2 + (rec_density_se[i]/rec_density[i])**2)
-        fecundity_err = fecundity_bren[i] * np.sqrt((prefire_density_sd[i]/prefire_density[i])**2 + (rec_density_sd[i]/rec_density[i])**2)
+        fecundity_err = fecundity_bren[i] * np.sqrt((prefire_density_se[i]/prefire_density[i])**2 + (rec_density_se[i]/rec_density[i])**2)
+        #fecundity_err = fecundity_bren[i] * np.sqrt((prefire_density_sd[i]/prefire_density[i])**2 + (rec_density_sd[i]/rec_density[i])**2)
     fecundity_err_bren[i] = fecundity_err
 
 # Dunn 1986
