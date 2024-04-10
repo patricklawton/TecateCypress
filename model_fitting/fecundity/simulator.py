@@ -15,8 +15,8 @@ for i in range(len(fecundity_err_bren)):
     if (prefire_density[i] == 0) or (rec_density[i] == 0):
         fecundity_err = 0
     else:
-        fecundity_err = fecundity_bren[i] * np.sqrt((prefire_density_se[i]/prefire_density[i])**2 + (rec_density_se[i]/rec_density[i])**2)
-        #fecundity_err = fecundity_bren[i] * np.sqrt((prefire_density_sd[i]/prefire_density[i])**2 + (rec_density_sd[i]/rec_density[i])**2)
+        #fecundity_err = fecundity_bren[i] * np.sqrt((prefire_density_se[i]/prefire_density[i])**2 + (rec_density_se[i]/rec_density[i])**2)
+        fecundity_err = fecundity_bren[i] * np.sqrt((prefire_density_sd[i]/prefire_density[i])**2 + (rec_density_sd[i]/rec_density[i])**2)
     fecundity_err_bren[i] = fecundity_err
 
 # Dunn 1986
@@ -44,10 +44,10 @@ for i in range(numbins):
     age_cntrs[i] = age_cntr
     err = (1/sum(weights[filt]))*np.sqrt(sum((fecundity_err_all[filt]*weights[filt])**2))
     bin_errors.append(err)
+#observations = np.concatenate((mean_fecundities, bin_errors))
+observations = np.concatenate((mean_fecundities, bin_errors, [0.2]))
 
 def save_observations():
-    #observations = np.concatenate((mean_fecundities, bin_errors))
-    observations = np.concatenate((mean_fecundities, bin_errors, [0.2]))
     np.save('fecundity/observations/observations.npy', observations)
 
 def simulator(params):
@@ -80,8 +80,14 @@ def simulator(params):
     results[0:numbins] = mean_fecundities
     results[numbins:numbins*2] = bin_stdevs
 
-    # Fecundity should level out by end of last bin
-    # check using mean epsilon value
-    mean_diff = rho_a[-1]*np.exp(sigm_a[-1]**2 / 2) - rho_a[-2]*np.exp(sigm_a[-2]**2 / 2)
-    results[-1] = mean_diff
+    # If final mean fecundity gt 10 std away from observed mean,
+    # mark parameter set as invalid
+    if results[numbins] > observations[numbins]*(10*observations[numbins*2]):
+        results[:] = np.nan
+    else:
+        # Fecundity should level out by end of last bin
+        # check using mean epsilon value
+        mean_diff = rho_a[-1]*np.exp(sigm_a[-1]**2 / 2) - rho_a[-2]*np.exp(sigm_a[-2]**2 / 2)
+        results[-1] = mean_diff
+
     return results
