@@ -80,12 +80,15 @@ def simulator(params):
     results[0:numbins] = mean_fecundities
     results[numbins:numbins*2] = bin_stdevs
 
-    # If final mean fecundity gt 10 std away from observed mean,
-    # mark parameter set as invalid
-    if results[numbins] > observations[numbins] + (10*observations[numbins*2]):
+    # If mean fecundities gt 10 std away from observed means, mark invalid
+    checks = np.repeat(False, 2)
+    for i in [1,2]:
+        check = results[numbins-i] > observations[numbins-i] + (10*observations[numbins*2-i])
+        checks[i-1] = check
+    if np.any(checks):
         results[:] = np.nan
     else:
-        # Fecundity should level out by end of last bin
+        # Fecundity should level out by end of last bin;
         # check using mean epsilon value
         mean_diff = rho_a[-1]*np.exp(sigm_a[-1]**2 / 2) - rho_a[-2]*np.exp(sigm_a[-2]**2 / 2)
         results[-1] = mean_diff
