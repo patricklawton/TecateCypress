@@ -38,14 +38,14 @@ for pr in processes:
         num_samples = 1_000_000 
     elif pr == 'fecundity':
         from fecundity.simulator import simulator, save_observations
-        labels = ['rho_max', 'eta_rho', 'a_mature', 'sigm_max', 'eta_sigm', 'a_sigm_star']
+        labels = ['rho_max', 'eta_rho', 'a_mature', 'sigm_max', 'eta_sigm']#, 'a_sigm_star']
         ranges = np.array([
                            [100, 600],
                            [0.01, 0.8],
                            [15, 80],
                            [0.01, 5],
-                           [0.01, 0.8],
-                           [15, 80]
+                           [0.01, 0.8]#,
+                           #[15, 80]
         ])
         restrictor_sims = 20_000
         training_sims = 20_000

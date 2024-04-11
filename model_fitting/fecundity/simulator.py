@@ -52,7 +52,8 @@ def save_observations():
 
 def simulator(params):
     rho_max = params[0]; eta_rho = params[1]; a_mature = params[2]
-    sigm_max = params[3]; eta_sigm = params[4]; a_sigm_star = params[5]
+    sigm_max = params[3]; eta_sigm = params[4]; 
+    a_sigm_star = a_mature #a_sigm_star = params[5]
 
     # Read this in from file(s) in the actual script
     #a_vec = np.concatenate((np.repeat(stand_age_bren, num_sites), stand_age_dunn))

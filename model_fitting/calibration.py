@@ -19,7 +19,7 @@ for pr in processes:
         labels = ['alph_m', 'beta_m', 'sigm_m','alph_nu']
     elif pr == 'fecundity':
         from fecundity.simulator import simulator
-        labels = ['rho_max', 'eta_rho', 'a_mature', 'sigm_max', 'eta_sigm', 'a_sigm_star']
+        labels = ['rho_max', 'eta_rho', 'a_mature', 'sigm_max', 'eta_sigm']#, 'a_sigm_star']
     with open(pr+"/prior.pkl", "rb") as handle:
         prior = pickle.load(handle)
     simulator = utils.user_input_checks.process_simulator(simulator, prior, is_numpy_simulator=True)
