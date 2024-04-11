@@ -45,7 +45,7 @@ for i in range(numbins):
     err = (1/sum(weights[filt]))*np.sqrt(sum((fecundity_err_all[filt]*weights[filt])**2))
     bin_errors.append(err)
 #observations = np.concatenate((mean_fecundities, bin_errors))
-observations = np.concatenate((mean_fecundities, bin_errors, [0.2]))
+observations = np.concatenate((mean_fecundities, bin_errors, [0.0]))
 
 def save_observations():
     np.save('fecundity/observations/observations.npy', observations)
