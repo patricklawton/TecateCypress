@@ -91,6 +91,10 @@ def simulator(params):
         # Fecundity should level out by end of last bin;
         # check using mean epsilon value
         mean_diff = rho_a[-1]*np.exp(sigm_a[-1]**2 / 2) - rho_a[-2]*np.exp(sigm_a[-2]**2 / 2)
-        results[-1] = mean_diff
+        # If fecundity increases too much, mark invalid
+        if mean_diff > 100:
+            results[:] = np.nan
+        else:
+            results[-1] = mean_diff
 
     return results

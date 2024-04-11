@@ -47,7 +47,7 @@ for pr in processes:
                            [0.01, 0.8],
                            [15, 80]
         ])
-        restrictor_sims = 10_000
+        restrictor_sims = 20_000
         training_sims = 20_000
         num_samples = 1_000_000 
 

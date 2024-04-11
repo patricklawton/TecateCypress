@@ -96,7 +96,7 @@ for pr in processes:
         limits[3][0] = -0.0005; limits[3][1] = 10
         limits[4][0] = -0.0005; limits[4][1] = 250
         limits[5][0] = -0.0005; limits[5][1] = 2500
-        limits[6][0] = -0.0005; limits[6][1] = 1000000
+        limits[6][0] = -0.0005; limits[6][1] = 50
     ppc = analysis.pairplot(
         samples=x_pp,
         points=x_o, 
