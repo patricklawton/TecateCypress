@@ -25,7 +25,7 @@ t_vec = np.arange(1, 152)
 model = Model(**params)
 model.set_area(A)
 model.init_N(N_0_1, init_age)
-model.simulate(t_vec=t_vec, census_every=1, fire_probs=0.025)
+model.simulate(t_vec=t_vec, census_every=2, fire_probs=0.025)
 np.save('N_tot_vec.npy', model.N_tot_vec)
 
 fig, axs = plt.subplots(4, 1, figsize=(7,20))
