@@ -13,12 +13,12 @@ import pandas as pd
 import os
 from scipy.stats import moment
 
-overwrite_observations = True
-overwrite_simulations = True
+overwrite_observations = False
+overwrite_simulations = False
 add_simulations = False
-overwrite_posterior = True
+overwrite_posterior = False
 
-processes = ['fecundity']
+processes = ['mortality', 'fecundity']
 for pr in processes:
     if pr == 'mortality':
         from mortality.simulator import simulator
@@ -72,7 +72,6 @@ for pr in processes:
         save_observations()
     x_o = np.load(fn)
     x_o = torch.Tensor(x_o)
-    print(x_o)
 
     if (not os.path.isfile(pr+'/all_theta.pkl')) or overwrite_simulations:
         priors = [Uniform(tensor([rng[0]]), tensor([rng[1]])) for rng in ranges]
@@ -81,26 +80,22 @@ for pr in processes:
         with open(pr+"/prior.pkl", "wb") as handle:
             pickle.dump(prior, handle)
         simulator = utils.user_input_checks.process_simulator(simulator, prior, is_numpy_simulator=True)
-        #if pr == 'mortality':
-        if True:
-            theta, x = simulate_for_sbi(simulator, proposal=prior, num_simulations=restrictor_sims, num_workers=8)
-            restriction_estimator = RestrictionEstimator(prior=prior)
-            restriction_estimator.append_simulations(theta, x)
-            classifier = restriction_estimator.train()
-            restricted_prior = restriction_estimator.restrict_prior()
-            with open(pr+"/restricted_prior.pkl", "wb") as handle:
-                pickle.dump(restricted_prior, handle)
-            new_theta, new_x = simulate_for_sbi(simulator, restricted_prior, training_sims, num_workers=8)
-            restriction_estimator.append_simulations(
-                new_theta, new_x
-            )  # Gather the new simulations in the `restriction_estimator`.
-            (
-                all_theta,
-                all_x,
-                _,
-            ) = restriction_estimator.get_simulations()  # Get all simulations run so far.
-        #elif pr == 'fecundity':
-        #    all_theta, all_x = simulate_for_sbi(simulator, proposal=prior, num_simulations=training_sims, num_workers=8)
+        theta, x = simulate_for_sbi(simulator, proposal=prior, num_simulations=restrictor_sims, num_workers=8)
+        restriction_estimator = RestrictionEstimator(prior=prior)
+        restriction_estimator.append_simulations(theta, x)
+        classifier = restriction_estimator.train()
+        restricted_prior = restriction_estimator.restrict_prior()
+        with open(pr+"/restricted_prior.pkl", "wb") as handle:
+            pickle.dump(restricted_prior, handle)
+        new_theta, new_x = simulate_for_sbi(simulator, restricted_prior, training_sims, num_workers=8)
+        restriction_estimator.append_simulations(
+            new_theta, new_x
+        )  # Gather the new simulations in the `restriction_estimator`.
+        (
+            all_theta,
+            all_x,
+            _,
+        ) = restriction_estimator.get_simulations()  # Get all simulations run so far.
         with open(pr+"/all_theta.pkl", "wb") as handle:
             pickle.dump(all_theta, handle)
         with open(pr+"/all_x.pkl", "wb") as handle:
@@ -114,13 +109,9 @@ for pr in processes:
             all_x = pickle.load(handle)
         if add_simulations:
             simulator = utils.user_input_checks.process_simulator(simulator, prior, is_numpy_simulator=True)
-            #if pr == 'mortality':
-            if True:
-                with open(pr+"/restricted_prior.pkl", "rb") as handle:
-                    restricted_prior = pickle.load(handle)
-                new_theta, new_x = simulate_for_sbi(simulator, restricted_prior, 100_000, num_workers=8)
-            #elif pr == 'fecundity':
-            #    new_theta, new_x = simulate_for_sbi(simulator, prior, 100_000, num_workers=8)
+            with open(pr+"/restricted_prior.pkl", "rb") as handle:
+                restricted_prior = pickle.load(handle)
+            new_theta, new_x = simulate_for_sbi(simulator, restricted_prior, 100_000, num_workers=8)
             all_theta = torch.cat((all_theta, new_theta), 0)
             all_x = torch.cat((all_x, new_x), 0)
             with open(pr+"/all_theta.pkl", "wb") as handle:

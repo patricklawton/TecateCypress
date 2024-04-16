@@ -23,7 +23,7 @@ def simulator(params):
     res_i = 0
 
     t_vec = np.arange(1,15)
-    fn = 'observations/density.csv'
+    fn = 'mortality/observations/density.csv'
     densities_o = pd.read_csv(fn, header=None)
     densities_o[0] = [round(v) for v in densities_o[0]]
     N_0_1 = densities_o[densities_o[0] == 1][1].to_numpy()

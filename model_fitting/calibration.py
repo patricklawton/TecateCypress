@@ -10,15 +10,16 @@ from sbi import analysis as analysis
 from torch.distributions import Uniform
 from sbi.utils import MultipleIndependent
 from torch import tensor
-#from simulator import simulator
+import json
 
 processes = ['fecundity']
 for pr in processes:
     if pr == 'mortality':
-        from mortality.simulator import simulator
+        from mortality.simulator import simulator, fixed
         labels = ['alph_m', 'beta_m', 'sigm_m','alph_nu']
     elif pr == 'fecundity':
         from fecundity.simulator import simulator
+        fixed = {}
         labels = ['rho_max', 'eta_rho', 'a_mature', 'sigm_max', 'eta_sigm']#, 'a_sigm_star']
     with open(pr+"/prior.pkl", "rb") as handle:
         prior = pickle.load(handle)
@@ -26,6 +27,17 @@ for pr in processes:
 
     with open(pr+"/posterior.pkl", "rb") as handle:
         posterior = pickle.load(handle)
+
+    ### map
+    map_dict = {}
+    map_dict.update(fixed)
+    _map = posterior.map(force_update=True).numpy()[0]
+    print(labels, _map)
+    for lab, val in zip(labels, _map):
+        print(lab, val)
+        map_dict.update({lab: val})
+    with open(pr+'/map.json', 'w') as handle:
+        json.dump(map_dict, handle)
 
     num_simulations = 5_000  # choose a number of sbc runs, should be ~100s or ideally 1000
     # generate ground truth parameters and corresponding simulated observations for SBC.
@@ -76,7 +88,7 @@ for pr in processes:
     ### ppc
     x_o = np.load(pr+'/observations/observations.npy')
     x_o = torch.Tensor(x_o)
-    posterior_samples = posterior.sample(sample_shape=(10_000,))
+    posterior_samples = posterior.sample(sample_shape=(5_000,))
     x_pp = simulator(posterior_samples)
     x_pp = x_pp[~torch.any(x_pp.isnan(),dim=1)]
     with open(pr+'/x_pp.pkl', 'wb') as handle:
