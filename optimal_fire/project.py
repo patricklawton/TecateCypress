@@ -17,7 +17,7 @@ for pr in ['mortality', 'fecundity']:
 @FlowProject.operation
 def run_sims(job):
     A = 1 #ha
-    num_reps = 5000
+    num_reps = 10000
     N_0_1 = np.repeat(0.9*A*params['K_adult'], num_reps)
     init_age = round(params['a_mature']) + 10
     t_vec = np.arange(1, 152)
