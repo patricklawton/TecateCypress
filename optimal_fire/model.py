@@ -58,7 +58,6 @@ class Model:
         nu_a = self.alph_nu * np.exp(-self.beta_nu*t_vec) + self.gamm_nu
         # Age-dependent fecundity functions
         rho_a = self.rho_max / (1+np.exp(-self.eta_rho*(t_vec-self.a_mature)))
-        #rho_a = np.tile(rho_a, (len(self.N_0_1), 1))
         sigm_a = self.sigm_max / (1+np.exp(-self.eta_sigm*(t_vec-self.a_sigm_star)))
 
         for t_i, t in enumerate(t_vec[:-1]):
@@ -69,7 +68,6 @@ class Model:
                 if t_fire_vec[pop_i, t_i] == True:
                     # Update seedlings, kill all adults
                     epsilon_rho = rng.lognormal(np.zeros(len(t_vec)), sigm_a)
-                    #fecundities = np.tile(rho_a, (len(N_0_1), 1)) * epsilon_rho
                     fecundities = rho_a*epsilon_rho
                     num_births = rng.poisson(fecundities*N_vec[pop_i])
                     N_vec[pop_i,0] = num_births.sum()

@@ -15,19 +15,19 @@ for pr in ['mortality', 'fecundity']:
 #params['eta'] = 0.2
 
 A = 1 #ha
-num_reps = 1000
+num_reps = 2000
 N_0_1 = np.repeat(0.9*A*params['K_adult'], num_reps)
 #N_0_1 = np.repeat(13*A*params['K_adult'], num_reps)
 #init_age = 20
-#init_age = round(params['a_mature']) + 10
-init_age = 1
+init_age = round(params['a_mature']) + 10
+#init_age = 1
 #t_vec = np.arange(1, 152)
-t_vec = np.arange(1, 31)
+t_vec = np.arange(1, 150)
 
 model = Model(**params)
 model.set_area(A)
 model.init_N(N_0_1, init_age)
-model.simulate(t_vec=t_vec, census_every=2, fire_probs=0.0)
+model.simulate(t_vec=t_vec, census_every=2, fire_probs=0.05)
 np.save('N_tot_vec.npy', model.N_tot_vec)
 np.save('census_yrs.npy', model.census_yrs)
 
