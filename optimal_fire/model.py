@@ -86,6 +86,7 @@ class Model:
                         # Ensure survival probs are feasible, otherwise mark sim invalid 
                         assert(np.all(survival_probs >= 0) and np.all(survival_probs <= 1))
                         num_survivors = rng.binomial(N_pop, survival_probs)
+                        #num_survivors = N_pop*survival_probs
                         num_survivors = np.roll(num_survivors, 1)
                         # Update abundances
                         N_vec[pop_i] = num_survivors
