@@ -35,30 +35,39 @@ class Model:
 
     def simulate(self, t_vec=np.arange(1,100), census_every=1, store=['mortality', 'fecundity'],
                  fire_probs=0.0):
+        delta_t = t_vec[1] - t_vec[0]
         # For sampling from various probability distributions
         rng = np.random.default_rng()
 
         # Get timesteps of fire occurances
         if not hasattr(fire_probs, '__len__'):
             fire_probs = fire_probs * np.ones((len(self.N_0_1), len(t_vec)))
-        t_fire_vec = rng.binomial(np.ones((len(self.N_0_1), len(t_vec))).astype(int), fire_probs)
+        #t_fire_vec = rng.binomial(np.ones((len(self.N_0_1), len(t_vec))).astype(int), fire_probs)
+        # Make it deterministic
+        fri = 1/fire_probs[0,0]
+        t_fire_vec = np.array([1 if t%fri==0 else 0 for t in t_vec])
+        t_fire_vec = np.tile(t_fire_vec, (len(self.N_0_1), 1))
 
         N_vec = np.ma.array(np.zeros((len(self.N_0_1), len(t_vec))))
         init_age_i = np.nonzero(t_vec == self.init_age)[0][0]
         N_vec[:,init_age_i] = self.N_0_1
         N_vec = N_vec.astype(int)
         # Initialize empty abundance array
-        self.census_yrs = t_vec[::census_every]
-        self.N_tot_vec = np.nan * np.ones((len(self.N_0_1), len(self.census_yrs)))
+        self.census_t = t_vec[::census_every]
+        self.N_tot_vec = np.nan * np.ones((len(self.N_0_1), len(self.census_t)))
         self.N_tot_vec[:,0] = self.N_0_1
         
         # Age-dependent mortality functions
         m_a = self.alph_m * np.exp(-self.beta_m*t_vec) + self.gamm_m
         K_a = self.K_adult
         nu_a = self.alph_nu * np.exp(-self.beta_nu*t_vec) + self.gamm_nu
+        sigm_m_a = self.sigm_m*np.exp(-self.tau_m*t_vec)
+        epsilon_m = np.exp(sigm_m_a**2 / 2) 
         # Age-dependent fecundity functions
         rho_a = self.rho_max / (1+np.exp(-self.eta_rho*(t_vec-self.a_mature)))
         sigm_a = self.sigm_max / (1+np.exp(-self.eta_sigm*(t_vec-self.a_sigm_star)))
+        epsilon_rho = np.exp(sigm_a**2 / 2)
+        fecundities = rho_a*epsilon_rho
 
         for t_i, t in enumerate(t_vec[:-1]):
             for pop_i, N_pop in enumerate(N_vec):
@@ -67,9 +76,10 @@ class Model:
                     continue
                 if t_fire_vec[pop_i, t_i] == True:
                     # Update seedlings, kill all adults
-                    epsilon_rho = rng.lognormal(np.zeros(len(t_vec)), sigm_a)
-                    fecundities = rho_a*epsilon_rho
-                    num_births = rng.poisson(fecundities*N_vec[pop_i])
+                    #epsilon_rho = rng.lognormal(np.zeros(len(t_vec)), sigm_a)
+                    #fecundities = rho_a*epsilon_rho
+                    #num_births = rng.poisson(fecundities*N_vec[pop_i])
+                    num_births = fecundities*N_vec[pop_i]
                     N_vec[pop_i,0] = num_births.sum()
                     N_vec[pop_i,1:] = 0
                 else:
@@ -78,18 +88,17 @@ class Model:
                     dens_dep = ((nu_a)*(1-m_a)) / (1 + np.exp(-self.eta*self.K_adult*(np.sum(N_pop/K_a) - 1)))
                     m_a_N = m_a + dens_dep
                     # Draw env. stoch. terms and combine for final survival prob.
-                    epsilon_m = rng.lognormal(np.zeros_like(t_vec)+self.mu_m, self.sigm_m*np.exp(-self.tau_m*t_vec))
-                    survival_probs = np.exp(-m_a_N * epsilon_m)
+                    #epsilon_m = rng.lognormal(np.zeros_like(t_vec)+self.mu_m, self.sigm_m*np.exp(-self.tau_m*t_vec))
+                    survival_probs = np.exp(-m_a_N * epsilon_m[t_i] * delta_t)
                     try:
                         # Ensure survival probs are feasible, otherwise mark sim invalid 
                         assert(np.all(survival_probs >= 0) and np.all(survival_probs <= 1))
-                        num_survivors = rng.binomial(N_pop, survival_probs)
-                        #num_survivors = N_pop*survival_probs
+                        #num_survivors = rng.binomial(N_pop, survival_probs)
+                        num_survivors = N_pop*survival_probs
                         num_survivors = np.roll(num_survivors, 1)
                         # Update abundances
                         N_vec[pop_i] = num_survivors
                     except:
                         N_vec = np.nan * np.ones((len(self.N_0_1), len(t_vec)))
-            if t+1 in self.census_yrs:
-               census_i = np.nonzero(self.census_yrs == t+1)[0][0]
-               self.N_tot_vec[:, census_i] = N_vec.sum(axis=1)
+            if t_vec[t_i+1] in self.census_t:
+               self.N_tot_vec[:, t_i+1] = N_vec.sum(axis=1)

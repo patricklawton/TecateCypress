@@ -2,8 +2,9 @@ from scipy.integrate import quad, solve_ivp
 import json
 import numpy as np
 from matplotlib import pyplot as plt
+import timeit
 
-fri = 30
+fri = 40
 
 # Read in map parameters
 params = {}
@@ -26,11 +27,8 @@ def dNdt(t, N):
     nu_t = alph_nu * np.exp(-beta_nu*t) + gamm_nu
     dens_dep = ((nu_t)*(1-m_t)) / (1 + np.exp(-eta*(N - K_t)))
     m_t_N = m_t + dens_dep
-    rng = np.random.default_rng()
-    #epsilon_m = rng.lognormal(mu_m, sigm_m*np.exp(-tau_m*t))
     sigm_m_t = sigm_m*np.exp(-tau_m*t)
     epsilon_m_mean = np.exp(mu_m + (sigm_m_t**2 / 2))
-    #return m_t_N
     return -m_t_N * N * epsilon_m_mean
 
 def get_num_births(t, N):
@@ -48,12 +46,20 @@ def get_num_births(t, N):
 
 # Import rest sim replicas to compare
 N_tot_vec = np.load('N_tot_vec.npy')
-census_yrs = np.load('census_yrs.npy')
-#print(census_yrs)
+census_t = np.load('census_t.npy')
+delta_t = census_t[1] - census_t[0]
+N_tot_vec_mean = N_tot_vec.mean(axis=0)
+#print(census_t)
+sim_mort = np.ones_like(N_tot_vec_mean) * np.nan
+for i in range(len(N_tot_vec_mean)-1):
+    diff_per_N = (N_tot_vec_mean[i] - N_tot_vec_mean[i+1]) / N_tot_vec_mean[i]
+    mort = diff_per_N / delta_t
+    if mort > 0:
+        sim_mort[i] = mort
 
-#sol = solve_ivp(dNdt, [1,fri], [0.9*params['K_adult']], t_eval=census_yrs)
-
-num_intervals = 5
+#sol = solve_ivp(dNdt, [1,fri], [0.9*params['K_adult']], t_eval=census_t)
+start_time = timeit.default_timer()
+num_intervals = 2
 nint_res = np.ones(fri*num_intervals)*np.nan
 t_full = np.arange(1, fri*num_intervals+1)
 t_eval = np.arange(1, fri+1)
@@ -64,13 +70,26 @@ for i in range(1, num_intervals+1):
         sol = solve_ivp(dNdt, [1,fri], [num_births], t_eval=t_eval)
     num_births = get_num_births(fri, sol.y[0][-1])
     nint_res[(i-1)*fri:i*fri] = sol.y[0]
+nint_mort = np.ones_like(nint_res) * np.nan
+for i in range(len(nint_res)-1):
+    mort = (nint_res[i] - nint_res[i+1]) / nint_res[i]
+    if mort > 0:
+        nint_mort[i] = mort
+elapsed = timeit.default_timer() - start_time
+print(elapsed)
 
-fig, axs = plt.subplots(2, 1, figsize=(7,10))
+fig, axs = plt.subplots(3, 1, figsize=(8,15))
 #axs.plot(sol.t, sol.y[0], c='k', label='numerical integration')
+axs[0].plot(census_t, N_tot_vec_mean, c='g', label='simulation')
 axs[0].plot(t_full, nint_res, c='k', label='numerical integration')
-axs[0].plot(census_yrs, N_tot_vec.mean(axis=0), c='g', label='simulation')
 axs[0].set_ylim(0, params['K_adult'])
 axs[0].legend()
+axs[1].plot(census_t, N_tot_vec_mean, c='g', label='simulation')
 axs[1].plot(t_full, nint_res, c='k', label='numerical integration')
-axs[1].plot(census_yrs, N_tot_vec.mean(axis=0), c='g', label='simulation')
+#axs[1].set_ylim(0, 60*params['K_adult'])
+#axs[2].plot(census_t, N_tot_vec_mean, c='g', label='simulation')
+#axs[2].plot(t_full, nint_res, c='k', label='numerical integration')
+axs[2].plot(census_t, sim_mort, c='g', label='simulation')
+axs[2].plot(t_full, nint_mort, c='k', label='numerical integration')
+#axs[2].set_ylim(0.01, 0.25); axs[2].set_xlim(0,20)
 fig.savefig('nint_test.png', bbox_inches='tight')
