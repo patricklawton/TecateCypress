@@ -18,13 +18,12 @@ for pr in ['mortality', 'fecundity']:
 A = 1 #ha
 num_reps = 500
 N_0_1 = np.repeat(0.9*A*params['K_adult'], num_reps)
-#N_0_1 = np.repeat(13*A*params['K_adult'], num_reps)
 #init_age = 20
 #init_age = round(params['a_mature']) + 10
-init_age = 1
 #t_vec = np.arange(1, 152)
-#t_vec = np.arange(1, 120)
-t_vec = np.arange(1, 80, 1)
+delta_t = 0.25
+init_age = delta_t
+t_vec = np.arange(delta_t, 80, delta_t)
 
 start_time = timeit.default_timer()
 model = Model(**params)
@@ -42,7 +41,6 @@ for N_tot_vec in model.N_tot_vec[::int(num_reps/10)]:
     axs[1].plot(model.census_t,N_tot_vec)
 axs[0].axhline(params['K_adult'], ls='--', c='k', alpha=0.35)
 axs[1].set_ylim(-0.03*params['K_adult'],params['K_adult'])
-#print(len(model.N_tot_vec.mean(axis=0)))
 axs[2].plot(model.census_t, model.N_tot_vec.mean(axis=0), c='k')
 axs[2].axhline(params['K_adult'], ls='--', c='k', alpha=0.35)
 axs[3].plot(model.census_t, model.N_tot_vec.mean(axis=0), c='k')

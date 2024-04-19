@@ -22,3 +22,5 @@ sbi_dev
 workspace
 steps
 signac_project_document.json
+census_t.npy
+N_tot_vec.npy

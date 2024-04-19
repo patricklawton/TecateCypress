@@ -12,7 +12,6 @@ for pr in ['mortality', 'fecundity']:
     with open('../model_fitting/{}/map.json'.format(pr), 'r') as handle:
         params.update(json.load(handle))
 
-#def m_t_N(t, N):
 def dNdt(t, N):
     # Mortality parameters
     alph_m = params['alph_m']; beta_m = params['beta_m']; gamm_m = params['gamm_m']
@@ -60,19 +59,21 @@ for i in range(len(N_tot_vec_mean)-1):
 #sol = solve_ivp(dNdt, [1,fri], [0.9*params['K_adult']], t_eval=census_t)
 start_time = timeit.default_timer()
 num_intervals = 2
-nint_res = np.ones(fri*num_intervals)*np.nan
-t_full = np.arange(1, fri*num_intervals+1)
-t_eval = np.arange(1, fri+1)
+interval_steps = round(fri/delta_t)
+nint_res = np.ones(interval_steps*num_intervals)*np.nan
+t_full = np.arange(delta_t, round(fri*num_intervals)+delta_t, delta_t)
+t_eval = np.arange(delta_t, fri+delta_t, delta_t)
 for i in range(1, num_intervals+1):
     if i == 1:
-        sol = solve_ivp(dNdt, [1,fri], [0.9*params['K_adult']], t_eval=t_eval)
+        sol = solve_ivp(dNdt, [delta_t,fri], [0.9*params['K_adult']], t_eval=t_eval)
     else:
-        sol = solve_ivp(dNdt, [1,fri], [num_births], t_eval=t_eval)
+        sol = solve_ivp(dNdt, [delta_t,fri], [num_births], t_eval=t_eval)
     num_births = get_num_births(fri, sol.y[0][-1])
-    nint_res[(i-1)*fri:i*fri] = sol.y[0]
+    nint_res[(i-1)*interval_steps:i*interval_steps] = sol.y[0]
 nint_mort = np.ones_like(nint_res) * np.nan
 for i in range(len(nint_res)-1):
-    mort = (nint_res[i] - nint_res[i+1]) / nint_res[i]
+    prop_diff = (nint_res[i] - nint_res[i+1]) / nint_res[i]
+    mort = prop_diff / delta_t
     if mort > 0:
         nint_mort[i] = mort
 elapsed = timeit.default_timer() - start_time
@@ -84,8 +85,8 @@ axs[0].plot(census_t, N_tot_vec_mean, c='g', label='simulation')
 axs[0].plot(t_full, nint_res, c='k', label='numerical integration')
 axs[0].set_ylim(0, params['K_adult'])
 axs[0].legend()
-axs[1].plot(census_t, N_tot_vec_mean, c='g', label='simulation')
 axs[1].plot(t_full, nint_res, c='k', label='numerical integration')
+axs[1].plot(census_t, N_tot_vec_mean, c='g', label='simulation')
 #axs[1].set_ylim(0, 60*params['K_adult'])
 #axs[2].plot(census_t, N_tot_vec_mean, c='g', label='simulation')
 #axs[2].plot(t_full, nint_res, c='k', label='numerical integration')

@@ -87,9 +87,10 @@ class Model:
                     # Add density dependent term to mortalities
                     dens_dep = ((nu_a)*(1-m_a)) / (1 + np.exp(-self.eta*self.K_adult*(np.sum(N_pop/K_a) - 1)))
                     m_a_N = m_a + dens_dep
+                    #if pop_i==0: print('simulated m_a_N: {}'.format(m_a_N))
                     # Draw env. stoch. terms and combine for final survival prob.
                     #epsilon_m = rng.lognormal(np.zeros_like(t_vec)+self.mu_m, self.sigm_m*np.exp(-self.tau_m*t_vec))
-                    survival_probs = np.exp(-m_a_N * epsilon_m[t_i] * delta_t)
+                    survival_probs = np.exp(-m_a_N * epsilon_m * delta_t)
                     try:
                         # Ensure survival probs are feasible, otherwise mark sim invalid 
                         assert(np.all(survival_probs >= 0) and np.all(survival_probs <= 1))
