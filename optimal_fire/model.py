@@ -62,10 +62,13 @@ class Model:
         K_a = self.K_adult
         nu_a = self.alph_nu * np.exp(-self.beta_nu*t_vec) + self.gamm_nu
         sigm_m_a = self.sigm_m*np.exp(-self.tau_m*t_vec)
-        epsilon_m = np.exp(sigm_m_a**2 / 2) 
+        epsilon_m_vec = rng.lognormal(np.zeros_like(N_vec)+self.mu_m, np.tile(sigm_m_a, (len(self.N_0_1),1)))
+        # Make it deterministic
+        epsilon_m_mean = np.exp(sigm_m_a**2 / 2) 
         # Age-dependent fecundity functions
         rho_a = self.rho_max / (1+np.exp(-self.eta_rho*(t_vec-self.a_mature)))
         sigm_a = self.sigm_max / (1+np.exp(-self.eta_sigm*(t_vec-self.a_sigm_star)))
+        # Make it deterministic
         epsilon_rho = np.exp(sigm_a**2 / 2)
         fecundities = rho_a*epsilon_rho
 
@@ -76,10 +79,11 @@ class Model:
                     continue
                 if t_fire_vec[pop_i, t_i] == True:
                     # Update seedlings, kill all adults
-                    #epsilon_rho = rng.lognormal(np.zeros(len(t_vec)), sigm_a)
-                    #fecundities = rho_a*epsilon_rho
-                    #num_births = rng.poisson(fecundities*N_vec[pop_i])
-                    num_births = fecundities*N_vec[pop_i]
+                    epsilon_rho = rng.lognormal(np.zeros(len(t_vec)), sigm_a)
+                    fecundities = rho_a*epsilon_rho
+                    num_births = rng.poisson(fecundities*N_vec[pop_i])
+                    # Make it deterministic
+                    #num_births = fecundities*N_vec[pop_i]
                     N_vec[pop_i,0] = num_births.sum()
                     N_vec[pop_i,1:] = 0
                 else:
@@ -87,15 +91,23 @@ class Model:
                     # Add density dependent term to mortalities
                     dens_dep = ((nu_a)*(1-m_a)) / (1 + np.exp(-self.eta*self.K_adult*(np.sum(N_pop/K_a) - 1)))
                     m_a_N = m_a + dens_dep
-                    #if pop_i==0: print('simulated m_a_N: {}'.format(m_a_N))
-                    # Draw env. stoch. terms and combine for final survival prob.
-                    #epsilon_m = rng.lognormal(np.zeros_like(t_vec)+self.mu_m, self.sigm_m*np.exp(-self.tau_m*t_vec))
-                    survival_probs = np.exp(-m_a_N * epsilon_m * delta_t)
+                    # Try correcting for discretization issue
+                    age_i = np.nonzero(N_pop)[0][0]
+                    num_draws = 1000
+                    epsilon_draws = rng.lognormal(np.zeros(num_draws), np.repeat(sigm_m_a[age_i], num_draws))
+                    m_eff = 1 - np.mean(np.exp(-m_a_N[age_i]*epsilon_draws*delta_t))
+                    m_nint = m_a_N[age_i]*epsilon_m_mean[age_i]*delta_t
+                    z = m_nint - m_eff 
+                    m_a_N[age_i] = m_a_N[age_i] + z
+                    # Make it deterministic
+                    #epsilon_m = epsilon_m_mean
+                    survival_probs = np.exp(-m_a_N * epsilon_m_vec[pop_i] * delta_t)
                     try:
                         # Ensure survival probs are feasible, otherwise mark sim invalid 
                         assert(np.all(survival_probs >= 0) and np.all(survival_probs <= 1))
-                        #num_survivors = rng.binomial(N_pop, survival_probs)
-                        num_survivors = N_pop*survival_probs
+                        num_survivors = rng.binomial(N_pop, survival_probs)
+                        # Make it deterministic
+                        #num_survivors = N_pop*survival_probs
                         num_survivors = np.roll(num_survivors, 1)
                         # Update abundances
                         N_vec[pop_i] = num_survivors

@@ -26,8 +26,10 @@ def dNdt(t, N):
     nu_t = alph_nu * np.exp(-beta_nu*t) + gamm_nu
     dens_dep = ((nu_t)*(1-m_t)) / (1 + np.exp(-eta*(N - K_t)))
     m_t_N = m_t + dens_dep
+    if t==1: print(m_t_N)
     sigm_m_t = sigm_m*np.exp(-tau_m*t)
     epsilon_m_mean = np.exp(mu_m + (sigm_m_t**2 / 2))
+    if t==1: print(epsilon_m_mean)
     return -m_t_N * N * epsilon_m_mean
 
 def get_num_births(t, N):
@@ -65,7 +67,7 @@ t_full = np.arange(delta_t, round(fri*num_intervals)+delta_t, delta_t)
 t_eval = np.arange(delta_t, fri+delta_t, delta_t)
 for i in range(1, num_intervals+1):
     if i == 1:
-        sol = solve_ivp(dNdt, [delta_t,fri], [0.9*params['K_adult']], t_eval=t_eval)
+        sol = solve_ivp(dNdt, [delta_t,fri], [50*params['K_adult']], t_eval=t_eval)
     else:
         sol = solve_ivp(dNdt, [delta_t,fri], [num_births], t_eval=t_eval)
     num_births = get_num_births(fri, sol.y[0][-1])
@@ -77,7 +79,7 @@ for i in range(len(nint_res)-1):
     if mort > 0:
         nint_mort[i] = mort
 elapsed = timeit.default_timer() - start_time
-print(elapsed)
+print('{} seconds'.format(elapsed))
 
 fig, axs = plt.subplots(3, 1, figsize=(8,15))
 #axs.plot(sol.t, sol.y[0], c='k', label='numerical integration')
