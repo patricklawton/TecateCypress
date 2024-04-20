@@ -58,7 +58,7 @@ for i in range(len(N_tot_vec_mean)-1):
 
 #sol = solve_ivp(dNdt, [1,fri], [0.9*params['K_adult']], t_eval=census_t)
 start_time = timeit.default_timer()
-num_intervals = 4 
+num_intervals = 14
 interval_steps = round(fri/delta_t)
 nint_res = np.ones(interval_steps*num_intervals)*np.nan
 t_full = np.arange(delta_t, round(fri*num_intervals)+delta_t, delta_t)
@@ -84,10 +84,12 @@ fig, axs = plt.subplots(3, 1, figsize=(8,15))
 axs[0].plot(census_t, N_tot_vec_mean, c='g', label='simulation')
 axs[0].plot(t_full, nint_res, c='k', label='numerical integration')
 axs[0].set_ylim(0, params['K_adult'])
+axs[0].axhline(6500, ls='--', c='g', label='stable pop w/o env stoch') 
+axs[0].axhline(6000, ls='--', c='orange', label='stable pop w env stoch')
 axs[0].legend()
 axs[1].plot(t_full, nint_res, c='k', label='numerical integration')
 axs[1].plot(census_t, N_tot_vec_mean, c='g', label='simulation')
-#axs[1].set_ylim(0, 60*params['K_adult'])
+axs[1].set_ylim(0, 60*params['K_adult'])
 #axs[2].plot(census_t, N_tot_vec_mean, c='g', label='simulation')
 #axs[2].plot(t_full, nint_res, c='k', label='numerical integration')
 axs[2].plot(census_t, sim_mort, c='g', label='simulation')

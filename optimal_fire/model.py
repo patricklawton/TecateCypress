@@ -42,11 +42,10 @@ class Model:
         # Get timesteps of fire occurances
         if not hasattr(fire_probs, '__len__'):
             fire_probs = fire_probs * np.ones((len(self.N_0_1), len(t_vec)))
-        #t_fire_vec = rng.binomial(np.ones((len(self.N_0_1), len(t_vec))).astype(int), fire_probs)
+        t_fire_vec = rng.binomial(np.ones((len(self.N_0_1), len(t_vec))).astype(int), fire_probs)
         # Make it deterministic
-        fri = 1/fire_probs[0,0]
-        t_fire_vec = np.array([1 if t%fri==0 else 0 for t in t_vec])
-        t_fire_vec = np.tile(t_fire_vec, (len(self.N_0_1), 1))
+        #fri = 1/fire_probs[0,0]
+        #t_fire_vec = np.array([1 if t%fri==0 else 0 for t in t_vec])
         #t_fire_vec = np.tile(t_fire_vec, (len(self.N_0_1), 1))
 
         N_vec = np.ma.array(np.zeros((len(self.N_0_1), len(t_vec))))
@@ -92,9 +91,9 @@ class Model:
                     # Add density dependent term to mortalities
                     dens_dep = ((nu_a)*(1-m_a)) / (1 + np.exp(-self.eta*self.K_adult*(np.sum(N_pop/K_a) - 1)))
                     m_a_N = m_a + dens_dep
-                    # Make it deterministic
-                    #epsilon_m = epsilon_m_mean
                     survival_probs = np.exp(-m_a_N * epsilon_m_vec[pop_i] * delta_t)
+                    # Make it deterministic
+                    #survival_probs = np.exp(-m_a_N * epsilon_m_mean * delta_t)
                     try:
                         # Ensure survival probs are feasible, otherwise mark sim invalid 
                         assert(np.all(survival_probs >= 0) and np.all(survival_probs <= 1))
