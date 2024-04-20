@@ -11,14 +11,14 @@ for pr in ['mortality', 'fecundity']:
         params.update(json.load(handle)) 
 
 A = 1 #ha
-num_reps = 500
-N_0_1 = np.repeat(50*A*params['K_adult'], num_reps)
+num_reps = 1000
+delta_t = 0.5
+N_0_1 = np.repeat(0.9*A*params['K_adult'], num_reps)
 #init_age = 20
-#init_age = round(params['a_mature']) + 10
+init_age = round(params['a_mature']) + 10
+#init_age = delta_t
 #t_vec = np.arange(1, 152)
-delta_t = 1
-init_age = delta_t
-t_vec = np.arange(delta_t, 80, delta_t)
+t_vec = np.arange(delta_t, 160, delta_t)
 
 start_time = timeit.default_timer()
 model = Model(**params)
