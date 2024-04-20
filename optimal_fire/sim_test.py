@@ -11,20 +11,22 @@ for pr in ['mortality', 'fecundity']:
         params.update(json.load(handle)) 
 
 A = 1 #ha
-num_reps = 1000
+num_reps = 500
 delta_t = 1
 N_0_1 = np.repeat(0.9*A*params['K_adult'], num_reps)
+fire_prob = 1/40
+t_max = (1/fire_prob)*8
 #init_age = 20
 #init_age = round(params['a_mature']) + 10
 init_age = delta_t
 #t_vec = np.arange(1, 152)
-t_vec = np.arange(delta_t, 540, delta_t)
+t_vec = np.arange(delta_t, t_max, delta_t)
 
 start_time = timeit.default_timer()
 model = Model(**params)
 model.set_area(A)
 model.init_N(N_0_1, init_age)
-model.simulate(t_vec=t_vec, census_every=1, fire_probs=1/40)
+model.simulate(t_vec=t_vec, census_every=1, fire_probs=fire_prob)
 elapsed = timeit.default_timer() - start_time
 print('{} seconds'.format(elapsed))
 np.save('N_tot_vec.npy', model.N_tot_vec)

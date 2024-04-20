@@ -59,7 +59,7 @@ class Model:
         
         # Age-dependent mortality functions
         m_a = self.alph_m * np.exp(-self.beta_m*t_vec) + self.gamm_m
-        K_a = self.K_adult
+        K_a = np.repeat(self.K_adult, len(t_vec))
         nu_a = self.alph_nu * np.exp(-self.beta_nu*t_vec) + self.gamm_nu
         sigm_m_a = self.sigm_m*np.exp(-self.tau_m*t_vec)
         epsilon_m_vec = rng.lognormal(np.zeros_like(N_vec)+self.mu_m, np.tile(sigm_m_a, (len(self.N_0_1),1)))
@@ -77,33 +77,58 @@ class Model:
                 # If sim invalid or pop extirpated, skip
                 if np.all(np.isnan(N_vec)) or (np.sum(N_vec[pop_i]) == 0):
                     continue
+                age_i_vec = np.nonzero(N_pop)[0]
+                if len(age_i_vec) > 1:
+                    single_age = False
+                else:
+                    single_age = True
+                    age_i = age_i_vec[0]
+                    N = N_pop[age_i]
                 if t_fire_vec[pop_i, t_i] == True:
                     # Update seedlings, kill all adults
-                    epsilon_rho = rng.lognormal(np.zeros(len(t_vec)), sigm_a)
-                    fecundities = rho_a*epsilon_rho
-                    num_births = rng.poisson(fecundities*N_vec[pop_i])
-                    # Make it deterministic
-                    #num_births = fecundities*N_vec[pop_i]
-                    N_vec[pop_i,0] = num_births.sum()
-                    N_vec[pop_i,1:] = 0
+                    if not single_age:
+                        epsilon_rho = rng.lognormal(np.zeros(len(t_vec)), sigm_a)
+                        fecundities = rho_a*epsilon_rho
+                        num_births = rng.poisson(fecundities*N_vec[pop_i])
+                        # Make it deterministic
+                        #num_births = fecundities*N_vec[pop_i]
+                        N_vec[pop_i,0] = num_births.sum()
+                        N_vec[pop_i,1:] = 0
+                    else:
+                        epsilon_rho = rng.lognormal(0, sigm_a[age_i])
+                        fecundities = rho_a[age_i]*epsilon_rho
+                        num_births = rng.poisson(fecundities*N)
+                        N_vec[pop_i,0] = num_births
+                        N_vec[pop_i,1:] = 0
                 else:
                     # Update each pop given mortality rates
                     # Add density dependent term to mortalities
-                    dens_dep = ((nu_a)*(1-m_a)) / (1 + np.exp(-self.eta*self.K_adult*(np.sum(N_pop/K_a) - 1)))
-                    m_a_N = m_a + dens_dep
-                    survival_probs = np.exp(-m_a_N * epsilon_m_vec[pop_i] * delta_t)
-                    # Make it deterministic
-                    #survival_probs = np.exp(-m_a_N * epsilon_m_mean * delta_t)
+                    if not single_age:
+                        dens_dep = ((nu_a)*(1-m_a)) / (1 + np.exp(-self.eta*self.K_adult*(np.sum(N_pop/K_a) - 1)))
+                        m_a_N = m_a + dens_dep
+                        survival_probs = np.exp(-m_a_N * epsilon_m_vec[pop_i] * delta_t)
+                        # Make it deterministic
+                        #survival_probs = np.exp(-m_a_N * epsilon_m_mean * delta_t)
+                    else:
+                        dens_dep = ((nu_a[age_i])*(1-m_a[age_i])) / (1 + np.exp(-self.eta*self.K_adult*(N/K_a[age_i] - 1)))
+                        m_a_N = m_a[age_i] + dens_dep
+                        survival_probs = np.exp(-m_a_N * epsilon_m_vec[pop_i][age_i] * delta_t)
                     try:
                         # Ensure survival probs are feasible, otherwise mark sim invalid 
                         assert(np.all(survival_probs >= 0) and np.all(survival_probs <= 1))
-                        num_survivors = rng.binomial(N_pop, survival_probs)
-                        # Make it deterministic
-                        #num_survivors = N_pop*survival_probs
-                        num_survivors = np.roll(num_survivors, 1)
-                        # Update abundances
-                        N_vec[pop_i] = num_survivors
+                        if not single_age:
+                            num_survivors = rng.binomial(N_pop, survival_probs)
+                            # Make it deterministic
+                            #num_survivors = N_pop*survival_probs
+                            num_survivors = np.roll(num_survivors, 1)
+                            # Update abundances
+                            N_vec[pop_i] = num_survivors
+                        else:
+                            num_survivors = rng.binomial(N, survival_probs)
+                            # Update abundances
+                            N_vec[pop_i][age_i+1] = num_survivors
+                            N_vec[pop_i][age_i] = 0
                     except:
                         N_vec = np.nan * np.ones((len(self.N_0_1), len(t_vec)))
             if t_vec[t_i+1] in self.census_t:
-               self.N_tot_vec[:, t_i+1] = N_vec.sum(axis=1)
+                self.N_tot_vec[:, t_i+1] = N_vec.sum(axis=1)

@@ -58,7 +58,7 @@ for i in range(len(N_tot_vec_mean)-1):
 
 #sol = solve_ivp(dNdt, [1,fri], [0.9*params['K_adult']], t_eval=census_t)
 start_time = timeit.default_timer()
-num_intervals = 14
+num_intervals = 8
 interval_steps = round(fri/delta_t)
 nint_res = np.ones(interval_steps*num_intervals)*np.nan
 t_full = np.arange(delta_t, round(fri*num_intervals)+delta_t, delta_t)
