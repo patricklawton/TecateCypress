@@ -15,10 +15,12 @@ num_reps = 1000
 delta_t = 1
 N_0_1 = np.repeat(0.9*A*params['K_adult'], num_reps)
 fire_prob = 1/40
-t_max = (1/fire_prob)*16
-#init_age = 20
+#t_max = (1/fire_prob)*6
+t_max = 140
+init_age = 20
 #init_age = round(params['a_mature']) + 10
-init_age = delta_t
+#init_age = delta_t
+#print(init_age)
 #t_vec = np.arange(1, 152)
 t_vec = np.arange(delta_t, t_max, delta_t)
 
@@ -27,7 +29,7 @@ model = Model(**params)
 model.set_area(A)
 model.init_N(N_0_1, init_age)
 #model.set_fire_probabilities(fire_probs=fire_prob)
-model.set_weibull_fire(b=44, c=1.42)
+model.set_weibull_fire(b=40, c=1.42)
 model.simulate(t_vec=t_vec, census_every=1)
 elapsed = timeit.default_timer() - start_time
 print('{} seconds'.format(elapsed))

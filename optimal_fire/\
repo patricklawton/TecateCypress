@@ -72,6 +72,8 @@ class Model:
                         else:
                             if t_star_vec[pop_i] < len(t_vec)-1:
                                 t_star_vec[pop_i] += 1
+        print(np.any(np.sum(t_fire_vec, axis=1) == 0))
+        print(np.nonzero(np.sum(t_fire_vec, axis=1) == 0))
 
         N_vec = np.ma.array(np.zeros((len(self.N_0_1), len(t_vec))))
         init_age_i = np.nonzero(t_vec == self.init_age)[0][0]
@@ -103,10 +105,6 @@ class Model:
                 if np.all(np.isnan(N_vec)) or (np.sum(N_vec[pop_i]) == 0):
                     continue
                 age_i_vec = np.nonzero(N_pop)[0]
-                # Cap the max age at the length of the time vector minus 1;
-                # just because that's all we compute, could calculate on the fly
-                if max(age_i_vec) >= len(t_vec) - 1:
-                    age_i_vec[-1] = len(t_vec) - 2
                 if len(age_i_vec) > 1:
                     single_age = False
                 else:
@@ -142,10 +140,9 @@ class Model:
                         dens_dep = ((nu_a[age_i])*(1-m_a[age_i])) / (1 + np.exp(-self.eta*self.K_adult*(N/K_a[age_i] - 1)))
                         m_a_N = m_a[age_i] + dens_dep
                         survival_probs = np.exp(-m_a_N * epsilon_m_vec[pop_i][age_i] * delta_t)
-
-                    # Ensure survival probs are feasible, otherwise mark sim invalid 
-                    prob_check = np.all(survival_probs >= 0) and np.all(survival_probs <= 1)
-                    if prob_check:
+                    try:
+                        # Ensure survival probs are feasible, otherwise mark sim invalid 
+                        assert(np.all(survival_probs >= 0) and np.all(survival_probs <= 1))
                         if not single_age:
                             num_survivors = rng.binomial(N_pop, survival_probs)
                             # Make it deterministic
@@ -158,7 +155,14 @@ class Model:
                             # Update abundances
                             N_vec[pop_i][age_i+1] = num_survivors
                             N_vec[pop_i][age_i] = 0
-                    else:
+                    except:
+                        print('population', pop_i)
+                        print(age_i)
+                        print(len(N_vec[pop_i]))
+                        print(survival_probs)
+                        print((np.all(survival_probs >= 0) and np.all(survival_probs <= 1)))
                         N_vec = np.nan * np.ones((len(self.N_0_1), len(t_vec)))
             if t_vec[t_i+1] in self.census_t:
                 self.N_tot_vec[:, t_i+1] = N_vec.sum(axis=1)
+                if np.all(np.isnan(N_vec.sum(axis=1))):
+                    print(t_vec[t_i+1])
