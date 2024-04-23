@@ -61,15 +61,17 @@ class Model:
             init_age_i = np.nonzero(t_vec == self.init_age)[0][0]
             t_star_vec = np.ones(len(self.N_0_1)).astype(int) * init_age_i #Time since last fire
             t_fire_vec = np.zeros((len(self.N_0_1), len(t_vec))).astype(int)
-            for pop_i in range(len(self.N_0_1)):
-                for t_i in range(len(t_vec)):
-                    frequency = frequency_vec[t_star_vec[pop_i]]
-                    fire = rng.poisson(lam=frequency, size=1)
-                    if fire:
-                        t_fire_vec[pop_i, t_i] = 1
-                        t_star_vec[pop_i] = 0
-                    else:
-                        t_star_vec[pop_i] += 1
+            if self.weibull_b > 0:
+                for pop_i in range(len(self.N_0_1)):
+                    for t_i in range(len(t_vec)):
+                        frequency = frequency_vec[t_star_vec[pop_i]]
+                        fire = rng.poisson(lam=frequency, size=1)
+                        if fire:
+                            t_fire_vec[pop_i, t_i] = 1
+                            t_star_vec[pop_i] = 0
+                        else:
+                            if t_star_vec[pop_i] < len(t_vec)-1:
+                                t_star_vec[pop_i] += 1
 
         N_vec = np.ma.array(np.zeros((len(self.N_0_1), len(t_vec))))
         init_age_i = np.nonzero(t_vec == self.init_age)[0][0]

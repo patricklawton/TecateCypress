@@ -4,8 +4,8 @@ import signac as sg
 # Initialize signac project
 project = sg.init_project()
 
-fire_probs = np.arange(0, 0.2, 0.01)
-for fp in fire_probs:
-    sp = {'fire_prob': fp}
+b_vec = np.arange(0, 122, 2)
+for b in b_vec:
+    sp = {'weibull_b': b}
     job = project.open_job(sp)
     job.init()

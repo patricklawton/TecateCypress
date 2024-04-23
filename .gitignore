@@ -19,7 +19,7 @@ script_pseudo.txt
 sbi-logs
 sbi_log.txt
 sbi_dev
-workspace
+workspace*
 steps
 signac_project_document.json
 census_t.npy

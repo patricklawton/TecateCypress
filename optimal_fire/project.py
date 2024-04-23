@@ -17,18 +17,20 @@ for pr in ['mortality', 'fecundity']:
 @FlowProject.operation
 def run_sims(job):
     A = 1 #ha
+    delta_t = 1
     num_reps = 10000
     N_0_1 = np.repeat(0.9*A*params['K_adult'], num_reps)
     init_age = round(params['a_mature']) + 10
-    t_vec = np.arange(1, 152)
+    t_vec = np.arange(delta_t, 152, delta_t)
 
     model = Model(**params)
     model.set_area(A)
     model.init_N(N_0_1, init_age)
-    model.simulate(t_vec=t_vec, census_every=2, fire_probs=job.sp.fire_prob)
+    model.set_weibull_fire(b=job.sp.weibull_b, c=1.42)
+    model.simulate(t_vec=t_vec, census_every=1)
     
     job.data['N_tot_vec'] = model.N_tot_vec
-    job.data['census_yrs'] = model.census_yrs
+    job.data['census_t'] = model.census_t
     job.doc['simulated'] = True
 
 if __name__ == "__main__":
