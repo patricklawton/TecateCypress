@@ -53,7 +53,23 @@ class Model:
             #t_fire_vec = np.array([1 if t%fri==0 else 0 for t in t_vec])
             #t_fire_vec = np.tile(t_fire_vec, (len(self.N_0_1), 1))
         elif hasattr(self, 'weibull_b') and hasattr(self, 'weibull_c'):
-            ...
+            # Calculate the frequency of fires between timesteps via Weibull hazard
+            b_eff = self.weibull_b * delta_t
+            term1 = 1/b_eff**self.weibull_c
+            term2 = (t_vec + delta_t)**self.weibull_c - t_vec**self.weibull_c
+            frequency_vec =  term1 * term2 
+            init_age_i = np.nonzero(t_vec == self.init_age)[0][0]
+            t_star_vec = np.ones(len(self.N_0_1)).astype(int) * init_age_i #Time since last fire
+            t_fire_vec = np.zeros((len(self.N_0_1), len(t_vec))).astype(int)
+            for pop_i in range(len(self.N_0_1)):
+                for t_i in range(len(t_vec)):
+                    frequency = frequency_vec[t_star_vec[pop_i]]
+                    fire = rng.poisson(lam=frequency, size=1)
+                    if fire:
+                        t_fire_vec[pop_i, t_i] = 1
+                        t_star_vec[pop_i] = 0
+                    else:
+                        t_star_vec[pop_i] += 1
 
         N_vec = np.ma.array(np.zeros((len(self.N_0_1), len(t_vec))))
         init_age_i = np.nonzero(t_vec == self.init_age)[0][0]
@@ -91,7 +107,7 @@ class Model:
                     single_age = True
                     age_i = age_i_vec[0]
                     N = N_pop[age_i]
-                if t_fire_vec[pop_i, t_i] == True:
+                if t_fire_vec[pop_i, t_i]:
                     # Update seedlings, kill all adults
                     if not single_age:
                         epsilon_rho = rng.lognormal(np.zeros(len(t_vec)), sigm_a)
