@@ -11,7 +11,7 @@ for pr in ['mortality', 'fecundity']:
         params.update(json.load(handle)) 
 
 A = 1 #ha
-num_reps = 500
+num_reps = 10
 delta_t = 1
 N_0_1 = np.repeat(0.9*A*params['K_adult'], num_reps)
 fire_prob = 1/40
@@ -26,7 +26,8 @@ start_time = timeit.default_timer()
 model = Model(**params)
 model.set_area(A)
 model.init_N(N_0_1, init_age)
-model.simulate(t_vec=t_vec, census_every=1, fire_probs=fire_prob)
+model.set_fire_probabilities(fire_probs=fire_prob)
+model.simulate(t_vec=t_vec, census_every=1)
 elapsed = timeit.default_timer() - start_time
 print('{} seconds'.format(elapsed))
 np.save('N_tot_vec.npy', model.N_tot_vec)

@@ -29,24 +29,31 @@ class Model:
         # Scale the carrying capacity, in N/ha, with the area
         self.K_adult = self.K_adult * self.A
 
-    def set_fire_probabilities(self, p):
-        if not hasattr(p, '__len__'):
-            self.p = p * np.ones((len(self.N_0_1), len(t_vec)))
+    def set_fire_probabilities(self, fire_probs):
+        #if not hasattr(fire_probs, '__len__'):
+        #    self.fire_probs = fire_probs * np.ones((len(self.N_0_1), len(t_vec)))
+        self.fire_probs = fire_probs
 
-    def simulate(self, t_vec=np.arange(1,100), census_every=1, store=['mortality', 'fecundity'],
-                 fire_probs=0.0):
+    def set_weibull_fire(self, b, c):
+        self.weibull_b = b
+        self.weibull_c = c
+
+    def simulate(self, t_vec=np.arange(1,100), census_every=1, store=['mortality', 'fecundity']):
         delta_t = t_vec[1] - t_vec[0]
         # For sampling from various probability distributions
         rng = np.random.default_rng()
 
         # Get timesteps of fire occurances
-        if not hasattr(fire_probs, '__len__'):
-            fire_probs = fire_probs * np.ones((len(self.N_0_1), len(t_vec)))
-        t_fire_vec = rng.binomial(np.ones((len(self.N_0_1), len(t_vec))).astype(int), fire_probs)
-        # Make it deterministic
-        #fri = 1/fire_probs[0,0]
-        #t_fire_vec = np.array([1 if t%fri==0 else 0 for t in t_vec])
-        #t_fire_vec = np.tile(t_fire_vec, (len(self.N_0_1), 1))
+        if hasattr(self, 'fire_probs'):
+            if not hasattr(self.fire_probs, '__len__'):
+                self.fire_probs = self.fire_probs * np.ones((len(self.N_0_1), len(t_vec)))
+            t_fire_vec = rng.binomial(np.ones((len(self.N_0_1), len(t_vec))).astype(int), self.fire_probs)
+            # Make it deterministic
+            #fri = 1/self.fire_probs[0,0]
+            #t_fire_vec = np.array([1 if t%fri==0 else 0 for t in t_vec])
+            #t_fire_vec = np.tile(t_fire_vec, (len(self.N_0_1), 1))
+        elif hasattr(self, 'weibull_b') and hasattr(self, 'weibull_c'):
+            ...
 
         N_vec = np.ma.array(np.zeros((len(self.N_0_1), len(t_vec))))
         init_age_i = np.nonzero(t_vec == self.init_age)[0][0]
