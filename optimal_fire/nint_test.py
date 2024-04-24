@@ -3,8 +3,12 @@ import json
 import numpy as np
 from matplotlib import pyplot as plt
 import timeit
+from scipy.special import gamma
+from scipy.stats import weibull_min
 
 fri = 40
+c = 1.42
+b = fri / gamma(1+1/c)
 
 # Read in map parameters
 params = {}
@@ -30,18 +34,42 @@ def dNdt(t, N):
     epsilon_m_mean = np.exp(mu_m + (sigm_m_t**2 / 2))
     return -m_t_N * N * epsilon_m_mean
 
-def get_num_births(t, N):
-    # Fecundity parameters
-    rho_max = params['rho_max']; eta_rho = params['eta_rho']; a_mature = params['a_mature']
-    sigm_max = params['sigm_max']; eta_sigm = params['eta_sigm'];
-    a_sigm_star = a_mature
-    # Age-dependent fecundity functions
-    rho_t = rho_max / (1+np.exp(-eta_rho*(t-a_mature)))
-    sigm_t = sigm_max / (1+np.exp(-eta_sigm*(t-a_sigm_star)))
-    # Approximate number of births
-    epsilon_rho_mean = np.exp(0 + (sigm_t**2 / 2))
-    num_births = rho_t*epsilon_rho_mean*N
-    return num_births
+#def get_num_births(t, N):
+#    # Fecundity parameters
+#    rho_max = params['rho_max']; eta_rho = params['eta_rho']; a_mature = params['a_mature']
+#    sigm_max = params['sigm_max']; eta_sigm = params['eta_sigm'];
+#    a_sigm_star = a_mature
+#    # Age-dependent fecundity functions
+#    rho_t = rho_max / (1+np.exp(-eta_rho*(t-a_mature)))
+#    sigm_t = sigm_max / (1+np.exp(-eta_sigm*(t-a_sigm_star)))
+#    # Approximate number of births
+#    epsilon_rho_mean = np.exp(0 + (sigm_t**2 / 2))
+#    num_births = rho_t*epsilon_rho_mean*N
+#    return num_births
+# Fecundity parameters
+rho_max = params['rho_max']; eta_rho = params['eta_rho']; a_mature = params['a_mature']
+sigm_max = params['sigm_max']; eta_sigm = params['eta_sigm'];
+a_sigm_star = a_mature
+delta_t = 1
+t_final = 1000
+t = np.arange(delta_t, t_final, delta_t)
+# Age-dependent fecundity functions
+rho_t = rho_max / (1+np.exp(-eta_rho*(t-a_mature)))
+sigm_t = sigm_max / (1+np.exp(-eta_sigm*(t-a_sigm_star)))
+# Approximate number of births per avg fire return interval
+epsilon_rho_mean = np.exp(0 + (sigm_t**2 / 2))
+fecundities = rho_t*epsilon_rho_mean
+wei = weibull_min(c, scale=b, loc=0)
+expected_num_births = np.trapz(fecundities*wei.pdf(t))
+def get_num_births(N):
+    return expected_num_births * N
+# Approximate number of extirpations over time 
+repro_min = 0.01*params['rho_max']*np.exp(params['sigm_max']**2/2)
+rho_ints = [np.trapz(fecundities[:i]) for i in range(len(t))]
+diffs = [abs(repro_min - rho_int) for rho_int in rho_ints]
+min_i = min(range(len(diffs)), key=diffs.__getitem__)
+q = t[min_i]
+avg_num_extir_fires = (q**c - delta_t**c) / b**c
 
 # Import rest sim replicas to compare
 N_tot_vec = np.load('N_tot_vec.npy')
@@ -58,7 +86,7 @@ for i in range(len(N_tot_vec_mean)-1):
 
 #sol = solve_ivp(dNdt, [1,fri], [0.9*params['K_adult']], t_eval=census_t)
 start_time = timeit.default_timer()
-num_intervals = 8
+num_intervals = 20
 interval_steps = round(fri/delta_t)
 nint_res = np.ones(interval_steps*num_intervals)*np.nan
 t_full = np.arange(delta_t, round(fri*num_intervals)+delta_t, delta_t)
@@ -68,7 +96,9 @@ for i in range(1, num_intervals+1):
         sol = solve_ivp(dNdt, [delta_t,fri], [0.9*params['K_adult']], t_eval=t_eval)
     else:
         sol = solve_ivp(dNdt, [delta_t,fri], [num_births], t_eval=t_eval)
-    num_births = get_num_births(fri, sol.y[0][-1])
+    sol.y = sol.y*(1-avg_num_extir_fires)
+    #num_births = get_num_births(fri, sol.y[0][-1])
+    num_births = get_num_births(sol.y[0][-1])
     nint_res[(i-1)*interval_steps:i*interval_steps] = sol.y[0]
 nint_mort = np.ones_like(nint_res) * np.nan
 for i in range(len(nint_res)-1):
