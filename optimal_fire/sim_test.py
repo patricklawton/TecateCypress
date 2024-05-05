@@ -16,13 +16,14 @@ num_reps = 1000
 delta_t = 1
 N_0_1 = np.repeat(0.9*A*params['K_adult'], num_reps)
 fire_prob = 1/40
-fri = 40
+fri = 110
 c = 1.42
 b = fri / gamma(1+1/c)
-t_max = fri*20
-#init_age = 20
-#init_age = round(params['a_mature']) + 10
-init_age = delta_t
+#t_max = fri*3
+t_max = 152
+#init_age = 50
+init_age = round(params['a_mature']) + 10
+#init_age = delta_t
 #print(init_age)
 #t_vec = np.arange(1, 152)
 t_vec = np.arange(delta_t, t_max, delta_t)
@@ -40,7 +41,8 @@ np.save('N_tot_vec.npy', model.N_tot_vec)
 np.save('census_t.npy', model.census_t)
 
 fig, axs = plt.subplots(4, 1, figsize=(7,20))
-for N_tot_vec in model.N_tot_vec[::int(num_reps/15)]:
+slice_step = int(num_reps/10) if num_reps >= 10 else 1
+for N_tot_vec in model.N_tot_vec[::slice_step]:
     axs[0].plot(model.census_t,N_tot_vec)
     axs[1].plot(model.census_t,N_tot_vec)
 axs[0].axhline(params['K_adult'], ls='--', c='k', alpha=0.35)

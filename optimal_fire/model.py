@@ -59,7 +59,7 @@ class Model:
             term2 = (t_vec + delta_t)**self.weibull_c - t_vec**self.weibull_c
             frequency_vec =  term1 * term2 
             init_age_i = np.nonzero(t_vec == self.init_age)[0][0]
-            t_star_vec = np.ones(len(self.N_0_1)).astype(int) * init_age_i #Time since last fire
+            t_star_vec = np.ones(len(self.N_0_1)).astype(int) * init_age_i #Time index since last fire
             t_fire_vec = np.zeros((len(self.N_0_1), len(t_vec))).astype(int)
             if self.weibull_b > 0:
                 for pop_i in range(len(self.N_0_1)):
@@ -98,21 +98,23 @@ class Model:
         fecundities = rho_a*epsilon_rho
 
         for t_i, t in enumerate(t_vec[:-1]):
-            for pop_i, N_pop in enumerate(N_vec):
+            for pop_i in range(len(N_vec)):
                 # If sim invalid or pop extirpated, skip
                 if np.all(np.isnan(N_vec)) or (np.sum(N_vec[pop_i]) == 0):
                     continue
-                age_i_vec = np.nonzero(N_pop)[0]
+                age_i_vec = np.nonzero(N_vec[pop_i])[0]
                 # Cap the max age at the length of the time vector minus 1;
                 # just because that's all we compute, could calculate on the fly
                 if max(age_i_vec) >= len(t_vec) - 1:
+                    N_vec[pop_i][age_i_vec[-1]-1] += N_vec[pop_i][age_i_vec[-1]]
+                    N_vec[pop_i][age_i_vec[-1]] = 0
                     age_i_vec[-1] = len(t_vec) - 2
                 if len(age_i_vec) > 1:
                     single_age = False
                 else:
                     single_age = True
                     age_i = age_i_vec[0]
-                    N = N_pop[age_i]
+                    N = N_vec[pop_i][age_i]
                 if t_fire_vec[pop_i, t_i]:
                     # Update seedlings, kill all adults
                     if not single_age:
@@ -133,7 +135,7 @@ class Model:
                     # Update each pop given mortality rates
                     # Add density dependent term to mortalities
                     if not single_age:
-                        dens_dep = ((nu_a)*(1-m_a)) / (1 + np.exp(-self.eta*self.K_adult*(np.sum(N_pop/K_a) - 1)))
+                        dens_dep = ((nu_a)*(1-m_a)) / (1 + np.exp(-self.eta*self.K_adult*(np.sum(N_vec[pop_i]/K_a) - 1)))
                         m_a_N = m_a + dens_dep
                         survival_probs = np.exp(-m_a_N * epsilon_m_vec[pop_i] * delta_t)
                         # Make it deterministic
@@ -147,9 +149,9 @@ class Model:
                     prob_check = np.all(survival_probs >= 0) and np.all(survival_probs <= 1)
                     if prob_check:
                         if not single_age:
-                            num_survivors = rng.binomial(N_pop, survival_probs)
+                            num_survivors = rng.binomial(N_vec[pop_i], survival_probs)
                             # Make it deterministic
-                            #num_survivors = N_pop*survival_probs
+                            #num_survivors = N_vec[pop_i]*survival_probs
                             num_survivors = np.roll(num_survivors, 1)
                             # Update abundances
                             N_vec[pop_i] = num_survivors
