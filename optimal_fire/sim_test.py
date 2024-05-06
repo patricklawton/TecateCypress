@@ -4,6 +4,7 @@ import json
 from matplotlib import pyplot as plt
 import timeit
 from scipy.special import gamma
+from scipy.stats import weibull_min
 
 # Read in map parameters
 params = {}
@@ -16,13 +17,17 @@ num_reps = 1000
 delta_t = 1
 N_0_1 = np.repeat(0.9*A*params['K_adult'], num_reps)
 fire_prob = 1/40
-fri = 110
+fri = 60
 c = 1.42
 b = fri / gamma(1+1/c)
 #t_max = fri*3
 t_max = 152
+wei = weibull_min(c, scale=b, loc=0)
+init_age = np.round(wei.rvs(num_reps), 0).astype(int)
+init_age[init_age < 1] = 1
+init_age[init_age > t_max-2] = t_max-2
 #init_age = 50
-init_age = round(params['a_mature']) + 10
+#init_age = round(params['a_mature']) + 10
 #init_age = delta_t
 #print(init_age)
 #t_vec = np.arange(1, 152)

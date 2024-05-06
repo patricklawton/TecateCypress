@@ -22,7 +22,11 @@ class Model:
             self.N_0_1 = N_0_1
         else:
             self.N_0_1 = np.array([int(N_0_1)])
-        self.init_age = init_age
+        if hasattr(init_age, '__len__'):
+            self.init_age = init_age
+        else:
+            self.init_age = np.repeat(int(init_age), len(self.N_0_1))
+        assert(len(self.init_age) == len(self.N_0_1))
 
     def set_area(self, A):
         self.A = A
@@ -42,6 +46,9 @@ class Model:
         delta_t = t_vec[1] - t_vec[0]
         # For sampling from various probability distributions
         rng = np.random.default_rng()
+        # Get initial age time indices
+        print(self.init_age)
+        init_age_i_vec = [np.nonzero(t_vec == a)[0][0] for a in self.init_age]
 
         # Get timesteps of fire occurances
         if hasattr(self, 'fire_probs'):
@@ -58,8 +65,9 @@ class Model:
             term1 = 1/b_eff**self.weibull_c
             term2 = (t_vec + delta_t)**self.weibull_c - t_vec**self.weibull_c
             frequency_vec =  term1 * term2 
-            init_age_i = np.nonzero(t_vec == self.init_age)[0][0]
-            t_star_vec = np.ones(len(self.N_0_1)).astype(int) * init_age_i #Time index since last fire
+            #init_age_i = np.nonzero(t_vec == self.init_age)[0][0]
+            #t_star_vec = np.ones(len(self.N_0_1)).astype(int) * init_age_i #Time index since last fire
+            t_star_vec = init_age_i_vec.copy() #Time since last fire indices
             t_fire_vec = np.zeros((len(self.N_0_1), len(t_vec))).astype(int)
             if self.weibull_b > 0:
                 for pop_i in range(len(self.N_0_1)):
@@ -74,13 +82,20 @@ class Model:
                                 t_star_vec[pop_i] += 1
 
         N_vec = np.ma.array(np.zeros((len(self.N_0_1), len(t_vec))))
-        init_age_i = np.nonzero(t_vec == self.init_age)[0][0]
-        N_vec[:,init_age_i] = self.N_0_1
+        #init_age_i = np.nonzero(t_vec == self.init_age)[0][0]
+        #N_vec[:,init_age_i] = self.N_0_1
+        print(N_vec)
+        for pop_i, N_pop in enumerate(N_vec):
+            a_i = init_age_i_vec[pop_i]
+            N_pop[a_i] = self.N_0_1[pop_i]
+        print(N_vec)
         N_vec = N_vec.astype(int)
         # Initialize empty abundance array
         self.census_t = t_vec[::census_every]
         self.N_tot_vec = np.nan * np.ones((len(self.N_0_1), len(self.census_t)))
         self.N_tot_vec[:,0] = self.N_0_1
+        print(self.N_tot_vec)
+        #sys.exit()
         
         # Age-dependent mortality functions
         m_a = self.alph_m * np.exp(-self.beta_m*t_vec) + self.gamm_m
