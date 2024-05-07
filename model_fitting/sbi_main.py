@@ -13,16 +13,16 @@ import pandas as pd
 import os
 from scipy.stats import moment
 
-overwrite_observations = False
-overwrite_simulations = False
+overwrite_observations = True
+overwrite_simulations = True
+overwrite_posterior = True
 add_simulations = False
-overwrite_posterior = False
 
-processes = ['mortality', 'fecundity']
+processes = ['mortality']
 for pr in processes:
     if pr == 'mortality':
         from mortality.simulator import simulator
-        labels = ['alph_m', 'beta_m', 'sigm_m','alph_nu']
+        labels = ['alph_m', 'beta_m', 'sigm_m','alph_nu', 'K_adult']
         ranges = np.array([
                            # alph_m
                            [0.01, 0.6], 
@@ -31,10 +31,12 @@ for pr in processes:
                            # sigm_m
                            [0.1,1.7], 
                            # alph_nu
-                           [0.01,2.]
+                           [0.01,2.],
+                           # K_adult
+                           [8000,24000]
         ])
-        restrictor_sims = 50_000
-        training_sims = 150_000
+        restrictor_sims = 10_000
+        training_sims = 50_000
         num_samples = 1_000_000 
     elif pr == 'fecundity':
         from fecundity.simulator import simulator, save_observations
@@ -55,8 +57,8 @@ for pr in processes:
     fn = pr + '/observations/observations.npy'
     if ((not os.path.isfile(fn)) or overwrite_observations) and (pr=='mortality'):
         census_yrs = [2,6,8,11,14]
-        fn = 'observations/mortality.csv'
-        mortality_o = pd.read_csv(fn, header=None)
+        #fn = pr + '/observations/mortality.csv'
+        mortality_o = pd.read_csv(pr + '/observations/mortality.csv', header=None)
         mortality_o[0] = [round(v) for v in mortality_o[0]]
         # Use the first 3 moments
         m1 = []; m2 = []; m3 = []
@@ -70,7 +72,7 @@ for pr in processes:
         np.save(fn, observations)
     elif ((not os.path.isfile(fn)) or overwrite_observations) and (pr=='fecundity'):
         save_observations()
-    x_o = np.load(fn)
+    x_o = np.load(fn, allow_pickle=True)
     x_o = torch.Tensor(x_o)
 
     if (not os.path.isfile(pr+'/all_theta.pkl')) or overwrite_simulations:

@@ -12,15 +12,15 @@ from sbi.utils import MultipleIndependent
 from torch import tensor
 import json
 
-processes = ['fecundity']
+processes = ['mortality']
 for pr in processes:
     if pr == 'mortality':
         from mortality.simulator import simulator, fixed
-        labels = ['alph_m', 'beta_m', 'sigm_m','alph_nu']
+        labels = ['alph_m', 'beta_m', 'sigm_m','alph_nu', 'K_adult']
     elif pr == 'fecundity':
         from fecundity.simulator import simulator
         fixed = {}
-        labels = ['rho_max', 'eta_rho', 'a_mature', 'sigm_max', 'eta_sigm']#, 'a_sigm_star']
+        labels = ['rho_max', 'eta_rho', 'a_mature', 'sigm_max', 'eta_sigm']
     with open(pr+"/prior.pkl", "rb") as handle:
         prior = pickle.load(handle)
     simulator = utils.user_input_checks.process_simulator(simulator, prior, is_numpy_simulator=True)
@@ -32,9 +32,7 @@ for pr in processes:
     map_dict = {}
     map_dict.update(fixed)
     _map = posterior.map(force_update=True).numpy()[0]
-    print(labels, _map)
     for lab, val in zip(labels, _map):
-        print(lab, val)
         map_dict.update({lab: val})
     with open(pr+'/map.json', 'w') as handle:
         json.dump(map_dict, handle)
