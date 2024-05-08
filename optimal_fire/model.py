@@ -90,7 +90,8 @@ class Model:
         
         # Age-dependent mortality functions
         m_a = self.alph_m * np.exp(-self.beta_m*t_vec) + self.gamm_m
-        K_a = np.repeat(self.K_adult, len(t_vec))
+        K_a = self.K_seedling * np.exp(-self.kappa*t_vec) + self.K_adult
+        #K_a = np.repeat(self.K_adult, len(t_vec))
         nu_a = self.alph_nu * np.exp(-self.beta_nu*t_vec) + self.gamm_nu
         sigm_m_a = self.sigm_m*np.exp(-self.tau_m*t_vec)
         epsilon_m_vec = rng.lognormal(np.zeros_like(N_vec)+self.mu_m, np.tile(sigm_m_a, (len(self.N_0_1),1)))

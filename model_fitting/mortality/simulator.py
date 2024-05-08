@@ -4,16 +4,17 @@ from scipy.stats import moment
 
 #fixed = {'gamm_m': 0.01, 'tau_m': 0.01, 'beta_nu': 0.1, 'gamm_nu': 0.1,
 #         'K_seedling': 160000, 'kappa': 0.4, 'K_adult': 16000, 'eta': 0.02, 'mu_m': 0.0}
-fixed = {'gamm_m': 0.01, 'tau_m': 0.01, 'beta_nu': 0.1, 'gamm_nu': 0.1,
-         'kappa': 0.4, 'eta': 0.02, 'mu_m': 0.0}
+fixed = {'gamm_m': 0.01, 'tau_m': 0.01, 'mu_m': 0.0,
+         'alph_nu': 0.0, 'beta_nu': 0.1, 'gamm_nu': 0.25,
+         'K_adult': 16000, 'kappa': 0.4, 'eta': 0.02}
 
 def simulator(params):
     # Assign parameter labels
     alph_m = params[0]; beta_m = params[1]; gamm_m = fixed['gamm_m']
-    sigm_m = params[2]; tau_m = fixed['tau_m']
-    alph_nu = params[3]; beta_nu = fixed['beta_nu']; gamm_nu = fixed['gamm_nu']
-    kappa = fixed['kappa']; K_adult = params[4]
-    eta = fixed['eta']; mu_m = fixed['mu_m']
+    sigm_m = params[2]; tau_m = fixed['tau_m']; mu_m = fixed['mu_m']
+    alph_nu = fixed['alph_nu']; beta_nu = fixed['beta_nu']; gamm_nu = fixed['gamm_nu']
+    K_seedling = params[3]; kappa = fixed['kappa']; K_adult = fixed['K_adult']; 
+    eta = fixed['eta']
 
     # For generating env stochasticity multipliers
     rng = np.random.default_rng()
@@ -36,8 +37,8 @@ def simulator(params):
     census_yr_init = t_vec[0]
 
     m_a = alph_m * np.exp(-beta_m*t_vec) + gamm_m
-    #K_a = K_seedling * np.exp(-kappa*t_vec) + K_adult
-    K_a = np.repeat(K_adult, len(t_vec))
+    K_a = K_seedling * np.exp(-kappa*t_vec) + K_adult
+    #K_a = np.repeat(K_adult, len(t_vec))
     nu_a = alph_nu * np.exp(-beta_nu*t_vec) + gamm_nu
     sigm_m_a = sigm_m*np.exp(-tau_m*t_vec)
     epsilon_m_vec = rng.lognormal(np.zeros_like(N_vec)+mu_m, np.tile(sigm_m_a, (len(N_0_1),1)))

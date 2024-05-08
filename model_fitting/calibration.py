@@ -16,7 +16,7 @@ processes = ['mortality']
 for pr in processes:
     if pr == 'mortality':
         from mortality.simulator import simulator, fixed
-        labels = ['alph_m', 'beta_m', 'sigm_m','alph_nu', 'K_adult']
+        labels = ['alph_m', 'beta_m', 'sigm_m', 'K_seedling']#,'alph_nu', 'gamm_m']
     elif pr == 'fecundity':
         from fecundity.simulator import simulator
         fixed = {}
