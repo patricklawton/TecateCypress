@@ -22,7 +22,7 @@ processes = ['mortality']
 for pr in processes:
     if pr == 'mortality':
         from mortality.simulator import simulator
-        labels = ['alph_m', 'beta_m', 'sigm_m', 'K_seedling']#,'alph_nu', 'K_adult']
+        labels = ['alph_m', 'beta_m', 'sigm_m', 'gamm_nu']#, 'K_adult']
         ranges = np.array([
                            # alph_m
                            [0.01, 0.6], 
@@ -30,17 +30,19 @@ for pr in processes:
                            [0.01, 0.9], 
                            # sigm_m
                            [0.1,1.7], 
-                           # K_seedling
-                           [10_000, 120_000]
+                           ## K_seedling
+                           #[10_000, 120_000],
                            ## alph_nu
-                           #[0.01,2.],
-                           ## gamm_m
-                           #[0.001, 0.15]
+                           #[0.01,2.]#,
+                           ## beta_nu
+                           #[0.01,0.9]
+                           # gamm_nu
+                           [0.001, 0.5]
                            ## K_adult
                            #[8000,30000]
         ])
-        restrictor_sims = 10_000
-        training_sims = 40_000
+        restrictor_sims = 50_000
+        training_sims = 250_000
         num_samples = 1_000_000 
     elif pr == 'fecundity':
         from fecundity.simulator import simulator, save_observations
