@@ -14,15 +14,15 @@ import os
 from scipy.stats import moment
 
 overwrite_observations = False
-overwrite_simulations = False
-overwrite_posterior = False
-add_simulations = True
+overwrite_simulations = True
+overwrite_posterior = True
+add_simulations = False
 
 processes = ['mortality']
 for pr in processes:
     if pr == 'mortality':
         from mortality.simulator import simulator
-        labels = ['alph_m', 'beta_m', 'sigm_m', 'gamm_nu'] 
+        labels = ['alph_m', 'beta_m', 'sigm_m', 'gamm_nu', 'kappa'] 
         ranges = np.array([
                            # alph_m
                            [0.01, 0.6], 
@@ -38,8 +38,8 @@ for pr in processes:
                            [0.001, 0.8],
                            ## K_seedling
                            #[10_000, 120_000],
-                           ## kappa
-                           #[0.01, 1.5]
+                           # kappa
+                           [0.01, 2.5]
                            ## K_adult
                            #[8000,30000]
         ])
