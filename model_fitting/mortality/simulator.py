@@ -6,7 +6,7 @@ from scipy.stats import moment
 #         'K_seedling': 160000, 'kappa': 0.4, 'K_adult': 16000, 'eta': 0.02, 'mu_m': 0.0}
 fixed = {'gamm_m': 0.01, 'tau_m': 0.01, 'mu_m': 0.0,
          'alph_nu': 0.0, 'beta_nu': 0.25,
-         'K_seedling': 60_000, 'kappa': 0.6, 'K_adult': 10_000, 'eta': 0.0005}
+         'K_seedling': 50_000, 'kappa': 0.1, 'K_adult': 10_000, 'eta': 0.0005}
 
 def simulator(params):
     # Assign parameter labels
