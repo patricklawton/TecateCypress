@@ -13,17 +13,16 @@ import pandas as pd
 import os
 from scipy.stats import moment
 
-overwrite_observations = False
-overwrite_simulations = False
-overwrite_posterior = False
+overwrite_observations = True
+overwrite_simulations = True
+overwrite_posterior = True
 add_simulations = False
 
 processes = ['mortality']
 for pr in processes:
     if pr == 'mortality':
         from mortality.simulator import simulator
-        labels = ['alph_m', 'beta_m', 'sigm_m', 'gamm_nu', 
-                  'K_seedling', 'kappa'] 
+        labels = ['alph_m', 'beta_m', 'sigm_m', 'gamm_nu', 'kappa'] 
         ranges = np.array([
                            # alph_m
                            [0.01, 0.6], 
@@ -36,16 +35,16 @@ for pr in processes:
                            ## beta_nu
                            #[0.01,0.9]
                            # gamm_nu
-                           [0.001, 0.5],
-                           # K_seedling
-                           [10_000, 120_000],
+                           [0.001, 0.8],
+                           ## K_seedling
+                           #[10_000, 120_000],
                            # kappa
                            [0.01, 1.5]
                            ## K_adult
                            #[8000,30000]
         ])
-        restrictor_sims = 100_000
-        training_sims = 400_000
+        restrictor_sims = 5_000
+        training_sims = 30_000
         num_samples = 1_000_000 
     elif pr == 'fecundity':
         from fecundity.simulator import simulator, save_observations
