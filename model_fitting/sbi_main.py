@@ -13,16 +13,17 @@ import pandas as pd
 import os
 from scipy.stats import moment
 
-overwrite_observations = True
-overwrite_simulations = True
-overwrite_posterior = True
+overwrite_observations = False
+overwrite_simulations = False
+overwrite_posterior = False
 add_simulations = False
 
 processes = ['mortality']
 for pr in processes:
     if pr == 'mortality':
         from mortality.simulator import simulator
-        labels = ['alph_m', 'beta_m', 'sigm_m', 'gamm_nu']#, 'K_adult']
+        labels = ['alph_m', 'beta_m', 'sigm_m', 'gamm_nu', 
+                  'K_seedling', 'kappa'] 
         ranges = np.array([
                            # alph_m
                            [0.01, 0.6], 
@@ -30,19 +31,21 @@ for pr in processes:
                            [0.01, 0.9], 
                            # sigm_m
                            [0.1,1.7], 
-                           ## K_seedling
-                           #[10_000, 120_000],
                            ## alph_nu
                            #[0.01,2.]#,
                            ## beta_nu
                            #[0.01,0.9]
                            # gamm_nu
-                           [0.001, 0.5]
+                           [0.001, 0.5],
+                           # K_seedling
+                           [10_000, 120_000],
+                           # kappa
+                           [0.01, 1.5]
                            ## K_adult
                            #[8000,30000]
         ])
-        restrictor_sims = 50_000
-        training_sims = 250_000
+        restrictor_sims = 100_000
+        training_sims = 400_000
         num_samples = 1_000_000 
     elif pr == 'fecundity':
         from fecundity.simulator import simulator, save_observations
@@ -52,8 +55,7 @@ for pr in processes:
                            [0.01, 0.8],
                            [15, 80],
                            [0.01, 5],
-                           [0.01, 0.8]#,
-                           #[15, 80]
+                           [0.01, 0.8]
         ])
         restrictor_sims = 20_000
         training_sims = 20_000

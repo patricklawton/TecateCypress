@@ -6,14 +6,14 @@ from scipy.stats import moment
 #         'K_seedling': 160000, 'kappa': 0.4, 'K_adult': 16000, 'eta': 0.02, 'mu_m': 0.0}
 fixed = {'gamm_m': 0.01, 'tau_m': 0.01, 'mu_m': 0.0,
          'alph_nu': 0.0, 'beta_nu': 0.25,
-         'K_seedling': 50_000, 'K_adult': 16000, 'kappa': 0.4, 'eta': 0.0005}
+         'K_adult': 10_000, 'eta': 0.0005}
 
 def simulator(params):
     # Assign parameter labels
     alph_m = params[0]; beta_m = params[1]; gamm_m = fixed['gamm_m']
     sigm_m = params[2]; tau_m = fixed['tau_m']; mu_m = fixed['mu_m']
     alph_nu = fixed['alph_nu']; beta_nu = fixed['beta_nu']; gamm_nu = params[3]
-    K_seedling = fixed['K_seedling']; kappa = fixed['kappa']; K_adult = fixed['K_adult']; 
+    K_seedling = params[4]; kappa = params[5]; K_adult = fixed['K_adult']; 
     eta = fixed['eta']
 
     # For generating env stochasticity multipliers
