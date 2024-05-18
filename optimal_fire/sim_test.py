@@ -17,10 +17,10 @@ num_reps = 1000
 delta_t = 1
 N_0_1 = np.repeat(0.9*A*params['K_adult'], num_reps)
 fire_prob = 1/40
-fri = 66
+fri = 60
 c = 1.42
 b = fri / gamma(1+1/c)
-t_max = fri*4
+t_max = fri*40
 #t_max = 152
 #wei = weibull_min(c, scale=b, loc=0)
 #init_age = np.round(wei.rvs(num_reps), 0).astype(int)

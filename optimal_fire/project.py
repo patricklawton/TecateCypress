@@ -22,7 +22,8 @@ def run_sims(job):
     N_0_1 = np.repeat(0.9*A*params['K_adult'], num_reps)
     #init_age = round(params['a_mature']) + 10
     init_age = job.sp.init_age
-    t_vec = np.arange(delta_t, 152, delta_t)
+    #t_vec = np.arange(delta_t, 152, delta_t)
+    t_vec = np.arange(delta_t, 500, delta_t)
 
     model = Model(**params)
     model.set_area(A)

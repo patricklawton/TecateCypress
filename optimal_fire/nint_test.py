@@ -6,7 +6,7 @@ import timeit
 from scipy.special import gamma
 from scipy.stats import weibull_min
 
-fri = 40
+fri = 60
 c = 1.42
 b = fri / gamma(1+1/c)
 
@@ -26,7 +26,8 @@ def dNdt(t, N):
 
     # Age-dependent mortality functions
     m_t = alph_m * np.exp(-beta_m*t) + gamm_m
-    K_t = K_adult
+    #K_t = K_adult
+    K_t = K_seedling * np.exp(-kappa*t) + K_adult
     nu_t = alph_nu * np.exp(-beta_nu*t) + gamm_nu
     dens_dep = ((nu_t)*(1-m_t)) / (1 + np.exp(-eta*(N - K_t)))
     m_t_N = m_t + dens_dep
@@ -86,7 +87,7 @@ for i in range(len(N_tot_vec_mean)-1):
 
 #sol = solve_ivp(dNdt, [1,fri], [0.9*params['K_adult']], t_eval=census_t)
 start_time = timeit.default_timer()
-num_intervals = 20
+num_intervals = 10
 interval_steps = round(fri/delta_t)
 nint_res = np.ones(interval_steps*num_intervals)*np.nan
 t_full = np.arange(delta_t, round(fri*num_intervals)+delta_t, delta_t)
@@ -96,7 +97,7 @@ for i in range(1, num_intervals+1):
         sol = solve_ivp(dNdt, [delta_t,fri], [0.9*params['K_adult']], t_eval=t_eval)
     else:
         sol = solve_ivp(dNdt, [delta_t,fri], [num_births], t_eval=t_eval)
-    sol.y = sol.y*(1-avg_num_extir_fires)
+    #sol.y = sol.y*(1-avg_num_extir_fires)
     #num_births = get_num_births(fri, sol.y[0][-1])
     num_births = get_num_births(sol.y[0][-1])
     nint_res[(i-1)*interval_steps:i*interval_steps] = sol.y[0]
