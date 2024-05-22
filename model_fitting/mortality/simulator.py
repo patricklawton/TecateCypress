@@ -1,12 +1,15 @@
 import numpy as np
 import pandas as pd
 from scipy.stats import moment
+import pickle
 
 #fixed = {'gamm_m': 0.01, 'tau_m': 0.01, 'beta_nu': 0.1, 'gamm_nu': 0.1,
 #         'K_seedling': 160000, 'kappa': 0.4, 'K_adult': 16000, 'eta': 0.02, 'mu_m': 0.0}
 fixed = {'gamm_m': 0.01, 'tau_m': 0.01, 'mu_m': 0.0,
          'alph_nu': 0.0, 'beta_nu': 0.25,
          'K_seedling': 60_000, 'K_adult': 10_000, 'eta': 0.0005}
+with open('fixed.pkl', 'wb') as handle:
+    pickle.dump(fixed, handle)
 
 def simulator(params):
     # Assign parameter labels
