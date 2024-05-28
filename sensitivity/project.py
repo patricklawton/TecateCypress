@@ -52,7 +52,7 @@ def run_sims(job):
         if max_i >= max_extir_i:
             print(max_i, max_extir_i)
             print(frac_extirpated)
-            print(job.sp.rep)
+            #print(job.sp.rep)
             job.data['extirpation_rate/{}'.format(b)] = 0
         else:
             popt, pcov = curve_fit(line, model.census_t[max_i:max_extir_i], frac_extirpated[max_i:max_extir_i])

@@ -11,7 +11,7 @@ import sbi
 
 project = sg.init_project()
 
-demographic_samples = 1000
+demographic_samples = 2000
 demographic_samples -= len(project)
 mort_labels = ['alph_m', 'beta_m', 'sigm_m', 'gamm_nu', 'kappa']
 fec_labels = ['rho_max', 'eta_rho', 'a_mature', 'sigm_max', 'eta_sigm']
