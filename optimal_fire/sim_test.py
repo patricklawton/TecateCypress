@@ -12,22 +12,22 @@ for pr in ['mortality', 'fecundity']:
     with open('../model_fitting/{}/map.json'.format(pr), 'r') as handle:
         params.update(json.load(handle)) 
 
-A = 1 #ha
+A = 100 #ha
 num_reps = 1000
 delta_t = 1
 N_0_1 = np.repeat(0.9*A*params['K_adult'], num_reps)
-fire_prob = 1/40
-fri = 60
+#fire_prob = 1/40
+fri = 50
 c = 1.42
 b = fri / gamma(1+1/c)
-t_max = fri*40
+t_max = fri*4
 #t_max = 152
 #wei = weibull_min(c, scale=b, loc=0)
 #init_age = np.round(wei.rvs(num_reps), 0).astype(int)
 #init_age[init_age < 1] = 1
 #init_age[init_age > t_max-2] = t_max-2
 #init_age = 50
-init_age = round(params['a_mature']) + 10
+init_age = round(params['a_mature']) + 20
 #init_age = delta_t
 #print(init_age)
 #t_vec = np.arange(1, 152)
@@ -50,11 +50,11 @@ slice_step = int(num_reps/10) if num_reps >= 10 else 1
 for N_tot_vec in model.N_tot_vec[::slice_step]:
     axs[0].plot(model.census_t,N_tot_vec)
     axs[1].plot(model.census_t,N_tot_vec)
-axs[0].axhline(params['K_adult'], ls='--', c='k', alpha=0.35)
-axs[1].set_ylim(-0.03*params['K_adult'],params['K_adult'])
+axs[0].axhline(params['K_adult']*A, ls='--', c='k', alpha=0.35)
+axs[1].set_ylim(-0.03*params['K_adult']*A,params['K_adult']*A)
 axs[2].plot(model.census_t, model.N_tot_vec.mean(axis=0), c='k')
-axs[2].axhline(params['K_adult'], ls='--', c='k', alpha=0.35)
+axs[2].axhline(params['K_adult']*A, ls='--', c='k', alpha=0.35)
 axs[3].plot(model.census_t, model.N_tot_vec.mean(axis=0), c='k')
-axs[3].axhline(params['K_adult'], ls='--', c='k', alpha=0.35)
-axs[3].set_ylim(-0.03*params['K_adult'],1.5*params['K_adult'])
+axs[3].axhline(params['K_adult']*A, ls='--', c='k', alpha=0.35)
+axs[3].set_ylim(-0.03*params['K_adult']*A,1.5*params['K_adult']*A)
 fig.savefig('sim_test.png', bbox_inches='tight')

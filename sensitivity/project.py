@@ -20,7 +20,7 @@ with open('../model_fitting/mortality/fixed.pkl', 'rb') as handle:
 def run_sims(job):
     params = job.sp['params']
     params.update(mort_fixed)
-    A = 1 #ha
+    A = job.sp['A'] #1 #ha
     delta_t = 1
     num_reps = 1_000
     N_0_1 = 0.9*A*params['K_adult']
