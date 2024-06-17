@@ -17,11 +17,11 @@ if not os.path.isfile(sd_fn):
     with sg.H5Store(sd_fn).open(mode='w') as sd:
         sd['b_vec'] = b_vec
 
-A_vec = np.array([1,0.5,10,100])
-demographic_samples_vec = np.concatenate(([2000], np.repeat(1000, 3)))
+A_vec = np.array([1,0.5,5,10,100])
+demographic_samples_vec = np.concatenate(([2000], np.repeat(1000, 4)))
 for A, demographic_samples in zip(A_vec, demographic_samples_vec):
-    finished_samples = project.find_jobs({'A': A, 'doc.simulated': True})
-    demographic_samples -= len(finished_samples) #len(project)
+    existing_samples = project.find_jobs({'A': A})
+    demographic_samples -= len(existing_samples) #len(project)
     mort_labels = ['alph_m', 'beta_m', 'sigm_m', 'gamm_nu', 'kappa']
     fec_labels = ['rho_max', 'eta_rho', 'a_mature', 'sigm_max', 'eta_sigm']
 
