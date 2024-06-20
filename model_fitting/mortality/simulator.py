@@ -3,11 +3,16 @@ import pandas as pd
 from scipy.stats import moment
 import pickle
 
-#fixed = {'gamm_m': 0.01, 'tau_m': 0.01, 'beta_nu': 0.1, 'gamm_nu': 0.1,
-#         'K_seedling': 160000, 'kappa': 0.4, 'K_adult': 16000, 'eta': 0.02, 'mu_m': 0.0}
-fixed = {'gamm_m': 0.01, 'tau_m': 0.01, 'mu_m': 0.0,
+# Get the average habitat suitability within the Otay Mtn Wilderness area
+sdmfn = "mortality/SDM_1995.asc"
+sdm = np.loadtxt(sdmfn,skiprows=6)
+otay = np.loadtxt("mortality/otayraster.asc", skiprows=6)
+sdm_otay = sdm[otay==1] #index "1" indicates the specific part where study was done
+h_o = np.mean(sdm_otay[sdm_otay!=0]) #excluding zero, would be better to use SDM w/o threshold
+
+fixed = {'gamm_m': 0.01, 'tau_m': 0.01, 'mu_m': 0.0, 
          'alph_nu': 0.0, 'beta_nu': 0.25,
-         'K_seedling': 60_000, 'K_adult': 10_000, 'eta': 0.0005}
+         'K_seedling': 60_000/h_o, 'K_adult': 10_000/h_o}
 with open('fixed.pkl', 'wb') as handle:
     pickle.dump(fixed, handle)
 
@@ -17,7 +22,6 @@ def simulator(params):
     sigm_m = params[2]; tau_m = fixed['tau_m']; mu_m = fixed['mu_m']
     alph_nu = fixed['alph_nu']; beta_nu = fixed['beta_nu']; gamm_nu = params[3]
     K_seedling = fixed['K_seedling']; kappa = params[4]; K_adult = fixed['K_adult']; 
-    eta = fixed['eta']
 
     # For generating env stochasticity multipliers
     rng = np.random.default_rng()
@@ -32,7 +36,8 @@ def simulator(params):
     fn = 'mortality/observations/density.csv'
     densities_o = pd.read_csv(fn, header=None)
     densities_o[0] = [round(v) for v in densities_o[0]]
-    N_0_1 = densities_o[densities_o[0] == 1][1].to_numpy()
+    A_o = 0.1 #area of observed sites in Ha
+    N_0_1 = densities_o[densities_o[0] == 1][1].to_numpy() * A_o
     N_vec = np.ma.array(np.zeros((len(N_0_1), len(t_vec))))
     N_vec[:,0] = N_0_1
     N_vec = N_vec.astype(int)
@@ -43,6 +48,10 @@ def simulator(params):
     K_a = K_seedling * np.exp(-kappa*t_vec) + K_adult
     #K_a = np.repeat(K_adult, len(t_vec))
     nu_a = alph_nu * np.exp(-beta_nu*t_vec) + gamm_nu
+    # Use linear approx to set eta s.t. shape of dens. dep. curve is 
+    # the same for arbitrary effective patch size
+    delta, theta = (1.05, 0.050000000000000044) #just hardcoding these in
+    eta_a = (theta*2)/((nu_a*(1-m_a)) * (A_o*h_o*K_adult) * (delta-1))
     sigm_m_a = sigm_m*np.exp(-tau_m*t_vec)
     epsilon_m_vec = rng.lognormal(np.zeros_like(N_vec)+mu_m, np.tile(sigm_m_a, (len(N_0_1),1)))
 
@@ -59,13 +68,13 @@ def simulator(params):
                 age_i = age_i_vec[0]
                 N = N_vec[pop_i][age_i]
             if not single_age:
-                dens_dep = ((nu_a)*(1-m_a)) / (1 + np.exp(-eta*K_adult*(np.sum(N_vec[pop_i]/K_a) - 1)))
+                dens_dep = ((nu_a)*(1-m_a)) / (1 + np.exp(-eta_a*K_adult*(np.sum(N_vec[pop_i]/K_a) - A_o*h_o)))
                 m_a_N = m_a + dens_dep
                 survival_probs = np.exp(-m_a_N * epsilon_m_vec[pop_i])
                 # Make it deterministic
                 #survival_probs = np.exp(-m_a_N * epsilon_m_mean)
             else:
-                dens_dep = ((nu_a[age_i])*(1-m_a[age_i])) / (1 + np.exp(-eta*K_adult*(N/K_a[age_i] - 1)))
+                dens_dep = ((nu_a[age_i])*(1-m_a[age_i])) / (1 + np.exp(-eta_a[age_i]*K_adult*(N/K_a[age_i] - A_o*h_o)))
                 m_a_N = m_a[age_i] + dens_dep
                 survival_probs = np.exp(-m_a_N * epsilon_m_vec[pop_i][age_i])
             # Ensure survival probs are feasible, otherwise mark sim invalid 
@@ -104,11 +113,8 @@ def simulator(params):
             results[res_i] = np.mean(mortality)
             results[res_len + res_i] = moment(mortality, moment=2)
             results[res_len*2 + res_i] = moment(mortality, moment=3)
-            #if (t+1) == 2:
-            #    skew_t2 = moment(mortality, moment=3)   
             # Reset for next census
             res_i += 1
             census_init = census_final
             census_yr_init = t+1
-    #results[res_len*2] = skew_t2
     return results

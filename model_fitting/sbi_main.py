@@ -23,6 +23,8 @@ for pr in processes:
     if pr == 'mortality':
         from mortality.simulator import simulator
         labels = ['alph_m', 'beta_m', 'sigm_m', 'gamm_nu', 'kappa'] 
+        #labels = ['sigm_m', 'gamm_nu', 'kappa'] 
+        #labels = ['gamm_nu', 'kappa'] 
         ranges = np.array([
                            # alph_m
                            [0.01, 0.6], 
@@ -43,8 +45,8 @@ for pr in processes:
                            ## K_adult
                            #[8000,30000]
         ])
-        restrictor_sims = 50_000
-        training_sims = 250_000
+        restrictor_sims = 20_000
+        training_sims = 100_000
         num_samples = 1_000_000 
     elif pr == 'fecundity':
         from fecundity.simulator import simulator, save_observations
@@ -84,7 +86,12 @@ for pr in processes:
 
     if (not os.path.isfile(pr+'/all_theta.pkl')) or overwrite_simulations:
         priors = [Uniform(tensor([rng[0]]), tensor([rng[1]])) for rng in ranges]
-        prior = MultipleIndependent(priors)
+        if len(priors) > 1:
+            prior = MultipleIndependent(priors)
+        else:
+            print(priors[0])
+            #prior = sbi.utils.check_prior(priors[0])
+            prior = priors[0]
         prior, theta_numel, prior_returns_numpy = utils.user_input_checks.process_prior(prior)
         with open(pr+"/prior.pkl", "wb") as handle:
             pickle.dump(prior, handle)
