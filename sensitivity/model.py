@@ -32,6 +32,7 @@ class Model:
         self.A = A
         # Scale the carrying capacity, in N/ha, with the area
         self.K_adult = self.K_adult * self.A
+        self.K_seedling = self.K_seedling * self.A
 
     def set_fire_probabilities(self, fire_probs):
         #if not hasattr(fire_probs, '__len__'):

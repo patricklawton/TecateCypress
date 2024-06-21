@@ -17,11 +17,16 @@ if not os.path.isfile(sd_fn):
     with sg.H5Store(sd_fn).open(mode='w') as sd:
         sd['b_vec'] = b_vec
 
-A_vec = np.array([1,0.5,5,10,100])
-demographic_samples_vec = np.concatenate(([2000], np.repeat(1000, 4)))
+#A_vec = np.array([1,0.5,5,10,100])
+A_vec = np.array([100])
+#demographic_samples_vec = np.concatenate(([2000], np.repeat(1000, 4)))
+demographic_samples_vec = np.array([500])
 for A, demographic_samples in zip(A_vec, demographic_samples_vec):
     existing_samples = project.find_jobs({'A': A})
-    demographic_samples -= len(existing_samples) #len(project)
+    try:
+        demographic_samples -= len(existing_samples) #len(project)
+    except TypeError:
+        pass
     mort_labels = ['alph_m', 'beta_m', 'sigm_m', 'gamm_nu', 'kappa']
     fec_labels = ['rho_max', 'eta_rho', 'a_mature', 'sigm_max', 'eta_sigm']
 
