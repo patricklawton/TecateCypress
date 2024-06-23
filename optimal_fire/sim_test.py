@@ -11,6 +11,7 @@ params = {}
 for pr in ['mortality', 'fecundity']:
     with open('../model_fitting/{}/map.json'.format(pr), 'r') as handle:
         params.update(json.load(handle)) 
+params.update({'eta': 0.0005})
 
 A = 100 #ha
 num_reps = 1000

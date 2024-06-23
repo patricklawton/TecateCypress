@@ -17,12 +17,11 @@ if not os.path.isfile(sd_fn):
     with sg.H5Store(sd_fn).open(mode='w') as sd:
         sd['b_vec'] = b_vec
 
-#A_vec = np.array([1,0.5,5,10,100])
-A_vec = np.array([100])
-#demographic_samples_vec = np.concatenate(([2000], np.repeat(1000, 4)))
+A_cell = 270**2 / 10_000 #Ha
+Aeff_vec = np.array([A_cell])
 demographic_samples_vec = np.array([500])
-for A, demographic_samples in zip(A_vec, demographic_samples_vec):
-    existing_samples = project.find_jobs({'A': A})
+for Aeff, demographic_samples in zip(Aeff_vec, demographic_samples_vec):
+    existing_samples = project.find_jobs({'Aeff': Aeff})
     try:
         demographic_samples -= len(existing_samples) #len(project)
     except TypeError:
@@ -40,7 +39,7 @@ for A, demographic_samples in zip(A_vec, demographic_samples_vec):
 
     #params = mort_fixed
     for i in range(demographic_samples):
-        sp = {'params': {}, 'A': A}
+        sp = {'params': {}, 'Aeff': Aeff}
         for p_i, p in enumerate(mort_samples[i]):
             sp['params'].update({mort_labels[p_i]: float(p)})
         for p_i, p in enumerate(fec_samples[i]):

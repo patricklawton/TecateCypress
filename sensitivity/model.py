@@ -4,14 +4,21 @@ from itertools import product
 import pandas as pd
 import sys
 
+# Get the average habitat suitability within the Otay Mtn Wilderness area
+sdmfn = "SDM_1995.asc"
+sdm = np.loadtxt(sdmfn,skiprows=6)
+otay = np.loadtxt("otayraster.asc", skiprows=6)
+sdm_otay = sdm[otay==1] #index "1" indicates the specific part where study was done
+h_o = np.mean(sdm_otay[sdm_otay!=0]) #excluding zero, would be better to use SDM w/o threshold
+A_o = 0.1 #area of observed sites in Ha
+
 class Model:
     def __init__(self, **kwargs):
         # Mortality parameters
         self.alph_m = kwargs['alph_m']; self.beta_m = kwargs['beta_m']; self.gamm_m = kwargs['gamm_m']
-        self.sigm_m = kwargs['sigm_m']; self.tau_m = kwargs['tau_m']
+        self.sigm_m = kwargs['sigm_m']; self.tau_m = kwargs['tau_m']; self.mu_m = kwargs['mu_m']
         self.alph_nu = kwargs['alph_nu']; self.beta_nu = kwargs['beta_nu']; self.gamm_nu = kwargs['gamm_nu']
         self.K_seedling = kwargs['K_seedling']; self.kappa = kwargs['kappa']; self.K_adult = kwargs['K_adult']
-        self.eta = kwargs['eta']; self.mu_m = kwargs['mu_m']
         # Fecundity parameters
         self.rho_max = kwargs['rho_max']; self.eta_rho = kwargs['eta_rho']; self.a_mature = kwargs['a_mature']
         self.sigm_max = kwargs['sigm_max']; self.eta_sigm = kwargs['eta_sigm']; 
@@ -28,11 +35,8 @@ class Model:
             self.init_age = np.repeat(int(init_age), len(self.N_0_1))
         assert(len(self.init_age) == len(self.N_0_1))
 
-    def set_area(self, A):
-        self.A = A
-        # Scale the carrying capacity, in N/ha, with the area
-        self.K_adult = self.K_adult * self.A
-        self.K_seedling = self.K_seedling * self.A
+    def set_effective_area(self, Aeff):
+        self.Aeff = Aeff
 
     def set_fire_probabilities(self, fire_probs):
         #if not hasattr(fire_probs, '__len__'):
@@ -43,7 +47,7 @@ class Model:
         self.weibull_b = b
         self.weibull_c = c
 
-    def simulate(self, t_vec=np.arange(1,100), census_every=1, store=['mortality', 'fecundity']):
+    def simulate(self, t_vec=np.arange(1,100), census_every=1):
         delta_t = t_vec[1] - t_vec[0]
         # For sampling from various probability distributions
         rng = np.random.default_rng()
@@ -94,6 +98,10 @@ class Model:
         K_a = self.K_seedling * np.exp(-self.kappa*t_vec) + self.K_adult
         #K_a = np.repeat(self.K_adult, len(t_vec))
         nu_a = self.alph_nu * np.exp(-self.beta_nu*t_vec) + self.gamm_nu
+        # Use linear approx to set eta s.t. shape of dens. dep. curve is 
+        # the same for arbitrary effective patch size
+        delta, theta = (1.05, 0.050000000000000044) #just hardcoding these in
+        eta_a = (theta*2)/((nu_a*(1-m_a)) * (A_o*h_o*self.K_adult) * (delta-1))
         sigm_m_a = self.sigm_m*np.exp(-self.tau_m*t_vec)
         epsilon_m_vec = rng.lognormal(np.zeros_like(N_vec)+self.mu_m, np.tile(sigm_m_a, (len(self.N_0_1),1)))
         # Make it deterministic
@@ -143,13 +151,13 @@ class Model:
                     # Update each pop given mortality rates
                     # Add density dependent term to mortalities
                     if not single_age:
-                        dens_dep = ((nu_a)*(1-m_a)) / (1 + np.exp(-self.eta*self.K_adult*(np.sum(N_vec[pop_i]/K_a) - 1)))
+                        dens_dep = ((nu_a)*(1-m_a)) / (1 + np.exp(-eta_a*self.K_adult*(np.sum(N_vec[pop_i]/K_a) - self.Aeff)))
                         m_a_N = m_a + dens_dep
                         survival_probs = np.exp(-m_a_N * epsilon_m_vec[pop_i] * delta_t)
                         # Make it deterministic
                         #survival_probs = np.exp(-m_a_N * epsilon_m_mean * delta_t)
                     else:
-                        dens_dep = ((nu_a[age_i])*(1-m_a[age_i])) / (1 + np.exp(-self.eta*self.K_adult*(N/K_a[age_i] - 1)))
+                        dens_dep = ((nu_a[age_i])*(1-m_a[age_i])) / (1 + np.exp(-eta_a[age_i]*self.K_adult*(N/K_a[age_i] - self.Aeff)))
                         m_a_N = m_a[age_i] + dens_dep
                         survival_probs = np.exp(-m_a_N * epsilon_m_vec[pop_i][age_i] * delta_t)
 
