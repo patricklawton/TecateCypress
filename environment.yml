@@ -1,5 +1,6 @@
 name: sbi_env
 channels:
+  - conda-forge
   - defaults
 dependencies:
   - anyio=4.2.0=py311hca03da5_0
@@ -15,15 +16,18 @@ dependencies:
   - bleach=4.1.0=pyhd3eb1b0_0
   - brotli-python=1.0.9=py311h313beb8_7
   - bzip2=1.0.8=h620ffc9_4
-  - ca-certificates=2023.12.12=hca03da5_0
-  - certifi=2024.2.2=py311hca03da5_0
+  - ca-certificates=2024.2.2=hf0a4a13_0
+  - certifi=2024.2.2=pyhd8ed1ab_0
   - cffi=1.16.0=py311h80987f9_0
+  - cloudpickle=3.0.0=pyhd8ed1ab_0
+  - colorama=0.4.6=pyhd8ed1ab_0
   - comm=0.1.2=py311hca03da5_0
   - cryptography=41.0.7=py311hd4332d6_0
   - cyrus-sasl=2.1.28=h9131b1a_1
   - debugpy=1.6.7=py311h313beb8_0
   - decorator=5.1.1=pyhd3eb1b0_0
   - defusedxml=0.7.1=pyhd3eb1b0_0
+  - deprecation=2.1.0=pyh9f0ad1d_0
   - executing=0.8.3=pyhd3eb1b0_0
   - gettext=0.21.0=h13f89a0_1
   - glib=2.69.1=h514c7bf_2
@@ -80,8 +84,9 @@ dependencies:
   - notebook-shim=0.2.3=py311hca03da5_0
   - numpy=1.24.3=py311hb57d4eb_0
   - numpy-base=1.24.3=py311h1d85a46_0
-  - openssl=3.0.13=h1a28f6b_0
+  - openssl=3.2.1=h0d3ecfb_1
   - overrides=7.4.0=py311hca03da5_0
+  - packaging=23.2=py311hca03da5_0
   - pandocfilters=1.5.0=pyhd3eb1b0_0
   - parso=0.8.3=pyhd3eb1b0_0
   - pcre=8.45=hc377ac9_0
@@ -120,12 +125,15 @@ dependencies:
   - scipy=1.11.4=py311hc76d9b0_0
   - send2trash=1.8.2=py311hca03da5_0
   - setuptools=68.2.2=py311hca03da5_0
+  - signac=2.2.0=pyhd8ed1ab_0
+  - signac-flow=0.29.0=pyhd8ed1ab_0
   - sip=6.7.12=py311h313beb8_0
   - six=1.16.0=pyhd3eb1b0_1
   - sniffio=1.3.0=py311hca03da5_0
   - soupsieve=2.5=py311hca03da5_0
   - sqlite=3.41.2=h80987f9_0
   - stack_data=0.2.0=pyhd3eb1b0_0
+  - synced_collections=1.0.0=pyhd8ed1ab_0
   - terminado=0.17.1=py311hca03da5_0
   - threadpoolctl=2.2.0=pyh0d69192_0
   - tinycss2=1.2.1=py311hca03da5_0
@@ -169,7 +177,6 @@ dependencies:
       - nflows==0.14
       - oauthlib==3.2.2
       - opt-einsum==3.3.0
-      - packaging==23.2
       - pandas==2.2.0
       - pillow==10.2.0
       - protobuf==4.23.4
