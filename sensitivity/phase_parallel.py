@@ -150,20 +150,20 @@ fif_baseline = 1
 constraint = n_cell_baseline * fif_baseline
 
 # Loop over resource allocation scenarios
-n_cell_vec = np.arange(n_cell_baseline, len(fire_freqs)-slice_left_min, 1000)
+n_cell_vec = np.arange(n_cell_baseline, len(fire_freqs)-slice_left_min, 2000)
 #n_cell_vec = np.arange(100, 300, 100)
 fif_vec = np.array([constraint/n_cell for n_cell in n_cell_vec])
 # Initialize final data matricies
 phase_space_r = np.zeros((len(freq_bin_edges), len(fif_vec)))
 phase_space_Nf = np.zeros((len(freq_bin_edges), len(fif_vec)))
 for fif in tqdm(fif_vec):
+    fif_i = np.nonzero(fif_vec == fif)[0][0]
     # Sample randomly placed slices of the fire frequency distribution
 
     # Set number of slices to generate for fire freq slices of this size
     n_cell = n_cell_vec[np.nonzero(fif_vec == fif)[0][0]]
     slice_left_max = len(fire_freqs) - n_cell - 1 #slice needs to fit
-    num_samples = round((slice_left_max-slice_left_min)/30)
-    #num_samples = 4
+    num_samples = round((slice_left_max-slice_left_min)/66)
 
     # Initialize data to store sample means across all ranks
     sampled_freq_means = None
@@ -171,7 +171,7 @@ for fif in tqdm(fif_vec):
     sampled_Nf_expect = None
     if my_rank == 0:
         sampled_freq_means = np.empty(num_samples)
-        sampled_r_expect = np.empty(num_samples)
+        sampled_r_expect = np.empty(num_samples) #np.ones(num_samples)*1000
         sampled_Nf_expect = np.empty(num_samples)        
 
     # Get slice indices of samples for this rank
@@ -185,19 +185,18 @@ for fif in tqdm(fif_vec):
     else:
         sub_start = -1
         sub_samples = 0
-    #print(f"Rank {my_rank} handling samples {sub_start} to {sub_start+sub_samples-1}\n")
 
     # Initialize data for this rank's chunk of samples
     sub_freq_means = np.empty(sub_samples)
-    sub_r_expect = np.empty(sub_samples)
+    sub_r_expect = np.ones(sub_samples)*float(1e200) #np.empty(sub_samples)
     sub_Nf_expect = np.empty(sub_samples)
 
     # Add one sample for computing the no change scenario
-    if (fif==min(fif_vec)) and (my_rank==0):
+    if (fif==max(fif_vec)) and (my_rank==0):
         sub_samples += 1
-        #print(f"adding nochange to rank {my_rank} for {sub_samples} total iterations")
+        print(f"adding nochange to rank {my_rank} for {sub_samples} total iterations at fif {fif}")
 
-    for fire_sample_i in tqdm(range(sub_start, sub_start+sub_samples)):
+    for sub_sample_i, fire_sample_i in enumerate(tqdm(range(sub_start, sub_start+sub_samples))):
         # Re-sort fire frequencies and get slice
         fire_freqs_sorted = np.array(sorted(fire_freqs))
         freq_left = np.random.uniform(fire_freqs_sorted[slice_left_min], fire_freqs_sorted[slice_left_max])
@@ -205,14 +204,13 @@ for fif in tqdm(fif_vec):
         fire_freq_slice = fire_freqs_sorted[slice_left:slice_left+n_cell]
         # Store mean of slice's initial fire frequency
         # Skip if computing the no change scenario
-        if fire_sample_i < len(sub_freq_means):
-            #print(f"rank {my_rank} storing fire sample {fire_sample_i}\n")
+        if sub_sample_i < len(sub_freq_means):
             sub_freq_means[fire_sample_i-sub_start] = np.mean(fire_freq_slice)
 
         # Adjust the fire frequency distribution
         max_fif = fire_freq_slice - fire_freqs_sorted[slice_left_min]
         # Skip if computing the no change scenario
-        if fire_sample_i < len(sub_freq_means):
+        if sub_sample_i < len(sub_freq_means):
             fire_freqs_sorted[slice_left:slice_left+n_cell] = np.where(fif < max_fif, fire_freq_slice - fif, fire_freq_slice - max_fif)
 
         # Get new probability distribution across fire return interval
@@ -250,19 +248,20 @@ for fif in tqdm(fif_vec):
             Nf_expect_fri = np.trapz(y=P_Nf_fri.pdf(Nf_vals)*Nf_vals, x=Nf_vals)
             Nf_expect += Nf_expect_fri * P_dfri
         # Add sample to list if not computing no change scenario
-        if fire_sample_i < len(sub_freq_means):
-            sub_r_expect[fire_sample_i-sub_start] =r_expect
+        if sub_sample_i < len(sub_freq_means):
+            sub_r_expect[fire_sample_i-sub_start] = r_expect
             sub_Nf_expect[fire_sample_i-sub_start] = Nf_expect
         # Otherwise save no change scenario to file
         elif my_rank == 0:
+            print(f"Not adding sample with index {fire_sample_i} / {fire_sample_i-sub_start} on rank {my_rank}, instead saving as nochange")
             with open("aggregate_data/r_expect_nochange_Aeff{}.json".format(Aeff), "w") as handle:
                 json.dump({'r_expect_nochange': r_expect}, handle)
             with open("aggregate_data/Nf_expect_nochange_Aeff{}.json".format(Aeff), "w") as handle:
                 json.dump({'Nf_expect_nochange': Nf_expect}, handle)
     # Collect data across ranks
-    comm_world.Gatherv(sub_freq_means, sampled_freq_means)
-    comm_world.Gatherv(sub_r_expect, sampled_r_expect)
-    comm_world.Gatherv(sub_Nf_expect, sampled_Nf_expect)
+    comm_world.Gatherv(sub_freq_means, sampled_freq_means, root=0)
+    comm_world.Gatherv(sub_r_expect, sampled_r_expect, root=0)
+    comm_world.Gatherv(sub_Nf_expect, sampled_Nf_expect, root=0)
 
     if my_rank == 0:
         # Bin results into final phase matricies
@@ -273,15 +272,19 @@ for fif in tqdm(fif_vec):
             Nf_expect_slice = sampled_Nf_expect[freq_filt]
             if len(r_expect_slice) > 0:
                 phase_space_r[len(freq_bin_edges)-1-freq_i, fif_i] = np.mean(r_expect_slice)
+                if np.mean(r_expect_slice) > 0.4:
+                    print(f"mean r_expect_slice of {np.mean(r_expect_slice)} at fif of {fif}")
+                    print(f"r_expect_slice contains {r_expect_slice}\n")
             if len(Nf_expect_slice) > 0:
                 phase_space_Nf[len(freq_bin_edges)-1-freq_i, fif_i] = np.mean(Nf_expect_slice)
 
-        # Save phase mats to files
-        if not os.path.isdir('phase_mats/Aeff_{}'.format(Aeff)):
-            os.makedirs('phase_mats/Aeff_{}'.format(Aeff))
-        phase_fn = 'phase_mats/Aeff_{}/phase_r_{}.npy'.format(Aeff, round(constraint))
-        with open(phase_fn, 'wb') as handle:
-            np.save(handle, phase_space_r)
-        phase_fn = 'phase_mats/Aeff_{}/phase_Nf_{}.npy'.format(Aeff, round(constraint))
-        with open(phase_fn, 'wb') as handle:
-            np.save(handle, phase_space_Nf)
+if my_rank == 0:
+    # Save phase mats to files
+    if not os.path.isdir('phase_mats/Aeff_{}'.format(Aeff)):
+        os.makedirs('phase_mats/Aeff_{}'.format(Aeff))
+    phase_fn = 'phase_mats/Aeff_{}/phase_r_{}.npy'.format(Aeff, round(constraint))
+    with open(phase_fn, 'wb') as handle:
+        np.save(handle, phase_space_r)
+    phase_fn = 'phase_mats/Aeff_{}/phase_Nf_{}.npy'.format(Aeff, round(constraint))
+    with open(phase_fn, 'wb') as handle:
+        np.save(handle, phase_space_Nf)
