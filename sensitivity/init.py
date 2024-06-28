@@ -19,9 +19,10 @@ if not os.path.isfile(sd_fn):
 
 A_cell = 270**2 / 10_000 #Ha
 Aeff_vec = np.array([A_cell])
+t_final_vec = np.array([400])
 demographic_samples_vec = np.array([500])
-for Aeff, demographic_samples in zip(Aeff_vec, demographic_samples_vec):
-    existing_samples = project.find_jobs({'Aeff': Aeff})
+for Aeff, t_final, demographic_samples in zip(Aeff_vec, t_final_vec, demographic_samples_vec):
+    existing_samples = project.find_jobs({'Aeff': Aeff, 't_final': t_final})
     try:
         demographic_samples -= len(existing_samples) #len(project)
     except TypeError:
@@ -39,7 +40,7 @@ for Aeff, demographic_samples in zip(Aeff_vec, demographic_samples_vec):
 
     #params = mort_fixed
     for i in range(demographic_samples):
-        sp = {'params': {}, 'Aeff': Aeff}
+        sp = {'params': {}, 'Aeff': Aeff, 't_final': t_final}
         for p_i, p in enumerate(mort_samples[i]):
             sp['params'].update({mort_labels[p_i]: float(p)})
         for p_i, p in enumerate(fec_samples[i]):

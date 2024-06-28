@@ -144,7 +144,11 @@ class Model:
                     else:
                         epsilon_rho = rng.lognormal(0, sigm_a[age_i])
                         fecundities = rho_a[age_i]*epsilon_rho
-                        num_births = rng.poisson(fecundities*N)
+                        '''Really sloppy way to deal with too large abudances, can get away with this for now because I end up throwing out these simulations during analysis anyways'''
+                        try:
+                            num_births = rng.poisson(fecundities*N)
+                        except ValueError:
+                            num_births = rng.poisson(1e18)
                         N_vec[pop_i,0] = num_births
                         N_vec[pop_i,1:] = 0
                 else:

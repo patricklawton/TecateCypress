@@ -27,7 +27,7 @@ def run_sims(job):
     N_0_1_vec = np.repeat(N_0_1, num_reps)
     '''Could figure out mature age in a more sophisticated way'''
     init_age = round(params['a_mature']) + 20
-    t_vec = np.arange(delta_t, 200+delta_t, delta_t)
+    t_vec = np.arange(delta_t, job.sp.t_final+delta_t, delta_t)
 
     for b in b_vec:
         model = Model(**params)
@@ -37,29 +37,27 @@ def run_sims(job):
         model.simulate(t_vec=t_vec, census_every=1) 
         # Store some results
         N_tot_mean = model.N_tot_vec.mean(axis=0)
-        job.data['N_tot_mean/{}'.format(b)] = N_tot_mean 
-        job.data['fractional_change/{}'.format(b)] = (np.mean(N_tot_mean[-40:]) - N_0_1) / N_0_1
-        #frac_extirpated = np.array([sum(model.N_tot_vec[:,t_i]==0)/model.N_tot_vec.shape[0] for t_i in range(model.N_tot_vec.shape[1])])
-        #max_i = np.nonzero(N_tot_mean == max(N_tot_mean))[0][0]
-        ## Set a threshold for the max extirpation fraction before we stop fitting a line
-        #extir_thresh = 0.95
-        #if np.any(frac_extirpated >= extir_thresh):
-        #    max_extir_i = min(np.nonzero(frac_extirpated >= extir_thresh)[0])
-        #else:
-        #    max_extir_i = model.N_tot_vec.shape[1]
-        #def line(x, m):
-        #    return m*x
-        #if max_i >= max_extir_i:
-        #    print(max_i, max_extir_i)
-        #    print(frac_extirpated)
-        #    #print(job.sp.rep)
-        #    job.data['extirpation_rate/{}'.format(b)] = 0
-        #else:
-        #    popt, pcov = curve_fit(line, model.census_t[max_i:max_extir_i], frac_extirpated[max_i:max_extir_i])
-        #    job.data['extirpation_rate/{}'.format(b)] = popt[0]
+        job.data[f'N_tot_mean/{b}'] = N_tot_mean 
+        job.data[f'fractional_change/{b}'] = (np.mean(N_tot_mean[-40:]) - N_0_1) / N_0_1
+        frac_extirpated = np.array([sum(model.N_tot_vec[:,t_i]==0)/model.N_tot_vec.shape[0] for t_i in range(model.N_tot_vec.shape[1])])
+        job.data[f'frac_extirpated/{b}'] = frac_extirpated
 
     job.data['census_t'] = model.census_t
     job.doc['simulated'] = True
+
+@FlowProject.pre(lambda job: job.doc.get('simulated'))
+@FlowProject.post(lambda job: job.doc.get('fractional_change_computed'))
+@FlowProject.operation
+def compute_fractional_change(job):
+    slice_i = round(job.sp.t_final * 0.25)
+    Aeff = job.sp['Aeff'] #ha
+    N_0_1 = Aeff*mort_fixed['K_adult']
+    for b in b_vec:
+        with job.data:
+            N_tot_mean = np.array(job.data[f'N_tot_mean/{b}'])
+        job.data[f'fractional_change/{b}'] = (np.mean(N_tot_mean[-slice_i:]) - N_0_1) / N_0_1
+
+    job.doc['fractional_change_computed'] = True
 
 if __name__ == "__main__":
     FlowProject().main()

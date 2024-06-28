@@ -17,11 +17,13 @@ num_procs = comm_world.Get_size()
 # Some constants
 c = 1.42
 Aeff = 7.29
+t_final = 400
 r_bw=0.1
 ul_coord = [1500, 2800]
 lr_coord = [2723, 3905]
 max_fri = 66
 A_cell = 270**2 / 1e6 #km^2
+fif_baseline = 1
 dr = 0.01
 dfri = 0.01
 
@@ -42,11 +44,13 @@ if my_rank == 0:
         b_vec = np.array(sd['b_vec'])
     fri_vec = b_vec * gamma(1+1/c)
 
-    #jobs = project.find_jobs({'doc.simulated': True, 'Aeff': Aeff})
-    jobs = np.ones(500)
+    jobs = project.find_jobs({'doc.simulated': True, 'Aeff': Aeff, 't_final': t_final})
+    #jobs = np.ones(500)
     all_fri = np.tile(fri_vec, len(jobs))
-    #print(f"all_fri with len {len(all_fri)} proccessed on rank {my_rank}\n")
-    fn = "aggregate_data/all_r_{}.npy".format(Aeff)
+    if not os.path.isdir('aggregate_data/Aeff_{}'.format(Aeff)):
+        os.makedirs('aggregate_data/Aeff_{}'.format(Aeff))
+    np.save(f"aggregate_data/Aeff_{Aeff}/all_fri_{t_final}.npy", all_fri)
+    fn = "aggregate_data/Aeff_{}/all_r_{}.npy".format(Aeff, t_final)
     if not os.path.isfile(fn):
         all_r = np.array([])
         for job_i, job in enumerate(jobs):
@@ -55,8 +59,6 @@ if my_rank == 0:
                 for b in b_vec:
                     frac_change_vec.append(float(data['fractional_change/{}'.format(b)]))
             all_r = np.append(all_r, frac_change_vec)
-        if not os.path.isdir('aggregate_data'):
-            os.makedirs('aggregate_data')
         with open(fn, 'wb') as handle:
             np.save(handle, all_r)
     else:
@@ -75,7 +77,7 @@ if my_rank == 0:
     ax.set_ylabel(r'$\frac{\Delta \text{N}}{\text{N}_1(0)}$')
     if not os.path.isdir('figs/Aeff_{}'.format(Aeff)):
         os.makedirs('figs/Aeff_{}'.format(Aeff))
-    fig.savefig('figs/Aeff_{}/sensitvity.png'.format(Aeff), bbox_inches='tight')
+    fig.savefig('figs/Aeff_{}/sensitvity_tfinal_{}.png'.format(Aeff, t_final), bbox_inches='tight')
 
     fdmfn = 'FDE_current_allregions.asc'
     if fdmfn[-3:] == 'txt':
@@ -140,19 +142,25 @@ slice_left_min = np.nonzero(fire_freqs_sorted > (1/max_fri))[0][0]
 freq_range = fire_freqs_sorted[-1] - fire_freqs_sorted[slice_left_min]
 freq_bw = freq_range/20
 freq_bin_edges = np.arange(fire_freqs_sorted[slice_left_min], fire_freqs_sorted[-1], freq_bw)
+freq_bin_cntrs = np.array([edge+freq_bw/2 for edge in freq_bin_edges])
 
 # Loop over different resource constraint values
 #baseline_areas = np.array([10]) #km
 baseline_area = 10
 
+# Generate resource allocation scenarios
 n_cell_baseline = round(baseline_area/A_cell)
-fif_baseline = 1
 constraint = n_cell_baseline * fif_baseline
-
-# Loop over resource allocation scenarios
-n_cell_vec = np.arange(n_cell_baseline, len(fire_freqs)-slice_left_min, 2000)
+n_cell_vec = np.arange(n_cell_baseline, len(fire_freqs)-slice_left_min, 3000)
 #n_cell_vec = np.arange(100, 300, 100)
 fif_vec = np.array([constraint/n_cell for n_cell in n_cell_vec])
+
+# Save a few more things
+if my_rank == 0:
+    #np.save(f"aggregate_data/fire_freqs_sorted.npy", fire_freqs_sorted)
+    np.save(f"aggregate_data/freq_bin_cntrs.npy", freq_bin_cntrs)
+    np.save(f"aggregate_data/Aeff_{Aeff}/n_cell_vec_{constraint}.npy", n_cell_vec)
+
 # Initialize final data matricies
 phase_space_r = np.zeros((len(freq_bin_edges), len(fif_vec)))
 phase_space_Nf = np.zeros((len(freq_bin_edges), len(fif_vec)))
@@ -163,7 +171,7 @@ for fif in tqdm(fif_vec):
     # Set number of slices to generate for fire freq slices of this size
     n_cell = n_cell_vec[np.nonzero(fif_vec == fif)[0][0]]
     slice_left_max = len(fire_freqs) - n_cell - 1 #slice needs to fit
-    num_samples = round((slice_left_max-slice_left_min)/66)
+    num_samples = round((slice_left_max-slice_left_min)/100)
 
     # Initialize data to store sample means across all ranks
     sampled_freq_means = None
@@ -254,9 +262,9 @@ for fif in tqdm(fif_vec):
         # Otherwise save no change scenario to file
         elif my_rank == 0:
             print(f"Not adding sample with index {fire_sample_i} / {fire_sample_i-sub_start} on rank {my_rank}, instead saving as nochange")
-            with open("aggregate_data/r_expect_nochange_Aeff{}.json".format(Aeff), "w") as handle:
+            with open("aggregate_data/Aeff_{}/r_expect_nochange_{}.json".format(Aeff, t_final), "w") as handle:
                 json.dump({'r_expect_nochange': r_expect}, handle)
-            with open("aggregate_data/Nf_expect_nochange_Aeff{}.json".format(Aeff), "w") as handle:
+            with open("aggregate_data/Aeff_{}/Nf_expect_nochange_{}.json".format(Aeff, t_final), "w") as handle:
                 json.dump({'Nf_expect_nochange': Nf_expect}, handle)
     # Collect data across ranks
     comm_world.Gatherv(sub_freq_means, sampled_freq_means, root=0)
@@ -282,9 +290,9 @@ if my_rank == 0:
     # Save phase mats to files
     if not os.path.isdir('phase_mats/Aeff_{}'.format(Aeff)):
         os.makedirs('phase_mats/Aeff_{}'.format(Aeff))
-    phase_fn = 'phase_mats/Aeff_{}/phase_r_{}.npy'.format(Aeff, round(constraint))
+    phase_fn = 'phase_mats/Aeff_{}/phase_r_{}_{}.npy'.format(Aeff, round(constraint), t_final)
     with open(phase_fn, 'wb') as handle:
         np.save(handle, phase_space_r)
-    phase_fn = 'phase_mats/Aeff_{}/phase_Nf_{}.npy'.format(Aeff, round(constraint))
+    phase_fn = 'phase_mats/Aeff_{}/phase_Nf_{}_{}.npy'.format(Aeff, round(constraint), t_final)
     with open(phase_fn, 'wb') as handle:
         np.save(handle, phase_space_Nf)
