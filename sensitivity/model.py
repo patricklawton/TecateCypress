@@ -82,6 +82,7 @@ class Model:
                         else:
                             if t_star_vec[pop_i] < len(t_vec)-1:
                                 t_star_vec[pop_i] += 1
+        self.t_fire_vec = t_fire_vec
 
         N_vec = np.ma.array(np.zeros((len(self.N_0_1), len(t_vec))))
         for pop_i, N_pop in enumerate(N_vec):
@@ -131,7 +132,7 @@ class Model:
                     single_age = True
                     age_i = age_i_vec[0]
                     N = N_vec[pop_i][age_i]
-                if t_fire_vec[pop_i, t_i]:
+                if self.t_fire_vec[pop_i, t_i]:
                     # Update seedlings, kill all adults
                     if not single_age:
                         epsilon_rho = rng.lognormal(np.zeros(len(t_vec)), sigm_a)

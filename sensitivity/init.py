@@ -18,7 +18,8 @@ if not os.path.isfile(sd_fn):
         sd['b_vec'] = b_vec
 
 A_cell = 270**2 / 10_000 #Ha
-Aeff_vec = np.array([A_cell])
+sdm_min = 0.32649827003479004 
+Aeff_vec = np.array([np.round(A_cell*sdm_min, 2)])
 t_final_vec = np.array([400])
 demographic_samples_vec = np.array([500])
 for Aeff, t_final, demographic_samples in zip(Aeff_vec, t_final_vec, demographic_samples_vec):

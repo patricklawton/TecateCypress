@@ -16,7 +16,7 @@ num_procs = comm_world.Get_size()
 
 # Some constants
 c = 1.42
-Aeff = 7.29
+Aeff = 2.38 #7.29
 t_final = 400
 r_bw=0.1
 ul_coord = [1500, 2800]
