@@ -19,11 +19,10 @@ for pr in ['mortality', 'fecundity']:
 # Constants
 overwrite_discrete = True
 Aeff = 7.29
-fri = 50
+fri = 25
 c = 1.42
 b = fri / gamma(1+1/c)
-#t_final = 15
-t_final = 1000
+t_final = 500
 # Get the average habitat suitability within the Otay Mtn Wilderness area
 sdmfn = "SDM_1995.asc"
 sdm = np.loadtxt(sdmfn,skiprows=6)
@@ -32,7 +31,7 @@ sdm_otay = sdm[otay==1] #index "1" indicates the specific part where study was d
 h_o = np.mean(sdm_otay[sdm_otay!=0]) #excluding zero, would be better to use SDM w/o threshold
 A_o = 0.1 #area of observed sites in Ha
 delta_t = 1
-num_reps = 10000
+num_reps = 1000
 N_0_1 = Aeff*params['K_adult']
 N_0_1_vec = np.repeat(N_0_1, num_reps)
 init_age = round(params['a_mature']) + 20
@@ -57,6 +56,8 @@ else:
     N_tot_mean_disc = np.load(discrete_fn)
     t_fire_vec = np.load(t_fire_vec_fn)
 #t_fire_vec = np.array([[0,0,0,1,0,0,0,1,0,0,0,1,0,0,0]])
+#t_final = 15
+#t_vec = np.arange(delta_t, t_final+delta_t, delta_t)
 elapsed = timeit.default_timer() - start_time
 print('{} seconds'.format(elapsed))
 
@@ -99,28 +100,42 @@ N_tot_vec = np.empty((t_fire_vec.shape[0], len(t_vec)))
 for pop_i, t_fire_pop in enumerate(t_fire_vec):
     fire_indices = np.argwhere(t_fire_pop!=0).flatten()
     #print(fire_indices)
+    # Handle inter-fire intervals
     for fire_num, fire_i in enumerate(fire_indices):
-        #print(f'fire_num {fire_num}')
+        print(f'fire_num {fire_num}')
         if fire_i == min(fire_indices):
             t_eval = np.arange(delta_t, fire_i+delta_t)
-            #print(f"t_eval: {t_eval}")
+            print(f"t_eval: {t_eval}")
             init_i = 0
-            sol = solve_ivp(dNdt, [delta_t,fire_i], [params['K_adult']], t_eval=t_eval) 
+            N_i = params['K_adult']
         else:
-            t_eval = np.arange(delta_t, fire_i-fire_indices[fire_num-1] + delta_t)
-            #print(f"t_eval: {t_eval}")
+            t_eval = np.arange(delta_t, fire_i - fire_indices[fire_num-1] + delta_t)
+            print(f"t_eval: {t_eval}")
             init_i = fire_indices[fire_num-1]
-            sol = solve_ivp(dNdt, [delta_t,fire_i], [num_births], t_eval=t_eval) 
-        '''Lazy and need to fix this but handling interfire periods lt 1 this way'''
-        if (len(sol.y)!=0) and (len(sol.y[0]) > 1):
+            N_i = num_births
+        #'''Lazy and need to fix this but handling interfire periods lt 1 this way'''
+        #if (len(sol.y)!=0) and (len(sol.y[0]) > 1):
+        if (len(t_eval) > 1) and (N_i > 0):
+            sol = solve_ivp(dNdt, [delta_t,fire_i], [N_i], t_eval=t_eval) 
             # Set any abundances < 1 to zero
             sol.y[0] = np.where(sol.y[0] > 1, sol.y[0], 0)
-            num_births = get_num_births(len(t_eval), sol.y[0][-1])
-            #print(f"solution from timestep {init_i} to {fire_i-1}")
-            #print(sol.y)
+            if fire_i == min(fire_indices):
+                num_births = get_num_births(len(t_eval) + init_age, sol.y[0][-1])
+            else:
+                num_births = get_num_births(len(t_eval), sol.y[0][-1])
+            print(f"solution from timestep {init_i} to {fire_i-1}")
+            print(sol.y)
             N_tot_vec[pop_i][init_i:fire_i] = sol.y[0]
         else:
+            print(f"solution from timestep {init_i} to {fire_i-1}")
+            print("0")
             N_tot_vec[pop_i][init_i:fire_i+1] = 0.
+            num_births = 0
+        #if (len(t_eval) == 1) and (N_i > 0):
+        #    print(f"t_eval: {t_eval}")
+        #    print(f"solution from timestep {init_i} to {fire_i-1}")
+        #    #num_survivors
+    # Handle final timesteps without fire
     if len(t_vec) > fire_i+1:
         fire_num += 1
         #print(f'fire_num {fire_num}')

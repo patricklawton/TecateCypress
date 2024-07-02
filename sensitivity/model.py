@@ -3,6 +3,7 @@ import json
 from itertools import product
 import pandas as pd
 import sys
+import timeit
 
 # Get the average habitat suitability within the Otay Mtn Wilderness area
 sdmfn = "SDM_1995.asc"
