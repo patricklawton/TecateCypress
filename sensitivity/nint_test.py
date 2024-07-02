@@ -17,7 +17,7 @@ for pr in ['mortality', 'fecundity']:
         params.update(json.load(handle))
 
 # Constants
-overwrite_discrete = True
+overwrite_discrete = False
 Aeff = 7.29
 fri = 25
 c = 1.42
@@ -55,8 +55,8 @@ if (os.path.isfile(discrete_fn)==False) or (overwrite_discrete):
 else:
     N_tot_mean_disc = np.load(discrete_fn)
     t_fire_vec = np.load(t_fire_vec_fn)
-#t_fire_vec = np.array([[0,0,0,1,0,0,0,1,0,0,0,1,0,0,0]])
-#t_final = 15
+#t_fire_vec = np.array([[0,0,0,1,0,0,0,1,0,0,0]])
+#t_final = len(t_fire_vec[0])
 #t_vec = np.arange(delta_t, t_final+delta_t, delta_t)
 elapsed = timeit.default_timer() - start_time
 print('{} seconds'.format(elapsed))
@@ -96,58 +96,86 @@ def get_num_births(t, N):
     return num_births
 
 start_time = timeit.default_timer()
-N_tot_vec = np.empty((t_fire_vec.shape[0], len(t_vec)))
+N_tot_vec = np.ones((t_fire_vec.shape[0], len(t_vec)))*np.nan
 for pop_i, t_fire_pop in enumerate(t_fire_vec):
     fire_indices = np.argwhere(t_fire_pop!=0).flatten()
     #print(fire_indices)
     # Handle inter-fire intervals
     for fire_num, fire_i in enumerate(fire_indices):
         print(f'fire_num {fire_num}')
+        # Initialize first interval with specified initial abundance
         if fire_i == min(fire_indices):
             t_eval = np.arange(delta_t, fire_i+delta_t)
             print(f"t_eval: {t_eval}")
             init_i = 0
             N_i = params['K_adult']
+        # Otherwise set initial conditions for a given interval
         else:
             t_eval = np.arange(delta_t, fire_i - fire_indices[fire_num-1] + delta_t)
             print(f"t_eval: {t_eval}")
             init_i = fire_indices[fire_num-1]
+            if num_births < 1:
+                num_births = 0
             N_i = num_births
-        #'''Lazy and need to fix this but handling interfire periods lt 1 this way'''
-        #if (len(sol.y)!=0) and (len(sol.y[0]) > 1):
-        if (len(t_eval) > 1) and (N_i > 0):
-            sol = solve_ivp(dNdt, [delta_t,fire_i], [N_i], t_eval=t_eval) 
-            # Set any abundances < 1 to zero
-            sol.y[0] = np.where(sol.y[0] > 1, sol.y[0], 0)
-            if fire_i == min(fire_indices):
-                num_births = get_num_births(len(t_eval) + init_age, sol.y[0][-1])
-            else:
-                num_births = get_num_births(len(t_eval), sol.y[0][-1])
-            print(f"solution from timestep {init_i} to {fire_i-1}")
-            print(sol.y)
-            N_tot_vec[pop_i][init_i:fire_i] = sol.y[0]
+            print(f"N_i: {N_i}")
+        # Handle cases with nonzero abundance
+        if N_i > 0:
+            if len(t_eval) > 1:
+                sol = solve_ivp(dNdt, [delta_t,fire_i], [N_i], t_eval=t_eval) 
+                # Set any abundances < 1 to zero
+                sol.y[0] = np.where(sol.y[0] > 1, sol.y[0], 0)
+                if fire_i == min(fire_indices):
+                    num_births = get_num_births(len(t_eval) + init_age, sol.y[0][-1])
+                else:
+                    num_births = get_num_births(len(t_eval), sol.y[0][-1])
+                print(f"solution from timestep {init_i} to {fire_i-1}")
+                print(sol.y)
+                N_tot_vec[pop_i][init_i:fire_i] = sol.y[0]
+            # Handle case of consecutive fires
+            elif len(t_eval) == 1:
+                print(f"solution from timestep {init_i} to {fire_i-1}")
+                print(num_births)
+                N_tot_vec[pop_i][init_i] = num_births
+                num_births = get_num_births(len(t_eval), num_births)
+                print(f"num_births after consecutive fire: {num_births}")
+            # Handle case where fire occurs on first timestep
+            elif len(t_eval) == 0:
+                num_births = get_num_births(1, N_i)
+                if num_births < 1:
+                    num_births = 0
+        # If pop extirpated, keep abundance at zero
         else:
             print(f"solution from timestep {init_i} to {fire_i-1}")
             print("0")
             N_tot_vec[pop_i][init_i:fire_i+1] = 0.
             num_births = 0
-        #if (len(t_eval) == 1) and (N_i > 0):
-        #    print(f"t_eval: {t_eval}")
-        #    print(f"solution from timestep {init_i} to {fire_i-1}")
-        #    #num_survivors
     # Handle final timesteps without fire
     if len(t_vec) > fire_i+1:
         fire_num += 1
-        #print(f'fire_num {fire_num}')
-        t_eval = np.arange(delta_t, len(t_vec) - 1 - fire_i + delta_t)
-        #print(f"t_eval: {t_eval}")
+        print(f'fire_num {fire_num}')
+        print(f"num_births before rounding: {num_births}")
+        if num_births < 1:
+            num_births = 0.
+        t_eval = np.arange(delta_t, len(t_vec) - fire_i + delta_t)
+        print(f"t_eval: {t_eval}")
         sol = solve_ivp(dNdt, [delta_t,len(t_eval)], [num_births], t_eval=t_eval) 
-        #print(f"solution from timestep {fire_i+1} to {len(t_vec)-1}")
-        #print(sol.y)
+        print(f"solution from timestep {fire_i} to {len(t_vec)-1}")
+        print(sol.y)
         if (len(sol.y)!=0) and (len(sol.y[0]) > 1):
-            N_tot_vec[pop_i][fire_i+1:len(t_vec)] = sol.y[0]
+            N_tot_vec[pop_i][fire_i:len(t_vec)] = sol.y[0]
         else: 
-            N_tot_vec[pop_i][fire_i+1:len(t_vec)] = 0.
+            N_tot_vec[pop_i][fire_i:len(t_vec)] = 0.
+    # Handle case where fire occurs on final timestep
+    elif len(t_vec) == fire_i+1:
+        fire_num += 1
+        print(f"fire_num {fire_num} on final timestep")
+        print(f"t_eval: {t_eval}")
+        num_births = get_num_births(len(t_eval) - 1, sol.y[0][-1])
+        print(f"num_births before rounding: {num_births}")
+        if num_births < 1:
+            num_births = 0.
+        N_tot_vec[pop_i][-1] = num_births
+print(N_tot_vec)
 N_tot_mean_nint = N_tot_vec.mean(axis=0)
 nint_fn = 'nint_data/N_tot_mean_nint.npy'
 np.save(nint_fn, N_tot_mean_nint)
