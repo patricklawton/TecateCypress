@@ -9,6 +9,7 @@ from matplotlib import pyplot as plt
 import timeit
 from scipy.special import gamma
 from scipy.stats import weibull_min
+from tqdm import tqdm
 
 # Read in map parameters
 params = {}
@@ -17,12 +18,12 @@ for pr in ['mortality', 'fecundity']:
         params.update(json.load(handle))
 
 # Constants
-overwrite_discrete = True
+overwrite_discrete = False
 Aeff = 7.29
 fri = 35
 c = 1.42
 b = fri / gamma(1+1/c)
-t_final = 500
+t_final = 1000
 # Get the average habitat suitability within the Otay Mtn Wilderness area
 sdmfn = "SDM_1995.asc"
 sdm = np.loadtxt(sdmfn,skiprows=6)
@@ -31,7 +32,7 @@ sdm_otay = sdm[otay==1] #index "1" indicates the specific part where study was d
 h_o = np.mean(sdm_otay[sdm_otay!=0]) #excluding zero, would be better to use SDM w/o threshold
 A_o = 0.1 #area of observed sites in Ha
 delta_t = 1
-num_reps = 1000
+num_reps = 1_000
 N_0_1 = Aeff*params['K_adult']
 N_0_1_vec = np.repeat(N_0_1, num_reps)
 init_age = round(params['a_mature']) + 20
@@ -45,13 +46,15 @@ if (os.path.isfile(discrete_fn)==False) or (overwrite_discrete):
     model = Model(**params)
     model.set_effective_area(Aeff)
     model.init_N(N_0_1_vec, init_age)
+    model.set_t_vec(t_vec)
     model.set_weibull_fire(b=b, c=c)
-    model.simulate(t_vec=t_vec, census_every=1)
-    # Store some results
-    N_tot_mean_disc = model.N_tot_vec.mean(axis=0)
+    model.generate_fires()
     t_fire_vec = model.t_fire_vec
-    np.save(discrete_fn, N_tot_mean_disc)
     np.save(t_fire_vec_fn, t_fire_vec)
+    print("fire_saved")
+    model.simulate(census_every=1)
+    N_tot_mean_disc = model.N_tot_vec.mean(axis=0)
+    np.save(discrete_fn, N_tot_mean_disc)
 else:
     N_tot_mean_disc = np.load(discrete_fn)
     t_fire_vec = np.load(t_fire_vec_fn)
@@ -97,7 +100,7 @@ def get_num_births(t, N):
 
 start_time = timeit.default_timer()
 N_tot_vec = np.ones((t_fire_vec.shape[0], len(t_vec)))*np.nan
-for pop_i, t_fire_pop in enumerate(t_fire_vec):
+for pop_i, t_fire_pop in enumerate(tqdm(t_fire_vec)):
     fire_indices = np.argwhere(t_fire_pop!=0).flatten()
     # Handle inter-fire intervals
     for fire_num, fire_i in enumerate(fire_indices):

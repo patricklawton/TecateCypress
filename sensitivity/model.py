@@ -13,6 +13,9 @@ sdm_otay = sdm[otay==1] #index "1" indicates the specific part where study was d
 h_o = np.mean(sdm_otay[sdm_otay!=0]) #excluding zero, would be better to use SDM w/o threshold
 A_o = 0.1 #area of observed sites in Ha
 
+# For sampling from various probability distributions
+rng = np.random.default_rng()
+
 class Model:
     def __init__(self, **kwargs):
         # Mortality parameters
@@ -39,83 +42,85 @@ class Model:
     def set_effective_area(self, Aeff):
         self.Aeff = Aeff
 
+    def set_t_vec(self, t_vec):
+        self.t_vec = t_vec
+        self.delta_t = self.t_vec[1] - self.t_vec[0]
+
     def set_fire_probabilities(self, fire_probs):
-        #if not hasattr(fire_probs, '__len__'):
-        #    self.fire_probs = fire_probs * np.ones((len(self.N_0_1), len(t_vec)))
         self.fire_probs = fire_probs
 
     def set_weibull_fire(self, b, c):
         self.weibull_b = b
         self.weibull_c = c
 
-    def simulate(self, t_vec=np.arange(1,100), census_every=1):
-        delta_t = t_vec[1] - t_vec[0]
-        # For sampling from various probability distributions
-        rng = np.random.default_rng()
+    def generate_fires(self):
         # Get initial age time indices
-        init_age_i_vec = [np.nonzero(t_vec == a)[0][0] for a in self.init_age]
-
+        init_age_i_vec = [np.nonzero(self.t_vec == a)[0][0] for a in self.init_age]
         # Get timesteps of fire occurances
         if hasattr(self, 'fire_probs'):
             if not hasattr(self.fire_probs, '__len__'):
-                self.fire_probs = self.fire_probs * np.ones((len(self.N_0_1), len(t_vec)))
-            t_fire_vec = rng.binomial(np.ones((len(self.N_0_1), len(t_vec))).astype(int), self.fire_probs)
+                self.fire_probs = self.fire_probs * np.ones((len(self.N_0_1), len(self.t_vec)))
+            t_fire_vec = rng.binomial(np.ones((len(self.N_0_1), len(self.t_vec))).astype(int), self.fire_probs)
             # Make it deterministic
             #fri = 1/self.fire_probs[0,0]
-            #t_fire_vec = np.array([1 if t%fri==0 else 0 for t in t_vec])
+            #t_fire_vec = np.array([1 if t%fri==0 else 0 for t in self.t_vec])
             #t_fire_vec = np.tile(t_fire_vec, (len(self.N_0_1), 1))
         elif hasattr(self, 'weibull_b') and hasattr(self, 'weibull_c'):
             # Calculate the frequency of fires between timesteps via Weibull hazard
-            b_eff = self.weibull_b * delta_t
+            b_eff = self.weibull_b * self.delta_t
             term1 = 1/b_eff**self.weibull_c
-            term2 = (t_vec + delta_t)**self.weibull_c - t_vec**self.weibull_c
+            term2 = (self.t_vec + self.delta_t)**self.weibull_c - self.t_vec**self.weibull_c
             frequency_vec =  term1 * term2 
             t_star_vec = init_age_i_vec.copy() #Time since last fire indices
-            t_fire_vec = np.zeros((len(self.N_0_1), len(t_vec))).astype(int)
+            t_fire_vec = np.zeros((len(self.N_0_1), len(self.t_vec))).astype(int)
             if self.weibull_b > 0:
                 for pop_i in range(len(self.N_0_1)):
-                    for t_i in range(len(t_vec)):
+                    for t_i in range(len(self.t_vec)):
                         frequency = frequency_vec[t_star_vec[pop_i]]
                         fire = rng.poisson(lam=frequency, size=1)
                         if fire:
                             t_fire_vec[pop_i, t_i] = 1
                             t_star_vec[pop_i] = 0
                         else:
-                            if t_star_vec[pop_i] < len(t_vec)-1:
+                            if t_star_vec[pop_i] < len(self.t_vec)-1:
                                 t_star_vec[pop_i] += 1
         self.t_fire_vec = t_fire_vec
 
-        N_vec = np.ma.array(np.zeros((len(self.N_0_1), len(t_vec))))
+    def simulate(self, census_every=1):
+        # Get initial age time indices
+        init_age_i_vec = [np.nonzero(self.t_vec == a)[0][0] for a in self.init_age]
+
+        N_vec = np.ma.array(np.zeros((len(self.N_0_1), len(self.t_vec))))
         for pop_i, N_pop in enumerate(N_vec):
             a_i = init_age_i_vec[pop_i]
             N_pop[a_i] = self.N_0_1[pop_i]
         N_vec = N_vec.astype(int)
         # Initialize empty abundance array
-        self.census_t = t_vec[::census_every]
+        self.census_t = self.t_vec[::census_every]
         self.N_tot_vec = np.nan * np.ones((len(self.N_0_1), len(self.census_t)))
         self.N_tot_vec[:,0] = self.N_0_1
         
         # Age-dependent mortality functions
-        m_a = self.alph_m * np.exp(-self.beta_m*t_vec) + self.gamm_m
-        K_a = self.K_seedling * np.exp(-self.kappa*t_vec) + self.K_adult
-        #K_a = np.repeat(self.K_adult, len(t_vec))
-        nu_a = self.alph_nu * np.exp(-self.beta_nu*t_vec) + self.gamm_nu
+        m_a = self.alph_m * np.exp(-self.beta_m*self.t_vec) + self.gamm_m
+        K_a = self.K_seedling * np.exp(-self.kappa*self.t_vec) + self.K_adult
+        #K_a = np.repeat(self.K_adult, len(self.t_vec))
+        nu_a = self.alph_nu * np.exp(-self.beta_nu*self.t_vec) + self.gamm_nu
         # Use linear approx to set eta s.t. shape of dens. dep. curve is 
         # the same for arbitrary effective patch size
         delta, theta = (1.05, 0.050000000000000044) #just hardcoding these in
         eta_a = (theta*2)/((nu_a*(1-m_a)) * (A_o*h_o*self.K_adult) * (delta-1))
-        sigm_m_a = self.sigm_m*np.exp(-self.tau_m*t_vec)
+        sigm_m_a = self.sigm_m*np.exp(-self.tau_m*self.t_vec)
         epsilon_m_vec = rng.lognormal(np.zeros_like(N_vec)+self.mu_m, np.tile(sigm_m_a, (len(self.N_0_1),1)))
         # Make it deterministic
         epsilon_m_mean = np.exp(sigm_m_a**2 / 2) 
         # Age-dependent fecundity functions
-        rho_a = self.rho_max / (1+np.exp(-self.eta_rho*(t_vec-self.a_mature)))
-        sigm_a = self.sigm_max / (1+np.exp(-self.eta_sigm*(t_vec-self.a_sigm_star)))
+        rho_a = self.rho_max / (1+np.exp(-self.eta_rho*(self.t_vec-self.a_mature)))
+        sigm_a = self.sigm_max / (1+np.exp(-self.eta_sigm*(self.t_vec-self.a_sigm_star)))
         # Make it deterministic
         epsilon_rho = np.exp(sigm_a**2 / 2)
         fecundities = rho_a*epsilon_rho
 
-        for t_i, t in enumerate(t_vec[:-1]):
+        for t_i, t in enumerate(self.t_vec[:-1]):
             for pop_i in range(len(N_vec)):
                 # If sim invalid or pop extirpated, skip
                 if np.all(np.isnan(N_vec)) or (np.sum(N_vec[pop_i]) == 0):
@@ -123,10 +128,10 @@ class Model:
                 age_i_vec = np.nonzero(N_vec[pop_i])[0]
                 # Cap the max age at the length of the time vector minus 1;
                 # just because that's all we compute, could calculate on the fly
-                if max(age_i_vec) >= len(t_vec) - 1:
+                if max(age_i_vec) >= len(self.t_vec) - 1:
                     N_vec[pop_i][age_i_vec[-1]-1] += N_vec[pop_i][age_i_vec[-1]]
                     N_vec[pop_i][age_i_vec[-1]] = 0
-                    age_i_vec[-1] = len(t_vec) - 2
+                    age_i_vec[-1] = len(self.t_vec) - 2
                 if len(age_i_vec) > 1:
                     single_age = False
                 else:
@@ -136,7 +141,7 @@ class Model:
                 if self.t_fire_vec[pop_i, t_i]:
                     # Update seedlings, kill all adults
                     if not single_age:
-                        epsilon_rho = rng.lognormal(np.zeros(len(t_vec)), sigm_a)
+                        epsilon_rho = rng.lognormal(np.zeros(len(self.t_vec)), sigm_a)
                         fecundities = rho_a*epsilon_rho
                         num_births = rng.poisson(fecundities*N_vec[pop_i])
                         # Make it deterministic
@@ -159,13 +164,13 @@ class Model:
                     if not single_age:
                         dens_dep = ((nu_a)*(1-m_a)) / (1 + np.exp(-eta_a*self.K_adult*(np.sum(N_vec[pop_i]/K_a) - self.Aeff)))
                         m_a_N = m_a + dens_dep
-                        survival_probs = np.exp(-m_a_N * epsilon_m_vec[pop_i] * delta_t)
+                        survival_probs = np.exp(-m_a_N * epsilon_m_vec[pop_i] * self.delta_t)
                         # Make it deterministic
-                        #survival_probs = np.exp(-m_a_N * epsilon_m_mean * delta_t)
+                        #survival_probs = np.exp(-m_a_N * epsilon_m_mean * self.delta_t)
                     else:
                         dens_dep = ((nu_a[age_i])*(1-m_a[age_i])) / (1 + np.exp(-eta_a[age_i]*self.K_adult*(N/K_a[age_i] - self.Aeff)))
                         m_a_N = m_a[age_i] + dens_dep
-                        survival_probs = np.exp(-m_a_N * epsilon_m_vec[pop_i][age_i] * delta_t)
+                        survival_probs = np.exp(-m_a_N * epsilon_m_vec[pop_i][age_i] * self.delta_t)
 
                     # Ensure survival probs are feasible, otherwise mark sim invalid 
                     prob_check = np.all(survival_probs >= 0) and np.all(survival_probs <= 1)
@@ -183,6 +188,6 @@ class Model:
                             N_vec[pop_i][age_i+1] = num_survivors
                             N_vec[pop_i][age_i] = 0
                     else:
-                        N_vec = np.nan * np.ones((len(self.N_0_1), len(t_vec)))
-            if t_vec[t_i+1] in self.census_t:
+                        N_vec = np.nan * np.ones((len(self.N_0_1), len(self.t_vec)))
+            if self.t_vec[t_i+1] in self.census_t:
                 self.N_tot_vec[:, t_i+1] = N_vec.sum(axis=1)
