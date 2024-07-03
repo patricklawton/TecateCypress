@@ -4,6 +4,8 @@ from itertools import product
 import pandas as pd
 import sys
 import timeit
+from scipy.integrate import quad, solve_ivp
+from tqdm import tqdm
 
 # Get the average habitat suitability within the Otay Mtn Wilderness area
 sdmfn = "SDM_1995.asc"
@@ -85,25 +87,11 @@ class Model:
                             if t_star_vec[pop_i] < len(self.t_vec)-1:
                                 t_star_vec[pop_i] += 1
         self.t_fire_vec = t_fire_vec
-
-    def simulate(self, census_every=1):
-        # Get initial age time indices
-        init_age_i_vec = [np.nonzero(self.t_vec == a)[0][0] for a in self.init_age]
-
-        N_vec = np.ma.array(np.zeros((len(self.N_0_1), len(self.t_vec))))
-        for pop_i, N_pop in enumerate(N_vec):
-            a_i = init_age_i_vec[pop_i]
-            N_pop[a_i] = self.N_0_1[pop_i]
-        N_vec = N_vec.astype(int)
-        # Initialize empty abundance array
-        self.census_t = self.t_vec[::census_every]
-        self.N_tot_vec = np.nan * np.ones((len(self.N_0_1), len(self.census_t)))
-        self.N_tot_vec[:,0] = self.N_0_1
-        
+    
+    def _simulate_discrete(self, N_vec, progress):
         # Age-dependent mortality functions
         m_a = self.alph_m * np.exp(-self.beta_m*self.t_vec) + self.gamm_m
         K_a = self.K_seedling * np.exp(-self.kappa*self.t_vec) + self.K_adult
-        #K_a = np.repeat(self.K_adult, len(self.t_vec))
         nu_a = self.alph_nu * np.exp(-self.beta_nu*self.t_vec) + self.gamm_nu
         # Use linear approx to set eta s.t. shape of dens. dep. curve is 
         # the same for arbitrary effective patch size
@@ -120,7 +108,7 @@ class Model:
         epsilon_rho = np.exp(sigm_a**2 / 2)
         fecundities = rho_a*epsilon_rho
 
-        for t_i, t in enumerate(self.t_vec[:-1]):
+        for t_i, t in enumerate(tqdm(self.t_vec[:-1], disable=(not progress))):
             for pop_i in range(len(N_vec)):
                 # If sim invalid or pop extirpated, skip
                 if np.all(np.isnan(N_vec)) or (np.sum(N_vec[pop_i]) == 0):
@@ -191,3 +179,124 @@ class Model:
                         N_vec = np.nan * np.ones((len(self.N_0_1), len(self.t_vec)))
             if self.t_vec[t_i+1] in self.census_t:
                 self.N_tot_vec[:, t_i+1] = N_vec.sum(axis=1)
+
+
+    def _simulate_nint(self, progress):
+        # Instantaneous mortality for numerical integration
+        def _dNdt(t, N):
+            # Age-dependent mortality functions
+            m_t = self.alph_m * np.exp(-self.beta_m*t) + self.gamm_m
+            #K_t = K_adult
+            K_t = self.K_seedling * np.exp(-self.kappa*t) + self.K_adult
+            nu_t = self.alph_nu * np.exp(-self.beta_nu*t) + self.gamm_nu
+            delta, theta = (1.05, 0.050000000000000044) #just hardcoding these in
+            eta_t = (theta*2)/((nu_t*(1-m_t)) * (A_o*h_o*self.K_adult) * (delta-1))
+            dens_dep = ((nu_t)*(1-m_t)) / (1 + np.exp(-eta_t*self.K_adult*(N/K_t - self.Aeff)))
+            m_t_N = m_t + dens_dep
+            sigm_m_t = self.sigm_m*np.exp(-self.tau_m*t)
+            epsilon_m_mean = np.exp(self.mu_m + (sigm_m_t**2 / 2))
+            return -m_t_N * N * epsilon_m_mean
+
+        # Number of 1 yr old seedlings following fire for numerical integration
+        def _get_num_births(t, N):
+            # Age-dependent fecundity functions
+            rho_t = self.rho_max / (1+np.exp(-self.eta_rho*(t-self.a_mature)))
+            sigm_t = self.sigm_max / (1+np.exp(-self.eta_sigm*(t-self.a_sigm_star)))
+            # Approximate number of births
+            epsilon_rho_mean = np.exp(0 + (sigm_t**2 / 2))
+            num_births = rho_t*epsilon_rho_mean*N
+            return num_births
+
+        for pop_i, t_fire_pop in enumerate(tqdm(self.t_fire_vec, disable=(not progress))):
+            fire_indices = np.argwhere(t_fire_pop!=0).flatten()
+            # Handle inter-fire intervals
+            for fire_num, fire_i in enumerate(fire_indices):
+                #print(f'fire_num {fire_num}')
+                # Initialize first interval with specified initial abundance
+                if fire_i == min(fire_indices):
+                    t_eval = np.arange(self.delta_t, fire_i+self.delta_t)
+                    #print(f"t_eval: {t_eval}")
+                    init_i = 0
+                    N_i = self.K_adult
+                # Otherwise set initial conditions for a given interval
+                else:
+                    t_eval = np.arange(self.delta_t, fire_i - fire_indices[fire_num-1] + self.delta_t)
+                    #print(f"t_eval: {t_eval}")
+                    init_i = fire_indices[fire_num-1]
+                    if num_births < 1:
+                        num_births = 0
+                    N_i = num_births
+                    #print(f"N_i: {N_i}")
+                # Handle cases with nonzero abundance
+                if N_i > 0:
+                    if len(t_eval) > 1:
+                        sol = solve_ivp(_dNdt, [self.delta_t,fire_i], [N_i], t_eval=t_eval) 
+                        # Set any abundances < 1 to zero
+                        sol.y[0] = np.where(sol.y[0] > 1, sol.y[0], 0)
+                        if fire_i == min(fire_indices):
+                            num_births = _get_num_births(len(t_eval) + self.init_age[0], sol.y[0][-1])
+                        else:
+                            num_births = _get_num_births(len(t_eval), sol.y[0][-1])
+                        #print(f"solution from timestep {init_i} to {fire_i-1}")
+                        #print(sol.y)
+                        self.N_tot_vec[pop_i][init_i:fire_i] = sol.y[0]
+                    # Handle case of consecutive fires or first fire on timestep 1
+                    elif len(t_eval) == 1:
+                        # Get num births for first fire on timestep 1 
+                        if fire_i == min(fire_indices):
+                            num_births = _get_num_births(len(t_eval) + self.init_age[0], N_i)
+                        #print(f"solution from timestep {init_i} to {fire_i-1}")
+                        #print(num_births)
+                        self.N_tot_vec[pop_i][init_i] = num_births
+                        # Get num births following consecutive fire
+                        num_births = _get_num_births(len(t_eval), num_births)
+                        #print(f"num_births after consecutive fire: {num_births}")
+                    # Handle case where fire occurs on timestep 0
+                    elif len(t_eval) == 0:
+                        num_births = _get_num_births(1 + self.init_age[0], N_i)
+                        #print(f"num_births following fire on timestep {init_i}: {num_births}")
+                        if num_births < 1:
+                            num_births = 0
+                # If pop extirpated, keep abundance at zero
+                else:
+                    #print(f"solution from timestep {init_i} to {fire_i-1}")
+                    #print("0")
+                    self.N_tot_vec[pop_i][init_i:fire_i+1] = 0.
+                    num_births = 0
+            # Handle final timesteps without fire
+            if len(self.t_vec) > fire_i+1:
+                fire_num += 1
+                if num_births < 1:
+                    num_births = 0.
+                t_eval = np.arange(self.delta_t, len(self.t_vec) - fire_i + self.delta_t)
+                sol = solve_ivp(_dNdt, [self.delta_t,len(t_eval)], [num_births], t_eval=t_eval) 
+                if (len(sol.y)!=0) and (len(sol.y[0]) > 1):
+                    self.N_tot_vec[pop_i][fire_i:len(self.t_vec)] = sol.y[0]
+                else: 
+                    self.N_tot_vec[pop_i][fire_i:len(self.t_vec)] = 0.
+            # Handle case where fire occurs on final timestep
+            elif len(self.t_vec) == fire_i+1:
+                fire_num += 1
+                num_births = _get_num_births(len(t_eval) - 1, sol.y[0][-1])
+                if num_births < 1:
+                    num_births = 0.
+                self.N_tot_vec[pop_i][-1] = num_births
+
+    def simulate(self, method, census_every=1, progress=False):
+        # Get initial age time indices
+        init_age_i_vec = [np.nonzero(self.t_vec == a)[0][0] for a in self.init_age]
+
+        N_vec = np.ma.array(np.zeros((len(self.N_0_1), len(self.t_vec))))
+        for pop_i, N_pop in enumerate(N_vec):
+            a_i = init_age_i_vec[pop_i]
+            N_pop[a_i] = self.N_0_1[pop_i]
+        N_vec = N_vec.astype(int)
+        # Initialize empty abundance array
+        self.census_t = self.t_vec[::census_every]
+        self.N_tot_vec = np.nan * np.ones((len(self.N_0_1), len(self.census_t)))
+        self.N_tot_vec[:,0] = self.N_0_1
+        
+        if method == "discrete":
+            self._simulate_discrete(N_vec, progress)
+        elif method == "nint":
+            self._simulate_nint(progress)
