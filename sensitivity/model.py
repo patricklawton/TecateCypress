@@ -215,6 +215,7 @@ class Model:
                 # Initialize first interval with specified initial abundance
                 if fire_i == min(fire_indices):
                     t_eval = np.arange(self.delta_t, fire_i+self.delta_t)
+                    t_eval = t_eval + self.init_age[0]
                     #print(f"t_eval: {t_eval}")
                     init_i = 0
                     N_i = self.K_adult
@@ -230,12 +231,16 @@ class Model:
                 # Handle cases with nonzero abundance
                 if N_i > 0:
                     if len(t_eval) > 1:
-                        sol = solve_ivp(_dNdt, [self.delta_t,fire_i], [N_i], t_eval=t_eval) 
-                        # Set any abundances < 1 to zero
-                        sol.y[0] = np.where(sol.y[0] > 1, sol.y[0], 0)
                         if fire_i == min(fire_indices):
+                            t_bounds = [self.delta_t+self.init_age[0],fire_i+self.init_age[0]]
+                            sol = solve_ivp(_dNdt, t_bounds, [N_i], t_eval=t_eval) 
+                            # Set any abundances < 1 to zero
+                            sol.y[0] = np.where(sol.y[0] > 1, sol.y[0], 0)
                             num_births = _get_num_births(len(t_eval) + self.init_age[0], sol.y[0][-1])
                         else:
+                            sol = solve_ivp(_dNdt, [self.delta_t,fire_i], [N_i], t_eval=t_eval) 
+                            # Set any abundances < 1 to zero
+                            sol.y[0] = np.where(sol.y[0] > 1, sol.y[0], 0)
                             num_births = _get_num_births(len(t_eval), sol.y[0][-1])
                         #print(f"solution from timestep {init_i} to {fire_i-1}")
                         #print(sol.y)
@@ -263,8 +268,15 @@ class Model:
                     #print("0")
                     self.N_tot_vec[pop_i][init_i:fire_i+1] = 0.
                     num_births = 0
+
+            # Handle case of no fires
+            if len(fire_indices) == 0:
+                t_eval = self.t_vec + self.init_age[0]
+                t_bounds = np.array([min(self.t_vec), max(self.t_vec)]) + self.init_age[0]
+                sol = solve_ivp(_dNdt, t_bounds, [self.N_0_1[0]], t_eval=t_eval)
+                self.N_tot_vec[pop_i] = sol.y[0]
             # Handle final timesteps without fire
-            if len(self.t_vec) > fire_i+1:
+            elif len(self.t_vec) > fire_i+1:
                 fire_num += 1
                 if num_births < 1:
                     num_births = 0.

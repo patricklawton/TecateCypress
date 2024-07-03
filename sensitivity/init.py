@@ -8,6 +8,7 @@ root_splt.append('model_fitting')
 sbi_path = '/'.join(root_splt)
 sys.path.insert(1, sbi_path) 
 import sbi
+from itertools import product
 
 project = sg.init_project()
 
@@ -19,14 +20,20 @@ if not os.path.isfile(sd_fn):
 
 A_cell = 270**2 / 10_000 #Ha
 sdm_min = 0.32649827003479004 
-Aeff_vec = np.array([np.round(A_cell*sdm_min, 2)])
+#Aeff_vec = np.array([np.round(A_cell*sdm_min, 2)])
+Aeff_vec = np.array([np.round(A_cell, 2)])
 t_final_vec = np.array([400])
 demographic_samples_vec = np.array([500])
-for Aeff, t_final, demographic_samples in zip(Aeff_vec, t_final_vec, demographic_samples_vec):
-    existing_samples = project.find_jobs({'Aeff': Aeff, 't_final': t_final})
+method_vec = ["nint"]
+#for Aeff, t_final, demographic_samples in zip(Aeff_vec, t_final_vec, demographic_samples_vec):
+for Aeff, t_final, demographic_samples, method in product(Aeff_vec, t_final_vec, 
+                                                          demographic_samples_vec, 
+                                                          method_vec):
+    existing_samples = project.find_jobs({'Aeff': Aeff, 't_final': t_final, 'method': method})
     try:
         demographic_samples -= len(existing_samples) #len(project)
     except TypeError:
+        # If existing_samples has no len, no jobs with these specifications exist
         pass
     mort_labels = ['alph_m', 'beta_m', 'sigm_m', 'gamm_nu', 'kappa']
     fec_labels = ['rho_max', 'eta_rho', 'a_mature', 'sigm_max', 'eta_sigm']
@@ -41,7 +48,7 @@ for Aeff, t_final, demographic_samples in zip(Aeff_vec, t_final_vec, demographic
 
     #params = mort_fixed
     for i in range(demographic_samples):
-        sp = {'params': {}, 'Aeff': Aeff, 't_final': t_final}
+        sp = {'params': {}, 'Aeff': Aeff, 't_final': t_final, 'method': method}
         for p_i, p in enumerate(mort_samples[i]):
             sp['params'].update({mort_labels[p_i]: float(p)})
         for p_i, p in enumerate(fec_samples[i]):

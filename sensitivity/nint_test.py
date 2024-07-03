@@ -55,6 +55,7 @@ if (os.path.isfile(t_fire_vec_fn)==False) or (overwrite_fire):
 else:
     t_fire_vec = np.load(t_fire_vec_fn)
     model.t_fire_vec = t_fire_vec
+
 # Run discrete simulation
 start_time = timeit.default_timer()
 if (os.path.isfile(discrete_fn)==False) or (overwrite_discrete):
@@ -69,9 +70,10 @@ else:
 elapsed = timeit.default_timer() - start_time
 print('{} seconds'.format(elapsed))
 
+# Run numerical integration simulation
 start_time = timeit.default_timer()
 model.simulate(method="nint", census_every=1, progress=True)
-N_tot_mean_nint= model.N_tot_vec.mean(axis=0)
+N_tot_mean_nint = model.N_tot_vec.mean(axis=0)
 nint_fn = 'nint_data/N_tot_mean_nint.npy'
 np.save(nint_fn, N_tot_mean_nint)
 elapsed = timeit.default_timer() - start_time
