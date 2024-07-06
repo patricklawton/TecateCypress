@@ -120,12 +120,15 @@ class Model:
                     N_vec[pop_i][age_i_vec[-1]-1] += N_vec[pop_i][age_i_vec[-1]]
                     N_vec[pop_i][age_i_vec[-1]] = 0
                     age_i_vec[-1] = len(self.t_vec) - 2
+                # Determine if this is a single age population
                 if len(age_i_vec) > 1:
                     single_age = False
                 else:
                     single_age = True
                     age_i = age_i_vec[0]
                     N = N_vec[pop_i][age_i]
+
+                # If a fire occurs this timestep, reproduce
                 if self.t_fire_vec[pop_i, t_i]:
                     # Update seedlings, kill all adults
                     if not single_age:
@@ -146,8 +149,8 @@ class Model:
                             num_births = rng.poisson(1e18)
                         N_vec[pop_i,0] = num_births
                         N_vec[pop_i,1:] = 0
+                # Update each pop given mortality rates
                 else:
-                    # Update each pop given mortality rates
                     # Add density dependent term to mortalities
                     if not single_age:
                         dens_dep = ((nu_a)*(1-m_a)) / (1 + np.exp(-eta_a*self.K_adult*(np.sum(N_vec[pop_i]/K_a) - self.Aeff)))
@@ -289,10 +292,13 @@ class Model:
             # Handle case where fire occurs on final timestep
             elif len(self.t_vec) == fire_i+1:
                 fire_num += 1
-                num_births = _get_num_births(len(t_eval) - 1, sol.y[0][-1])
+                #num_births = _get_num_births(len(t_eval) - 1, sol.y[0][-1])
+                num_births = _get_num_births(len(t_eval) - 1, self.N_tot_vec[pop_i][-2])
+                #print(f"num_births on final timestep: {num_births}")
                 if num_births < 1:
                     num_births = 0.
                 self.N_tot_vec[pop_i][-1] = num_births
+                #print(f"final population size: {self.N_tot_vec[pop_i][-1]}")
 
     def simulate(self, method, census_every=1, progress=False):
         # Get initial age time indices

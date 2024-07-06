@@ -18,12 +18,12 @@ for pr in ['mortality', 'fecundity']:
         params.update(json.load(handle))
 
 # Constants
-overwrite_discrete = True
+overwrite_discrete = False
 overwrite_fire = True
 Aeff = 7.29 #2.38
-fri = 40
+#fri = 40
 c = 1.42
-b = fri / gamma(1+1/c)
+b = 40#fri / gamma(1+1/c)
 t_final = 400
 # Get the average habitat suitability within the Otay Mtn Wilderness area
 sdmfn = "SDM_1995.asc"
