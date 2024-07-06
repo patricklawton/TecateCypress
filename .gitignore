@@ -22,6 +22,6 @@ steps
 signac_project_document.json
 census_t.npy
 N_tot_vec.npy
-*.asc
 FDE_current.txt
 *save
+*.asc

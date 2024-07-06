@@ -4,9 +4,11 @@ from scipy.stats import moment
 import pickle
 
 # Get the average habitat suitability within the Otay Mtn Wilderness area
-sdmfn = "mortality/SDM_1995.asc"
+#sdmfn = "mortality/SDM_1995.asc"
+sdmfn = "../shared_maps/SDM_1995.asc"
 sdm = np.loadtxt(sdmfn,skiprows=6)
-otay = np.loadtxt("mortality/otayraster.asc", skiprows=6)
+#otay = np.loadtxt("mortality/otayraster.asc", skiprows=6)
+otay = np.loadtxt("../shared_maps/otayraster.asc", skiprows=6)
 sdm_otay = sdm[otay==1] #index "1" indicates the specific part where study was done
 h_o = np.mean(sdm_otay[sdm_otay!=0]) #excluding zero, would be better to use SDM w/o threshold
 

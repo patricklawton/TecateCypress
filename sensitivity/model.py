@@ -189,7 +189,6 @@ class Model:
         def _dNdt(t, N):
             # Age-dependent mortality functions
             m_t = self.alph_m * np.exp(-self.beta_m*t) + self.gamm_m
-            #K_t = K_adult
             K_t = self.K_seedling * np.exp(-self.kappa*t) + self.K_adult
             nu_t = self.alph_nu * np.exp(-self.beta_nu*t) + self.gamm_nu
             delta, theta = (1.05, 0.050000000000000044) #just hardcoding these in
@@ -292,13 +291,11 @@ class Model:
             # Handle case where fire occurs on final timestep
             elif len(self.t_vec) == fire_i+1:
                 fire_num += 1
-                #num_births = _get_num_births(len(t_eval) - 1, sol.y[0][-1])
                 num_births = _get_num_births(len(t_eval) - 1, self.N_tot_vec[pop_i][-2])
                 #print(f"num_births on final timestep: {num_births}")
                 if num_births < 1:
                     num_births = 0.
                 self.N_tot_vec[pop_i][-1] = num_births
-                #print(f"final population size: {self.N_tot_vec[pop_i][-1]}")
 
     def simulate(self, method, census_every=1, progress=False):
         # Get initial age time indices

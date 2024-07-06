@@ -10,6 +10,14 @@ from tqdm.auto import tqdm
 #from tqdm import tqdm
 from mpi4py import MPI
 
+def adjustmaps(maps):
+    dim_len = []
+    for dim in range(2):
+        dim_len.append(min([m.shape[dim] for m in maps]))
+    for mi, m in enumerate(maps):
+        maps[mi] = m[0:dim_len[0], 0:dim_len[1]]
+    return maps
+
 comm_world = MPI.COMM_WORLD
 my_rank = comm_world.Get_rank()
 num_procs = comm_world.Get_size()
@@ -79,7 +87,9 @@ if my_rank == 0:
         os.makedirs('figs/Aeff_{}'.format(Aeff))
     fig.savefig('figs/Aeff_{}/sensitvity_tfinal_{}.png'.format(Aeff, t_final), bbox_inches='tight')
 
-    fdmfn = 'FDE_current_allregions.asc'
+    # Read in FDM
+    usecols = np.arange(ul_coord[0],lr_coord[0])
+    fdmfn = '../shared_maps/FDE_current_allregions.asc'
     if fdmfn[-3:] == 'txt':
         fdm = np.loadtxt(fdmfn)
     else:
@@ -88,34 +98,24 @@ if my_rank == 0:
         usecols = np.arange(ul_coord[0],lr_coord[0])
         fdm = np.loadtxt(fdmfn,skiprows=6+ul_coord[1],
                                  max_rows=lr_coord[1], usecols=usecols)
-    # Read in patchmap
-    '''Could just use the SDM, don't need separate patchmap anymore'''
-    patchmapfn = 'frame0_patchmap.ASC'
-    patchmap = np.loadtxt(patchmapfn, skiprows=6)
-    def adjustmaps(maps):
-        dim_len = []
-        for dim in range(2):
-            dim_len.append(min([m.shape[dim] for m in maps]))
-        for mi, m in enumerate(maps):
-            maps[mi] = m[0:dim_len[0], 0:dim_len[1]]
-        return maps
-    patchmap, fdm = adjustmaps([patchmap, fdm])
-    delta_t = 30
-    b_raster = delta_t / np.power(-np.log(1-fdm), 1/c)
-    fri_raster = b_raster * gamma(1+1/c)
-    fri_sub = fri_raster[(patchmap > 0) & (fdm > 0)] # Why are there any zeros in FDM at all?
-    fri_flat = fri_sub.flatten()
-    #fri_hist = plt.hist(fri_flat[fri_flat < max(fri_vec)], bins=50, density=True);
-    #P_fri_x0 = scipy.stats.rv_histogram((fri_hist[0], fri_hist[1]))
 
     # Read in SDM
-    usecols = np.arange(ul_coord[0],lr_coord[0])
-    sdmfn = "SDM_1995.asc"
+    sdmfn = "../shared_maps/SDM_1995.asc"
     sdm = np.loadtxt(sdmfn,skiprows=6+ul_coord[1],
                              max_rows=lr_coord[1], usecols=usecols)
     sdm, fdm = adjustmaps([sdm, fdm])
-    #sdm_flat = sdm.flatten()[sdm.flatten() != 0]
-    sdm_sub = sdm[(patchmap > 0) & (fdm > 0)]
+
+    # Convert FDM probabilities to expected fire return intervals 
+    delta_t = 30
+    b_raster = delta_t / np.power(-np.log(1-fdm), 1/c)
+    fri_raster = b_raster * gamma(1+1/c)
+
+    # Flatten FDM & SDM
+    #fri_sub = fri_raster[(patchmap > 0) & (fdm > 0)] # Why are there any zeros in FDM at all?
+    fri_sub = fri_raster[(sdm > 0) & (fdm > 0)] # Why are there any zeros in FDM at all?
+    fri_flat = fri_sub.flatten()
+    #sdm_sub = sdm[(patchmap > 0) & (fdm > 0)]
+    sdm_sub = sdm[(sdm > 0) & (fdm > 0)]
     sdm_flat = sdm_sub.flatten()
     sdm_flat = sdm_flat[fri_flat < max(fri_vec)]
 
@@ -171,7 +171,7 @@ for fif in tqdm(fif_vec):
     # Set number of slices to generate for fire freq slices of this size
     n_cell = n_cell_vec[np.nonzero(fif_vec == fif)[0][0]]
     slice_left_max = len(fire_freqs) - n_cell - 1 #slice needs to fit
-    num_samples = round((slice_left_max-slice_left_min)/100)
+    num_samples = round((slice_left_max-slice_left_min)/200)
 
     # Initialize data to store sample means across all ranks
     sampled_freq_means = None

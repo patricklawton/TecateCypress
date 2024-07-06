@@ -36,11 +36,10 @@ def run_sims(job):
         model.set_t_vec(t_vec)
         model.set_weibull_fire(b=b, c=1.42)
         model.generate_fires()
-        model.simulate(method=job.sp.method, census_every=1) 
+        model.simulate(method=job.sp.method, census_every=1, progress=True) 
         # Store some results
         N_tot_mean = model.N_tot_vec.mean(axis=0)
         job.data[f'N_tot_mean/{b}'] = N_tot_mean 
-        #job.data[f'fractional_change/{b}'] = (np.mean(N_tot_mean[-40:]) - N_0_1) / N_0_1
         frac_extirpated = np.array([sum(model.N_tot_vec[:,t_i]==0)/model.N_tot_vec.shape[0] for t_i in range(model.N_tot_vec.shape[1])])
         job.data[f'frac_extirpated/{b}'] = frac_extirpated
 
