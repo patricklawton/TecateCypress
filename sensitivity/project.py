@@ -15,6 +15,10 @@ with sg.H5Store(sd_fn).open(mode='r') as sd:
 with open('../model_fitting/mortality/fixed.pkl', 'rb') as handle:
     mort_fixed = pickle.load(handle)
 
+# Define line function to be used for fitting later
+def line(x, m, b):
+    return m*x + b
+
 @FlowProject.post(lambda job: job.doc.get('simulated'))
 @FlowProject.operation
 def run_sims(job):
@@ -57,8 +61,25 @@ def compute_fractional_change(job):
         with job.data:
             N_tot_mean = np.array(job.data[f'N_tot_mean/{b}'])
         job.data[f'fractional_change/{b}'] = (np.mean(N_tot_mean[-slice_i:]) - N_0_1) / N_0_1
-
     job.doc['fractional_change_computed'] = True
+
+@FlowProject.pre(lambda job: job.doc.get('simulated'))
+@FlowProject.post(lambda job: job.doc.get('decay_rate_computed'))
+@FlowProject.operation
+def compute_decay_rate(job):
+    with job.data:
+        census_t = np.array(job.data["census_t"])
+        for b in b_vec:
+            N_tot_mean = np.array(job.data[f"N_tot_mean/{b}"])
+
+            burn_in_end_i = 100
+            final_i = len(N_tot_mean)
+
+            x = census_t[burn_in_end_i:final_i]
+            y = N_tot_mean[burn_in_end_i:final_i]
+            popt, pcov = curve_fit(line, x, y)
+            job.data[f'decay_rate/{b}'] = popt[0]
+    job.doc['decay_rate_computed'] = True
 
 if __name__ == "__main__":
     FlowProject().main()

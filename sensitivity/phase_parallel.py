@@ -9,6 +9,7 @@ import json
 from tqdm.auto import tqdm
 #from tqdm import tqdm
 from mpi4py import MPI
+import timeit
 
 def adjustmaps(maps):
     dim_len = []
@@ -26,7 +27,7 @@ num_procs = comm_world.Get_size()
 c = 1.42
 Aeff = 2.38 #7.29
 t_final = 400
-r_bw=0.1
+r_bw = 0.1
 ul_coord = [1500, 2800]
 lr_coord = [2723, 3905]
 max_fri = 66
@@ -34,6 +35,9 @@ A_cell = 270**2 / 1e6 #km^2
 fif_baseline = 1
 dr = 0.01
 dfri = 0.01
+n_cell_step = 30_000
+num_samples_ratio = 10_000
+progress = False
 
 # Init data to be read on rank 0
 all_fri = None
@@ -59,6 +63,7 @@ if my_rank == 0:
         os.makedirs('aggregate_data/Aeff_{}'.format(Aeff))
     np.save(f"aggregate_data/Aeff_{Aeff}/all_fri_{t_final}.npy", all_fri)
     fn = "aggregate_data/Aeff_{}/all_r_{}.npy".format(Aeff, t_final)
+    '''Always overwrite? How long does this take? Faster way?'''
     if not os.path.isfile(fn):
         all_r = np.array([])
         for job_i, job in enumerate(jobs):
@@ -94,7 +99,6 @@ if my_rank == 0:
         fdm = np.loadtxt(fdmfn)
     else:
         # Assume these are uncropped .asc maps
-        # fdm = np.loadtxt(fdmfn, skiprows=6)
         usecols = np.arange(ul_coord[0],lr_coord[0])
         fdm = np.loadtxt(fdmfn,skiprows=6+ul_coord[1],
                                  max_rows=lr_coord[1], usecols=usecols)
@@ -111,10 +115,8 @@ if my_rank == 0:
     fri_raster = b_raster * gamma(1+1/c)
 
     # Flatten FDM & SDM
-    #fri_sub = fri_raster[(patchmap > 0) & (fdm > 0)] # Why are there any zeros in FDM at all?
     fri_sub = fri_raster[(sdm > 0) & (fdm > 0)] # Why are there any zeros in FDM at all?
     fri_flat = fri_sub.flatten()
-    #sdm_sub = sdm[(patchmap > 0) & (fdm > 0)]
     sdm_sub = sdm[(sdm > 0) & (fdm > 0)]
     sdm_flat = sdm_sub.flatten()
     sdm_flat = sdm_flat[fri_flat < max(fri_vec)]
@@ -151,7 +153,7 @@ baseline_area = 10
 # Generate resource allocation scenarios
 n_cell_baseline = round(baseline_area/A_cell)
 constraint = n_cell_baseline * fif_baseline
-n_cell_vec = np.arange(n_cell_baseline, len(fire_freqs)-slice_left_min, 3000)
+n_cell_vec = np.arange(n_cell_baseline, len(fire_freqs)-slice_left_min, n_cell_step)
 #n_cell_vec = np.arange(100, 300, 100)
 fif_vec = np.array([constraint/n_cell for n_cell in n_cell_vec])
 
@@ -160,27 +162,15 @@ if my_rank == 0:
     #np.save(f"aggregate_data/fire_freqs_sorted.npy", fire_freqs_sorted)
     np.save(f"aggregate_data/freq_bin_cntrs.npy", freq_bin_cntrs)
     np.save(f"aggregate_data/Aeff_{Aeff}/n_cell_vec_{constraint}.npy", n_cell_vec)
+    start_time = timeit.default_timer()
 
-# Initialize final data matricies
-phase_space_r = np.zeros((len(freq_bin_edges), len(fif_vec)))
-phase_space_Nf = np.zeros((len(freq_bin_edges), len(fif_vec)))
-for fif in tqdm(fif_vec):
-    fif_i = np.nonzero(fif_vec == fif)[0][0]
-    # Sample randomly placed slices of the fire frequency distribution
-
+# Draw all freq slice random starting points for this rank
+freq_left_samples_sub = []
+for fif_i, fif in enumerate(tqdm(fif_vec, disable=(not progress))):
     # Set number of slices to generate for fire freq slices of this size
     n_cell = n_cell_vec[np.nonzero(fif_vec == fif)[0][0]]
     slice_left_max = len(fire_freqs) - n_cell - 1 #slice needs to fit
-    num_samples = round((slice_left_max-slice_left_min)/200)
-
-    # Initialize data to store sample means across all ranks
-    sampled_freq_means = None
-    sampled_r_expect = None
-    sampled_Nf_expect = None
-    if my_rank == 0:
-        sampled_freq_means = np.empty(num_samples)
-        sampled_r_expect = np.empty(num_samples) #np.ones(num_samples)*1000
-        sampled_Nf_expect = np.empty(num_samples)        
+    num_samples = round((slice_left_max-slice_left_min)/num_samples_ratio)
 
     # Get slice indices of samples for this rank
     sub_samples = num_samples // num_procs
@@ -194,6 +184,48 @@ for fif in tqdm(fif_vec):
         sub_start = -1
         sub_samples = 0
 
+    # Add one sample for computing the no change scenario
+    if (fif==max(fif_vec)) and (my_rank==0):
+        sub_samples += 1
+        print(f"adding nochange to rank {my_rank} for {sub_samples} total iterations at fif {fif}")
+
+    # Draw and store freq bin edges for this fif value
+    freq_left_sub_vec = np.random.uniform(fire_freqs_sorted[slice_left_min], fire_freqs_sorted[slice_left_max], size=sub_samples)
+    freq_left_samples_sub.append(freq_left_sub_vec)
+#print(f"left freq samples for rank {my_rank} are {freq_left_samples_sub}\n")
+
+# Initialize final data matricies
+phase_space_r = np.zeros((len(freq_bin_edges), len(fif_vec)))
+phase_space_Nf = np.zeros((len(freq_bin_edges), len(fif_vec)))
+
+# Sample random slices of init fire freqs for each intervention freq
+for fif_i, fif in enumerate(tqdm(fif_vec, disable=(not progress))):
+    # Set number of slices to generate for fire freq slices of this size
+    n_cell = n_cell_vec[np.nonzero(fif_vec == fif)[0][0]]
+    slice_left_max = len(fire_freqs) - n_cell - 1 #slice needs to fit
+    num_samples = round((slice_left_max-slice_left_min)/num_samples_ratio)
+
+    # Get slice indices of samples for this rank
+    sub_samples = num_samples // num_procs
+    num_larger_procs = num_samples - num_procs*sub_samples
+    if my_rank < num_larger_procs:
+        sub_samples = sub_samples + 1
+        sub_start = my_rank * sub_samples
+    elif sub_samples > 0:
+        sub_start = num_larger_procs + my_rank*sub_samples
+    else:
+        sub_start = -1
+        sub_samples = 0
+
+    # Initialize data to store sample means across all ranks
+    sampled_freq_means = None
+    sampled_r_expect = None
+    sampled_Nf_expect = None
+    if my_rank == 0:
+        sampled_freq_means = np.empty(num_samples)
+        sampled_r_expect = np.empty(num_samples) #np.ones(num_samples)*1000
+        sampled_Nf_expect = np.empty(num_samples)        
+
     # Initialize data for this rank's chunk of samples
     sub_freq_means = np.empty(sub_samples)
     sub_r_expect = np.ones(sub_samples)*float(1e200) #np.empty(sub_samples)
@@ -204,10 +236,12 @@ for fif in tqdm(fif_vec):
         sub_samples += 1
         print(f"adding nochange to rank {my_rank} for {sub_samples} total iterations at fif {fif}")
 
-    for sub_sample_i, fire_sample_i in enumerate(tqdm(range(sub_start, sub_start+sub_samples))):
-        # Re-sort fire frequencies and get slice
+    # Loop over random realizations of this fire alteration strategy
+    for sub_sample_i, fire_sample_i in enumerate(tqdm(range(sub_start, sub_start+sub_samples), disable=(not progress))):
+        # Re-sort fire frequencies and get slice for this rank
         fire_freqs_sorted = np.array(sorted(fire_freqs))
-        freq_left = np.random.uniform(fire_freqs_sorted[slice_left_min], fire_freqs_sorted[slice_left_max])
+        #freq_left = np.random.uniform(fire_freqs_sorted[slice_left_min], fire_freqs_sorted[slice_left_max])
+        freq_left = freq_left_samples_sub[fif_i][sub_sample_i]
         slice_left = np.nonzero(fire_freqs_sorted > freq_left)[0][0]
         fire_freq_slice = fire_freqs_sorted[slice_left:slice_left+n_cell]
         # Store mean of slice's initial fire frequency
@@ -267,6 +301,7 @@ for fif in tqdm(fif_vec):
             with open("aggregate_data/Aeff_{}/Nf_expect_nochange_{}.json".format(Aeff, t_final), "w") as handle:
                 json.dump({'Nf_expect_nochange': Nf_expect}, handle)
     # Collect data across ranks
+    #print(f"sub_freq_means of len {len(sub_freq_means)} going into agg of len {len(sampled_freq_means)}")
     comm_world.Gatherv(sub_freq_means, sampled_freq_means, root=0)
     comm_world.Gatherv(sub_r_expect, sampled_r_expect, root=0)
     comm_world.Gatherv(sub_Nf_expect, sampled_Nf_expect, root=0)
@@ -280,13 +315,12 @@ for fif in tqdm(fif_vec):
             Nf_expect_slice = sampled_Nf_expect[freq_filt]
             if len(r_expect_slice) > 0:
                 phase_space_r[len(freq_bin_edges)-1-freq_i, fif_i] = np.mean(r_expect_slice)
-                if np.mean(r_expect_slice) > 0.4:
-                    print(f"mean r_expect_slice of {np.mean(r_expect_slice)} at fif of {fif}")
-                    print(f"r_expect_slice contains {r_expect_slice}\n")
             if len(Nf_expect_slice) > 0:
                 phase_space_Nf[len(freq_bin_edges)-1-freq_i, fif_i] = np.mean(Nf_expect_slice)
 
 if my_rank == 0:
+    elapsed = timeit.default_timer() - start_time
+    print('{} seconds'.format(elapsed))
     # Save phase mats to files
     if not os.path.isdir('phase_mats/Aeff_{}'.format(Aeff)):
         os.makedirs('phase_mats/Aeff_{}'.format(Aeff))
