@@ -13,8 +13,8 @@ import timeit
 import pickle
 
 # Some constants
-metrics = ['r', 'Nf', 'g']
-overwrite_metrics = True
+metrics = ["Nf"]#['r', 'Nf', 'g']
+overwrite_metrics = False
 metric_thresh = 0.98
 metric_bw_ratio = 50
 c = 1.42
@@ -28,9 +28,9 @@ A_cell = 270**2 / 1e6 #km^2
 fif_baseline = 1
 metric_integrand_ratio = 800
 dfri = 0.01
-dNf_ratio = 1_000
-n_cell_step = 3_000
-num_samples_ratio = 500
+#dNf_ratio = 1_000
+n_cell_step = 30_000#3_000
+num_samples_ratio = 10_000#500
 progress = False
 
 def adjustmaps(maps):
@@ -64,15 +64,19 @@ if my_rank == 0:
     fri_edges = np.concatenate(([0], np.arange(fri_step/2, fri_vec[-1]+fri_step, fri_step)))
 
     jobs = project.find_jobs({'doc.simulated': True, 'Aeff': Aeff, 't_final': t_final, 'method': sim_method})
-    all_fri = np.tile(fri_vec, len(jobs))
     if not os.path.isdir('aggregate_data/Aeff_{}'.format(Aeff)):
         os.makedirs('aggregate_data/Aeff_{}'.format(Aeff))
-    np.save(f"aggregate_data/Aeff_{Aeff}/all_fri_{t_final}.npy", all_fri)
+    fn = f"aggregate_data/Aeff_{Aeff}/all_fri_{t_final}.npy"
+    if (not os.path.isfile(fn)) or overwrite_metrics:
+        all_fri = np.tile(fri_vec, len(jobs))
+        np.save(fn, all_fri)
+    else:
+        all_fri = np.load(fn)
 
     fn = f"aggregate_data/Aeff_{Aeff}/metric_data_{t_final}.pkl"
     if (not os.path.isfile(fn)) or overwrite_metrics:
         metric_data = {m: {} for m in metrics}
-        for metric in metrics:
+        for metric in [m for m in metrics if m != "Nf"]: #metrics:
             if metric == 'r': metric_label = 'fractional_change'
             elif metric == 'Nf': metric_label = metric
             elif metric == 'g': metric_label = 'decay_rate'
@@ -200,7 +204,6 @@ for fif_i, fif in enumerate(tqdm(fif_vec, disable=(not progress))):
     # Add one sample for computing the no change scenario
     if (fif==max(fif_vec)) and (my_rank==0):
         sub_samples += 1
-        print(f"adding nochange to rank {my_rank} for {sub_samples} total iterations at fif {fif}")
 
     # Draw and store freq bin edges for this fif value
     freq_left_sub_vec = np.random.uniform(fire_freqs_sorted[slice_left_min], fire_freqs_sorted[slice_left_max], size=sub_samples)
@@ -217,7 +220,7 @@ for metric in metrics:
     phase_space = np.zeros((len(freq_bin_edges), len(fif_vec)))
 
     # Sample random slices of init fire freqs for each intervention freq
-    for fif_i, fif in enumerate(tqdm(fif_vec, disable=(not progress))):
+    for fif_i, fif in enumerate(tqdm(fif_vec, disable=False)):#(not progress))):
         # Set number of slices to generate for fire freq slices of this size
         n_cell = n_cell_vec[np.nonzero(fif_vec == fif)[0][0]]
         slice_left_max = len(fire_freqs) - n_cell - 1 #slice needs to fit
@@ -274,11 +277,12 @@ for metric in metrics:
             fri_hist = np.histogram(fris, bins=50, density=True);
             P_fri_x0 = scipy.stats.rv_histogram((fri_hist[0], fri_hist[1]))
 
-            # Get the expected values of metrics
+            # Get expected value of metric at this fri
             metric_expect = 0
-            metric_hist = metric_data[metric]['metric_hist']
-            dm = (max(metric_hist[2]) - min(metric_hist[2])) / metric_integrand_ratio
-            metric_vals = np.arange(min(metric_hist[2]), max(metric_hist[2])+dm, dm)
+            if metric != "Nf":
+                metric_hist = metric_data[metric]['metric_hist']
+                dm = (max(metric_hist[2]) - min(metric_hist[2])) / metric_integrand_ratio
+                metric_vals = np.arange(min(metric_hist[2]), max(metric_hist[2])+dm, dm)
             for fri_i in range(len(fri_edges) - 1):
                 # Get the expected values in this fri bin
                 fri_slice = fris[(fris >= fri_edges[fri_i]) & (fris < fri_edges[fri_i+1])]
@@ -288,9 +292,25 @@ for metric in metrics:
                 fri_vals = np.arange(fri_edges[fri_i], fri_edges[fri_i+1], dfri)
                 P_dfri = np.trapz(y=P_fri_x0.pdf(fri_vals), x=fri_vals)
 
-                P_metric_fri = scipy.stats.rv_histogram((metric_hist[0][fri_i], metric_hist[2]))
-                metric_expect_fri = np.trapz(y=P_metric_fri.pdf(metric_vals)*metric_vals, x=metric_vals)
-                metric_expect += metric_expect_fri * P_dfri
+                # Now get <metric>
+                if metric != "Nf":
+                    P_metric_fri = scipy.stats.rv_histogram((metric_hist[0][fri_i], metric_hist[2]))
+                    metric_expect_fri = np.trapz(y=P_metric_fri.pdf(metric_vals)*metric_vals, x=metric_vals)
+                    metric_expect += metric_expect_fri * P_dfri
+                else:
+                    sdm_slice = sdm_sorted[(fris >= fri_edges[fri_i]) & (fris < fri_edges[fri_i+1])]
+                    all_r = metric_data['r']['all_metric']
+                    r_slice = all_r[all_fri == fri_vec[fri_i]]
+                    '''Construct P(Nf|Aeff, fri) outside main loop and just sample it in here?'''
+                    Nf_slice_agg = (sdm_slice[...,None] * np.tile(K_adult*(1 + r_slice), (len(sdm_slice), 1))).flatten()
+                    hist_limit = np.quantile(Nf_slice_agg, 0.965)
+                    Nf_slice_hist = np.histogram(Nf_slice_agg[Nf_slice_agg < hist_limit], bins=50)
+                    P_Nf_fri = scipy.stats.rv_histogram((Nf_slice_hist[0], Nf_slice_hist[1]))
+                    dNf = (max(Nf_slice_hist[0])-min(Nf_slice_hist[0])) / metric_integrand_ratio
+                    Nf_vals = np.arange(min(Nf_slice_hist[0]), max(Nf_slice_hist[0])+dNf, dNf)
+                    Nf_expect_fri = np.trapz(y=P_Nf_fri.pdf(Nf_vals)*Nf_vals, x=Nf_vals)
+                    #Nf_expect += Nf_expect_fri * P_dfri
+                    metric_expect += Nf_expect_fri * P_dfri
 
             # Add sample to list if not computing no change scenario
             if sub_sample_i < len(sub_freq_means):
