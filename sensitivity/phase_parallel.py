@@ -29,8 +29,8 @@ fif_baseline = 1
 metric_integrand_ratio = 800
 dfri = 0.01
 #dNf_ratio = 1_000
-n_cell_step = 30_000#3_000
-num_samples_ratio = 10_000#500
+n_cell_step = 3_000
+num_samples_ratio = 500
 progress = False
 
 def adjustmaps(maps):
@@ -284,6 +284,8 @@ for metric in metrics:
                 dm = (max(metric_hist[2]) - min(metric_hist[2])) / metric_integrand_ratio
                 metric_vals = np.arange(min(metric_hist[2]), max(metric_hist[2])+dm, dm)
             for fri_i in range(len(fri_edges) - 1):
+            #for fri_i in [20]:
+                #print('fri:',fri_vec[fri_i])
                 # Get the expected values in this fri bin
                 fri_slice = fris[(fris >= fri_edges[fri_i]) & (fris < fri_edges[fri_i+1])]
                 if len(fri_slice) == 0: continue #can skip if zero fire probability in bin
@@ -301,16 +303,33 @@ for metric in metrics:
                     sdm_slice = sdm_sorted[(fris >= fri_edges[fri_i]) & (fris < fri_edges[fri_i+1])]
                     all_r = metric_data['r']['all_metric']
                     r_slice = all_r[all_fri == fri_vec[fri_i]]
-                    '''Construct P(Nf|Aeff, fri) outside main loop and just sample it in here?'''
-                    Nf_slice_agg = (sdm_slice[...,None] * np.tile(K_adult*(1 + r_slice), (len(sdm_slice), 1))).flatten()
-                    hist_limit = np.quantile(Nf_slice_agg, 0.965)
-                    Nf_slice_hist = np.histogram(Nf_slice_agg[Nf_slice_agg < hist_limit], bins=50)
-                    P_Nf_fri = scipy.stats.rv_histogram((Nf_slice_hist[0], Nf_slice_hist[1]))
-                    dNf = (max(Nf_slice_hist[0])-min(Nf_slice_hist[0])) / metric_integrand_ratio
-                    Nf_vals = np.arange(min(Nf_slice_hist[0]), max(Nf_slice_hist[0])+dNf, dNf)
+                    '''old method'''
+                    #Nf_slice_agg = (sdm_slice[...,None] * np.tile(K_adult*(1 + r_slice), (len(sdm_slice), 1))).flatten()
+                    #hist_limit = np.quantile(Nf_slice_agg, 0.965)
+                    #Nf_slice_hist = np.histogram(Nf_slice_agg[Nf_slice_agg < hist_limit], bins=50)
+                    #P_Nf_fri = scipy.stats.rv_histogram((Nf_slice_hist[0], Nf_slice_hist[1]))
+                    #dNf = (max(Nf_slice_hist[1])-min(Nf_slice_hist[1])) / metric_integrand_ratio
+                    #Nf_vals = np.arange(min(Nf_slice_hist[1]), max(Nf_slice_hist[1])+dNf, dNf)
+                    #Nf_expect_fri = np.trapz(y=P_Nf_fri.pdf(Nf_vals)*Nf_vals, x=Nf_vals)
+                    #metric_expect += Nf_expect_fri * P_dfri
+                    ''''''
+                    # Get expected value of Aeff for this slice of cells
+                    Aeff_slice = sdm_slice * (A_cell * 100) #cell area converted km^2 -> Ha
+                    Aeff_slice_hist = np.histogram(Aeff_slice, bins=50)
+                    P_Aeff_fri = scipy.stats.rv_histogram(Aeff_slice_hist)
+                    dAeff = (max(Aeff_slice_hist[1]) - min(Aeff_slice_hist[1])) / metric_integrand_ratio
+                    Aeff_vals = np.arange(min(Aeff_slice_hist[1]), max(Aeff_slice_hist[1])+dAeff, dAeff)
+                    Aeff_expect_fri = np.trapz(y=P_Aeff_fri.pdf(Aeff_vals)*Aeff_vals, x=Aeff_vals)
+                    # Get expected value of integrand w/o Aeff (aka <Nf> @ Aeff=1)
+                    Nf_slice = K_adult * (1 + r_slice)
+                    hist_limit = np.quantile(Nf_slice, metric_thresh)
+                    Nf_slice_hist = np.histogram(Nf_slice[Nf_slice < hist_limit], bins=50)
+                    P_Nf_fri = scipy.stats.rv_histogram(Nf_slice_hist)
+                    dNf = (max(Nf_slice_hist[1])-min(Nf_slice_hist[1])) / metric_integrand_ratio
+                    Nf_vals = np.arange(min(Nf_slice_hist[1]), max(Nf_slice_hist[1])+dNf, dNf)
                     Nf_expect_fri = np.trapz(y=P_Nf_fri.pdf(Nf_vals)*Nf_vals, x=Nf_vals)
-                    #Nf_expect += Nf_expect_fri * P_dfri
-                    metric_expect += Nf_expect_fri * P_dfri
+                    # Combine everything to update expected value of Nf
+                    metric_expect += Nf_expect_fri * Aeff_expect_fri * P_dfri
 
             # Add sample to list if not computing no change scenario
             if sub_sample_i < len(sub_freq_means):
