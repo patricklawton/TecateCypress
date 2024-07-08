@@ -13,8 +13,8 @@ import timeit
 import pickle
 
 # Some constants
-metrics = ["Nf"]#['r', 'Nf', 'g']
-overwrite_metrics = False
+metrics = ['r', 'Nf', 'g']
+overwrite_metrics = True
 metric_thresh = 0.98
 metric_bw_ratio = 50
 c = 1.42
