@@ -26,7 +26,7 @@ def run_sims(job):
     params.update(mort_fixed)
     Aeff = job.sp['Aeff'] #ha
     delta_t = 1
-    num_reps = 1_000
+    num_reps = 1_250
     N_0_1 = Aeff*params['K_adult']
     N_0_1_vec = np.repeat(N_0_1, num_reps)
     '''Could figure out mature age in a more sophisticated way'''
@@ -83,7 +83,7 @@ def compute_decay_rate(job):
         for b in b_vec:
             N_tot_mean = np.array(job.data[f"N_tot_mean/{b}"])
 
-            burn_in_end_i = 100
+            burn_in_end_i = 150
             final_i = len(N_tot_mean)
 
             x = census_t[burn_in_end_i:final_i]

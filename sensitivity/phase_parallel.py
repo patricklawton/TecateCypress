@@ -18,8 +18,9 @@ overwrite_metrics = True
 metric_thresh = 0.98
 metric_bw_ratio = 50
 c = 1.42
-Aeff = 7.29
-t_final = 400
+Aeff = 2.38
+t_final = 600
+sim_method = 'nint'
 ul_coord = [1500, 2800]
 lr_coord = [2723, 3905]
 max_fri = 66
@@ -62,7 +63,7 @@ if my_rank == 0:
     fri_step = (b_vec[1]-b_vec[0]) * gamma(1+1/c)
     fri_edges = np.concatenate(([0], np.arange(fri_step/2, fri_vec[-1]+fri_step, fri_step)))
 
-    jobs = project.find_jobs({'doc.simulated': True, 'Aeff': Aeff, 't_final': t_final})
+    jobs = project.find_jobs({'doc.simulated': True, 'Aeff': Aeff, 't_final': t_final, 'method': sim_method})
     all_fri = np.tile(fri_vec, len(jobs))
     if not os.path.isdir('aggregate_data/Aeff_{}'.format(Aeff)):
         os.makedirs('aggregate_data/Aeff_{}'.format(Aeff))
@@ -71,7 +72,7 @@ if my_rank == 0:
     fn = f"aggregate_data/Aeff_{Aeff}/metric_data_{t_final}.pkl"
     if (not os.path.isfile(fn)) or overwrite_metrics:
         metric_data = {m: {} for m in metrics}
-        for metric in metrics:#[m for m in metrics if m != 'Nf']:
+        for metric in metrics:
             if metric == 'r': metric_label = 'fractional_change'
             elif metric == 'Nf': metric_label = metric
             elif metric == 'g': metric_label = 'decay_rate'
