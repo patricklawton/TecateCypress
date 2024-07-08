@@ -64,6 +64,17 @@ def compute_fractional_change(job):
     job.doc['fractional_change_computed'] = True
 
 @FlowProject.pre(lambda job: job.doc.get('simulated'))
+@FlowProject.post(lambda job: job.doc.get('Nf_computed'))
+@FlowProject.operation
+def compute_Nf(job):
+    slice_i = round(job.sp.t_final * 0.25)
+    for b in b_vec:
+        with job.data:
+            N_tot_mean = np.array(job.data[f'N_tot_mean/{b}'])
+        job.data[f'Nf/{b}'] = np.mean(N_tot_mean[-slice_i:])
+    job.doc['Nf_computed'] = True
+
+@FlowProject.pre(lambda job: job.doc.get('simulated'))
 @FlowProject.post(lambda job: job.doc.get('decay_rate_computed'))
 @FlowProject.operation
 def compute_decay_rate(job):
@@ -78,7 +89,7 @@ def compute_decay_rate(job):
             x = census_t[burn_in_end_i:final_i]
             y = N_tot_mean[burn_in_end_i:final_i]
             popt, pcov = curve_fit(line, x, y)
-            job.data[f'decay_rate/{b}'] = popt[0]
+            job.data[f'decay_rate/{b}'] = popt[0] / line(x[0], *popt)
     job.doc['decay_rate_computed'] = True
 
 if __name__ == "__main__":

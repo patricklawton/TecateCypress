@@ -10,6 +10,27 @@ from tqdm.auto import tqdm
 #from tqdm import tqdm
 from mpi4py import MPI
 import timeit
+import pickle
+
+# Some constants
+metrics = ['r', 'Nf', 'g']
+overwrite_metrics = True
+metric_thresh = 0.98
+metric_bw_ratio = 50
+c = 1.42
+Aeff = 7.29
+t_final = 400
+ul_coord = [1500, 2800]
+lr_coord = [2723, 3905]
+max_fri = 66
+A_cell = 270**2 / 1e6 #km^2
+fif_baseline = 1
+metric_integrand_ratio = 800
+dfri = 0.01
+dNf_ratio = 1_000
+n_cell_step = 3_000
+num_samples_ratio = 500
+progress = False
 
 def adjustmaps(maps):
     dim_len = []
@@ -23,28 +44,11 @@ comm_world = MPI.COMM_WORLD
 my_rank = comm_world.Get_rank()
 num_procs = comm_world.Get_size()
 
-# Some constants
-c = 1.42
-Aeff = 2.38 #7.29
-t_final = 400
-r_bw = 0.1
-ul_coord = [1500, 2800]
-lr_coord = [2723, 3905]
-max_fri = 66
-A_cell = 270**2 / 1e6 #km^2
-fif_baseline = 1
-dr = 0.01
-dfri = 0.01
-n_cell_step = 30_000
-num_samples_ratio = 10_000
-progress = False
-
 # Init data to be read on rank 0
+metric_data = None
 all_fri = None
-all_r = None
 fri_edges = None
 fri_vec = None
-hist = None
 K_adult = None
 fri_flat = None
 sdm_flat = None
@@ -55,42 +59,52 @@ if my_rank == 0:
     with sg.H5Store('shared_data.h5').open(mode='r') as sd:
         b_vec = np.array(sd['b_vec'])
     fri_vec = b_vec * gamma(1+1/c)
+    fri_step = (b_vec[1]-b_vec[0]) * gamma(1+1/c)
+    fri_edges = np.concatenate(([0], np.arange(fri_step/2, fri_vec[-1]+fri_step, fri_step)))
 
     jobs = project.find_jobs({'doc.simulated': True, 'Aeff': Aeff, 't_final': t_final})
-    #jobs = np.ones(500)
     all_fri = np.tile(fri_vec, len(jobs))
     if not os.path.isdir('aggregate_data/Aeff_{}'.format(Aeff)):
         os.makedirs('aggregate_data/Aeff_{}'.format(Aeff))
     np.save(f"aggregate_data/Aeff_{Aeff}/all_fri_{t_final}.npy", all_fri)
-    fn = "aggregate_data/Aeff_{}/all_r_{}.npy".format(Aeff, t_final)
-    '''Always overwrite? How long does this take? Faster way?'''
-    if not os.path.isfile(fn):
-        all_r = np.array([])
-        for job_i, job in enumerate(jobs):
-            with job.data as data:
-                frac_change_vec = []
-                for b in b_vec:
-                    frac_change_vec.append(float(data['fractional_change/{}'.format(b)]))
-            all_r = np.append(all_r, frac_change_vec)
+
+    fn = f"aggregate_data/Aeff_{Aeff}/metric_data_{t_final}.pkl"
+    if (not os.path.isfile(fn)) or overwrite_metrics:
+        metric_data = {m: {} for m in metrics}
+        for metric in metrics:#[m for m in metrics if m != 'Nf']:
+            if metric == 'r': metric_label = 'fractional_change'
+            elif metric == 'Nf': metric_label = metric
+            elif metric == 'g': metric_label = 'decay_rate'
+            all_metric = np.array([])
+            for job_i, job in enumerate(jobs):
+                with job.data as data:
+                    metric_vec = []
+                    for b in b_vec:
+                        metric_vec.append(float(data[f'{metric_label}/{b}']))
+                all_metric = np.append(all_metric, metric_vec)
+                
+            metric_min, metric_max = (np.quantile(all_metric, 1-metric_thresh), np.quantile(all_metric, metric_thresh))
+            metric_bw = (metric_max - metric_min) / metric_bw_ratio
+            metric_edges = np.arange(metric_min, metric_max + metric_bw, metric_bw)
+
+            fig, ax = plt.subplots(figsize=(13,8))
+            metric_hist = ax.hist2d(all_fri, all_metric, bins=[fri_edges, metric_edges], 
+                             norm=matplotlib.colors.LogNorm(vmax=int(len(all_metric)/len(b_vec))))
+            cbar = ax.figure.colorbar(metric_hist[-1], ax=ax, location="right")
+            cbar.ax.set_ylabel('demographic robustness', rotation=-90, fontsize=10, labelpad=20)
+            ax.set_xlabel('<FRI>')
+            ax.set_ylabel(metric)
+            if not os.path.isdir('figs/Aeff_{}'.format(Aeff)):
+                os.makedirs('figs/Aeff_{}'.format(Aeff))
+            fig.savefig('figs/Aeff_{}/sensitvity_{}_tfinal_{}.png'.format(Aeff, metric, t_final), bbox_inches='tight')
+
+            metric_data[metric].update({'all_metric': all_metric})
+            metric_data[metric].update({'metric_hist': metric_hist[:3]})
         with open(fn, 'wb') as handle:
-            np.save(handle, all_r)
+            pickle.dump(metric_data, handle, protocol=pickle.HIGHEST_PROTOCOL)
     else:
         with open(fn, 'rb') as handle:
-            all_r = np.load(handle)
-            
-    r_edges = np.arange(-1, 6+r_bw, r_bw)
-    fri_step = (b_vec[1]-b_vec[0]) * gamma(1+1/c)
-    fri_edges = np.concatenate(([0], np.arange(fri_step/2, fri_vec[-1]+fri_step, fri_step)))
-    fig, ax = plt.subplots(figsize=(13,8))
-    hist = ax.hist2d(all_fri, all_r, bins=[fri_edges, r_edges], 
-                     norm=matplotlib.colors.LogNorm(vmax=int(len(all_r)/len(b_vec))))
-    cbar = ax.figure.colorbar(hist[-1], ax=ax, location="right")
-    cbar.ax.set_ylabel('demographic robustness', rotation=-90, fontsize=10, labelpad=20)
-    ax.set_xlabel('<FRI>')
-    ax.set_ylabel(r'$\frac{\Delta \text{N}}{\text{N}_1(0)}$')
-    if not os.path.isdir('figs/Aeff_{}'.format(Aeff)):
-        os.makedirs('figs/Aeff_{}'.format(Aeff))
-    fig.savefig('figs/Aeff_{}/sensitvity_tfinal_{}.png'.format(Aeff, t_final), bbox_inches='tight')
+            metric_data = pickle.load(handle)
 
     # Read in FDM
     usecols = np.arange(ul_coord[0],lr_coord[0])
@@ -124,12 +138,11 @@ if my_rank == 0:
     with open("../model_fitting/mortality/map.json", "r") as handle:
         mort_params = json.load(handle)
     K_adult = mort_params['K_adult']
+metric_data = comm_world.bcast(metric_data)
+K_adult = comm_world.bcast(K_adult)
 all_fri = comm_world.bcast(all_fri)
-all_r = comm_world.bcast(all_r)
 fri_edges = comm_world.bcast(fri_edges)
 fri_vec = comm_world.bcast(fri_vec)
-hist = comm_world.bcast(hist)
-K_adult = comm_world.bcast(K_adult)
 fri_flat = comm_world.bcast(fri_flat)
 sdm_flat = comm_world.bcast(sdm_flat)
 
@@ -159,7 +172,6 @@ fif_vec = np.array([constraint/n_cell for n_cell in n_cell_vec])
 
 # Save a few more things
 if my_rank == 0:
-    #np.save(f"aggregate_data/fire_freqs_sorted.npy", fire_freqs_sorted)
     np.save(f"aggregate_data/freq_bin_cntrs.npy", freq_bin_cntrs)
     np.save(f"aggregate_data/Aeff_{Aeff}/n_cell_vec_{constraint}.npy", n_cell_vec)
     start_time = timeit.default_timer()
@@ -192,141 +204,120 @@ for fif_i, fif in enumerate(tqdm(fif_vec, disable=(not progress))):
     # Draw and store freq bin edges for this fif value
     freq_left_sub_vec = np.random.uniform(fire_freqs_sorted[slice_left_min], fire_freqs_sorted[slice_left_max], size=sub_samples)
     freq_left_samples_sub.append(freq_left_sub_vec)
-#print(f"left freq samples for rank {my_rank} are {freq_left_samples_sub}\n")
-
-# Initialize final data matricies
-phase_space_r = np.zeros((len(freq_bin_edges), len(fif_vec)))
-phase_space_Nf = np.zeros((len(freq_bin_edges), len(fif_vec)))
-
-# Sample random slices of init fire freqs for each intervention freq
-for fif_i, fif in enumerate(tqdm(fif_vec, disable=(not progress))):
-    # Set number of slices to generate for fire freq slices of this size
-    n_cell = n_cell_vec[np.nonzero(fif_vec == fif)[0][0]]
-    slice_left_max = len(fire_freqs) - n_cell - 1 #slice needs to fit
-    num_samples = round((slice_left_max-slice_left_min)/num_samples_ratio)
-
-    # Get slice indices of samples for this rank
-    sub_samples = num_samples // num_procs
-    num_larger_procs = num_samples - num_procs*sub_samples
-    if my_rank < num_larger_procs:
-        sub_samples = sub_samples + 1
-        sub_start = my_rank * sub_samples
-    elif sub_samples > 0:
-        sub_start = num_larger_procs + my_rank*sub_samples
-    else:
-        sub_start = -1
-        sub_samples = 0
-
-    # Initialize data to store sample means across all ranks
-    sampled_freq_means = None
-    sampled_r_expect = None
-    sampled_Nf_expect = None
-    if my_rank == 0:
-        sampled_freq_means = np.empty(num_samples)
-        sampled_r_expect = np.empty(num_samples) #np.ones(num_samples)*1000
-        sampled_Nf_expect = np.empty(num_samples)        
-
-    # Initialize data for this rank's chunk of samples
-    sub_freq_means = np.empty(sub_samples)
-    sub_r_expect = np.ones(sub_samples)*float(1e200) #np.empty(sub_samples)
-    sub_Nf_expect = np.empty(sub_samples)
-
-    # Add one sample for computing the no change scenario
-    if (fif==max(fif_vec)) and (my_rank==0):
-        sub_samples += 1
-        print(f"adding nochange to rank {my_rank} for {sub_samples} total iterations at fif {fif}")
-
-    # Loop over random realizations of this fire alteration strategy
-    for sub_sample_i, fire_sample_i in enumerate(tqdm(range(sub_start, sub_start+sub_samples), disable=(not progress))):
-        # Re-sort fire frequencies and get slice for this rank
-        fire_freqs_sorted = np.array(sorted(fire_freqs))
-        #freq_left = np.random.uniform(fire_freqs_sorted[slice_left_min], fire_freqs_sorted[slice_left_max])
-        freq_left = freq_left_samples_sub[fif_i][sub_sample_i]
-        slice_left = np.nonzero(fire_freqs_sorted > freq_left)[0][0]
-        fire_freq_slice = fire_freqs_sorted[slice_left:slice_left+n_cell]
-        # Store mean of slice's initial fire frequency
-        # Skip if computing the no change scenario
-        if sub_sample_i < len(sub_freq_means):
-            sub_freq_means[fire_sample_i-sub_start] = np.mean(fire_freq_slice)
-
-        # Adjust the fire frequency distribution
-        max_fif = fire_freq_slice - fire_freqs_sorted[slice_left_min]
-        # Skip if computing the no change scenario
-        if sub_sample_i < len(sub_freq_means):
-            fire_freqs_sorted[slice_left:slice_left+n_cell] = np.where(fif < max_fif, fire_freq_slice - fif, fire_freq_slice - max_fif)
-
-        # Get new probability distribution across fire return interval
-        fris = 1/fire_freqs_sorted
-        fri_hist = np.histogram(fris, bins=50, density=True);
-        P_fri_x0 = scipy.stats.rv_histogram((fri_hist[0], fri_hist[1]))
-
-        # Get the expected values of metrics
-        r_expect = 0
-        r_vals = np.arange(min(hist[2]), max(hist[2])+dr, dr) #for the integrand
-        Nf_expect = 0
-        for fri_i in range(len(hist[0])):
-            # Get the expected values in this fri bin
-            fri_slice = fris[(fris >= fri_edges[fri_i]) & (fris < fri_edges[fri_i+1])]
-            if len(fri_slice) == 0: continue #can skip if zero fire probability in bin
-
-            # First get the probability of being in the fri bin
-            fri_vals = np.arange(fri_edges[fri_i], fri_edges[fri_i+1], dfri)
-            P_dfri = np.trapz(y=P_fri_x0.pdf(fri_vals), x=fri_vals)
-
-            # New get <r>
-            P_r_fri = scipy.stats.rv_histogram((hist[0][fri_i], hist[2]))
-            r_expect_fri = np.trapz(y=P_r_fri.pdf(r_vals)*r_vals, x=r_vals)
-            r_expect += r_expect_fri * P_dfri
-
-            # Now get <Nf>
-            sdm_slice = sdm_sorted[(fris >= fri_edges[fri_i]) & (fris < fri_edges[fri_i+1])]
-            r_slice = all_r[all_fri == fri_vec[fri_i]]
-            Nf_slice_agg = (sdm_slice[...,None] * np.tile(K_adult*(1 + r_slice), (len(sdm_slice), 1))).flatten()
-            hist_limit = np.quantile(Nf_slice_agg, 0.965)
-            Nf_slice_hist = np.histogram(Nf_slice_agg[Nf_slice_agg < hist_limit], bins=50)
-            P_Nf_fri = scipy.stats.rv_histogram((Nf_slice_hist[0], Nf_slice_hist[1]))
-            dNf = (max(Nf_slice_hist[0])-min(Nf_slice_hist[0]))/1_000
-            Nf_vals = np.arange(min(Nf_slice_hist[0]), max(Nf_slice_hist[0])+dNf, dNf)
-            Nf_expect_fri = np.trapz(y=P_Nf_fri.pdf(Nf_vals)*Nf_vals, x=Nf_vals)
-            Nf_expect += Nf_expect_fri * P_dfri
-        # Add sample to list if not computing no change scenario
-        if sub_sample_i < len(sub_freq_means):
-            sub_r_expect[fire_sample_i-sub_start] = r_expect
-            sub_Nf_expect[fire_sample_i-sub_start] = Nf_expect
-        # Otherwise save no change scenario to file
-        elif my_rank == 0:
-            print(f"Not adding sample with index {fire_sample_i} / {fire_sample_i-sub_start} on rank {my_rank}, instead saving as nochange")
-            with open("aggregate_data/Aeff_{}/r_expect_nochange_{}.json".format(Aeff, t_final), "w") as handle:
-                json.dump({'r_expect_nochange': r_expect}, handle)
-            with open("aggregate_data/Aeff_{}/Nf_expect_nochange_{}.json".format(Aeff, t_final), "w") as handle:
-                json.dump({'Nf_expect_nochange': Nf_expect}, handle)
-    # Collect data across ranks
-    #print(f"sub_freq_means of len {len(sub_freq_means)} going into agg of len {len(sampled_freq_means)}")
-    comm_world.Gatherv(sub_freq_means, sampled_freq_means, root=0)
-    comm_world.Gatherv(sub_r_expect, sampled_r_expect, root=0)
-    comm_world.Gatherv(sub_Nf_expect, sampled_Nf_expect, root=0)
-
-    if my_rank == 0:
-        # Bin results into final phase matricies
-        fif_i = np.nonzero(fif_vec == fif)[0][0]
-        for freq_i, freq_left in enumerate(freq_bin_edges):
-            freq_filt = (sampled_freq_means > freq_left) & (sampled_freq_means < freq_left+freq_bw)
-            r_expect_slice = sampled_r_expect[freq_filt]
-            Nf_expect_slice = sampled_Nf_expect[freq_filt]
-            if len(r_expect_slice) > 0:
-                phase_space_r[len(freq_bin_edges)-1-freq_i, fif_i] = np.mean(r_expect_slice)
-            if len(Nf_expect_slice) > 0:
-                phase_space_Nf[len(freq_bin_edges)-1-freq_i, fif_i] = np.mean(Nf_expect_slice)
-
 if my_rank == 0:
     elapsed = timeit.default_timer() - start_time
-    print('{} seconds'.format(elapsed))
-    # Save phase mats to files
-    if not os.path.isdir('phase_mats/Aeff_{}'.format(Aeff)):
-        os.makedirs('phase_mats/Aeff_{}'.format(Aeff))
-    phase_fn = 'phase_mats/Aeff_{}/phase_r_{}_{}.npy'.format(Aeff, round(constraint), t_final)
-    with open(phase_fn, 'wb') as handle:
-        np.save(handle, phase_space_r)
-    phase_fn = 'phase_mats/Aeff_{}/phase_Nf_{}_{}.npy'.format(Aeff, round(constraint), t_final)
-    with open(phase_fn, 'wb') as handle:
-        np.save(handle, phase_space_Nf)
+    print('{} seconds to draw frequency samples'.format(elapsed))
+
+for metric in metrics:
+    if my_rank == 0:
+        start_time = timeit.default_timer()
+
+    # Initialize final data matricies
+    phase_space = np.zeros((len(freq_bin_edges), len(fif_vec)))
+
+    # Sample random slices of init fire freqs for each intervention freq
+    for fif_i, fif in enumerate(tqdm(fif_vec, disable=(not progress))):
+        # Set number of slices to generate for fire freq slices of this size
+        n_cell = n_cell_vec[np.nonzero(fif_vec == fif)[0][0]]
+        slice_left_max = len(fire_freqs) - n_cell - 1 #slice needs to fit
+        num_samples = round((slice_left_max-slice_left_min)/num_samples_ratio)
+
+        # Get slice indices of samples for this rank
+        sub_samples = num_samples // num_procs
+        num_larger_procs = num_samples - num_procs*sub_samples
+        if my_rank < num_larger_procs:
+            sub_samples = sub_samples + 1
+            sub_start = my_rank * sub_samples
+        elif sub_samples > 0:
+            sub_start = num_larger_procs + my_rank*sub_samples
+        else:
+            sub_start = -1
+            sub_samples = 0
+
+        # Initialize data to store sample means across all ranks
+        sampled_freq_means = None
+        sampled_metric_expect = None
+        if my_rank == 0:
+            sampled_freq_means = np.empty(num_samples)
+            sampled_metric_expect = np.empty(num_samples)        
+
+        # Initialize data for this rank's chunk of samples
+        sub_freq_means = np.empty(sub_samples)
+        sub_metric_expect = np.empty(sub_samples)
+
+        # Add one sample for computing the no change scenario
+        if (fif==max(fif_vec)) and (my_rank==0):
+            sub_samples += 1
+            print(f"adding nochange to rank {my_rank} for {sub_samples} total iterations at fif {fif}")
+
+        # Loop over random realizations of this fire alteration strategy
+        for sub_sample_i, fire_sample_i in enumerate(tqdm(range(sub_start, sub_start+sub_samples), disable=(not progress))):
+            # Re-sort fire frequencies and get slice for this rank
+            fire_freqs_sorted = np.array(sorted(fire_freqs))
+            freq_left = freq_left_samples_sub[fif_i][sub_sample_i]
+            slice_left = np.nonzero(fire_freqs_sorted > freq_left)[0][0]
+            fire_freq_slice = fire_freqs_sorted[slice_left:slice_left+n_cell]
+            # Store mean of slice's initial fire frequency
+            # Skip if computing the no change scenario
+            if sub_sample_i < len(sub_freq_means):
+                sub_freq_means[fire_sample_i-sub_start] = np.mean(fire_freq_slice)
+
+            # Adjust the fire frequency distribution
+            max_fif = fire_freq_slice - fire_freqs_sorted[slice_left_min]
+            # Skip if computing the no change scenario
+            if sub_sample_i < len(sub_freq_means):
+                fire_freqs_sorted[slice_left:slice_left+n_cell] = np.where(fif < max_fif, fire_freq_slice - fif, fire_freq_slice - max_fif)
+
+            # Get new probability distribution across fire return interval
+            fris = 1/fire_freqs_sorted
+            fri_hist = np.histogram(fris, bins=50, density=True);
+            P_fri_x0 = scipy.stats.rv_histogram((fri_hist[0], fri_hist[1]))
+
+            # Get the expected values of metrics
+            metric_expect = 0
+            metric_hist = metric_data[metric]['metric_hist']
+            dm = (max(metric_hist[2]) - min(metric_hist[2])) / metric_integrand_ratio
+            metric_vals = np.arange(min(metric_hist[2]), max(metric_hist[2])+dm, dm)
+            for fri_i in range(len(fri_edges) - 1):
+                # Get the expected values in this fri bin
+                fri_slice = fris[(fris >= fri_edges[fri_i]) & (fris < fri_edges[fri_i+1])]
+                if len(fri_slice) == 0: continue #can skip if zero fire probability in bin
+
+                # First get the probability of being in the fri bin
+                fri_vals = np.arange(fri_edges[fri_i], fri_edges[fri_i+1], dfri)
+                P_dfri = np.trapz(y=P_fri_x0.pdf(fri_vals), x=fri_vals)
+
+                P_metric_fri = scipy.stats.rv_histogram((metric_hist[0][fri_i], metric_hist[2]))
+                metric_expect_fri = np.trapz(y=P_metric_fri.pdf(metric_vals)*metric_vals, x=metric_vals)
+                metric_expect += metric_expect_fri * P_dfri
+
+            # Add sample to list if not computing no change scenario
+            if sub_sample_i < len(sub_freq_means):
+                sub_metric_expect[fire_sample_i-sub_start] = metric_expect
+            # Otherwise save no change scenario to file
+            elif my_rank == 0:
+                print(f"Not adding sample with index {fire_sample_i} / {fire_sample_i-sub_start} on rank {my_rank}, instead saving as nochange")
+                with open("aggregate_data/Aeff_{}/{}_expect_nochange_{}.json".format(Aeff, metric,  t_final), "w") as handle:
+                    json.dump({f'{metric}_expect_nochange': metric_expect}, handle)
+        # Collect data across ranks
+        comm_world.Gatherv(sub_freq_means, sampled_freq_means, root=0)
+        comm_world.Gatherv(sub_metric_expect, sampled_metric_expect, root=0)
+
+        if my_rank == 0:
+            # Bin results into final phase matricies
+            fif_i = np.nonzero(fif_vec == fif)[0][0]
+            for freq_i, freq_left in enumerate(freq_bin_edges):
+                freq_filt = (sampled_freq_means > freq_left) & (sampled_freq_means < freq_left+freq_bw)
+                metric_expect_slice = sampled_metric_expect[freq_filt]
+                if len(metric_expect_slice) > 0:
+                    phase_space[len(freq_bin_edges)-1-freq_i, fif_i] = np.mean(metric_expect_slice)
+
+    if my_rank == 0:
+        elapsed = timeit.default_timer() - start_time
+        print('{} seconds to run metric {}'.format(elapsed, metric))
+        # Save phase mats to files
+        if not os.path.isdir('phase_mats/Aeff_{}'.format(Aeff)):
+            os.makedirs('phase_mats/Aeff_{}'.format(Aeff))
+        phase_fn = 'phase_mats/Aeff_{}/phase_{}_{}_{}.npy'.format(Aeff, metric, round(constraint), t_final)
+        with open(phase_fn, 'wb') as handle:
+            np.save(handle, phase_space)
