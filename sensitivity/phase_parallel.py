@@ -14,11 +14,11 @@ import pickle
 
 # Some constants
 metrics = ['r', 'Nf', 'g']
-overwrite_metrics = True
+overwrite_metrics = False
 metric_thresh = 0.98
 metric_bw_ratio = 50
 c = 1.42
-Aeff = 2.38
+Aeff = 7.29
 t_final = 600
 sim_method = 'nint'
 ul_coord = [1500, 2800]
@@ -28,7 +28,6 @@ A_cell = 270**2 / 1e6 #km^2
 fif_baseline = 1
 metric_integrand_ratio = 800
 dfri = 0.01
-#dNf_ratio = 1_000
 n_cell_step = 3_000
 num_samples_ratio = 500
 progress = False
@@ -218,6 +217,9 @@ for metric in metrics:
 
     # Initialize final data matricies
     phase_space = np.zeros((len(freq_bin_edges), len(fif_vec)))
+    # Add a matrix for computing excess resources; only do this once
+    if metric == metrics[0]:
+        phase_space_xs = np.zeros((len(freq_bin_edges), len(fif_vec))) 
 
     # Sample random slices of init fire freqs for each intervention freq
     for fif_i, fif in enumerate(tqdm(fif_vec, disable=False)):#(not progress))):
@@ -241,13 +243,18 @@ for metric in metrics:
         # Initialize data to store sample means across all ranks
         sampled_freq_means = None
         sampled_metric_expect = None
+        sampled_xs_means = None
         if my_rank == 0:
             sampled_freq_means = np.empty(num_samples)
             sampled_metric_expect = np.empty(num_samples)        
+            if metric == metrics[0]:
+                sampled_xs_means = np.ones(num_samples) * np.nan
 
         # Initialize data for this rank's chunk of samples
         sub_freq_means = np.empty(sub_samples)
         sub_metric_expect = np.empty(sub_samples)
+        if metric == metrics[0]:
+            sub_xs_means = np.ones(sub_samples) * np.nan
 
         # Add one sample for computing the no change scenario
         if (fif==max(fif_vec)) and (my_rank==0):
@@ -270,7 +277,19 @@ for metric in metrics:
             max_fif = fire_freq_slice - fire_freqs_sorted[slice_left_min]
             # Skip if computing the no change scenario
             if sub_sample_i < len(sub_freq_means):
-                fire_freqs_sorted[slice_left:slice_left+n_cell] = np.where(fif < max_fif, fire_freq_slice - fif, fire_freq_slice - max_fif)
+                #fire_freqs_sorted[slice_left:slice_left+n_cell] = np.where(fif < max_fif, fire_freq_slice - fif, fire_freq_slice - max_fif)
+                # First create array of replacement frequencies
+                replacement_freqs = np.ones(n_cell)
+                xsresource_filt = (fif > max_fif)
+                xsresources = (fif - max_fif)[xsresource_filt]
+                replacement_freqs[xsresource_filt] = (fire_freq_slice - max_fif)[xsresource_filt]
+                replacement_freqs[(fif < max_fif)] = (fire_freq_slice - fif)[(fif < max_fif)]
+                # Now replace them in the full array of frequencies
+                fire_freqs_sorted[slice_left:slice_left+n_cell] = replacement_freqs 
+                if metric == metrics[0]:
+                    # Store the mean value of excess resources, nan if no excess
+                    if len(xsresources) > 0:
+                        sub_xs_means[fire_sample_i-sub_start] = np.mean(xsresources)
 
             # Get new probability distribution across fire return interval
             fris = 1/fire_freqs_sorted
@@ -284,8 +303,6 @@ for metric in metrics:
                 dm = (max(metric_hist[2]) - min(metric_hist[2])) / metric_integrand_ratio
                 metric_vals = np.arange(min(metric_hist[2]), max(metric_hist[2])+dm, dm)
             for fri_i in range(len(fri_edges) - 1):
-            #for fri_i in [20]:
-                #print('fri:',fri_vec[fri_i])
                 # Get the expected values in this fri bin
                 fri_slice = fris[(fris >= fri_edges[fri_i]) & (fris < fri_edges[fri_i+1])]
                 if len(fri_slice) == 0: continue #can skip if zero fire probability in bin
@@ -303,16 +320,6 @@ for metric in metrics:
                     sdm_slice = sdm_sorted[(fris >= fri_edges[fri_i]) & (fris < fri_edges[fri_i+1])]
                     all_r = metric_data['r']['all_metric']
                     r_slice = all_r[all_fri == fri_vec[fri_i]]
-                    '''old method'''
-                    #Nf_slice_agg = (sdm_slice[...,None] * np.tile(K_adult*(1 + r_slice), (len(sdm_slice), 1))).flatten()
-                    #hist_limit = np.quantile(Nf_slice_agg, 0.965)
-                    #Nf_slice_hist = np.histogram(Nf_slice_agg[Nf_slice_agg < hist_limit], bins=50)
-                    #P_Nf_fri = scipy.stats.rv_histogram((Nf_slice_hist[0], Nf_slice_hist[1]))
-                    #dNf = (max(Nf_slice_hist[1])-min(Nf_slice_hist[1])) / metric_integrand_ratio
-                    #Nf_vals = np.arange(min(Nf_slice_hist[1]), max(Nf_slice_hist[1])+dNf, dNf)
-                    #Nf_expect_fri = np.trapz(y=P_Nf_fri.pdf(Nf_vals)*Nf_vals, x=Nf_vals)
-                    #metric_expect += Nf_expect_fri * P_dfri
-                    ''''''
                     # Get expected value of Aeff for this slice of cells
                     Aeff_slice = sdm_slice * (A_cell * 100) #cell area converted km^2 -> Ha
                     Aeff_slice_hist = np.histogram(Aeff_slice, bins=50)
@@ -342,15 +349,21 @@ for metric in metrics:
         # Collect data across ranks
         comm_world.Gatherv(sub_freq_means, sampled_freq_means, root=0)
         comm_world.Gatherv(sub_metric_expect, sampled_metric_expect, root=0)
+        if metric == metrics[0]:
+            comm_world.Gatherv(sub_xs_means, sampled_xs_means, root=0)
 
         if my_rank == 0:
             # Bin results into final phase matricies
-            fif_i = np.nonzero(fif_vec == fif)[0][0]
+            #fif_i = np.nonzero(fif_vec == fif)[0][0]
             for freq_i, freq_left in enumerate(freq_bin_edges):
                 freq_filt = (sampled_freq_means > freq_left) & (sampled_freq_means < freq_left+freq_bw)
                 metric_expect_slice = sampled_metric_expect[freq_filt]
                 if len(metric_expect_slice) > 0:
                     phase_space[len(freq_bin_edges)-1-freq_i, fif_i] = np.mean(metric_expect_slice)
+                if metric == metrics[0]:
+                    xs_means_slice = sampled_xs_means[freq_filt]
+                    if not np.all(np.isnan(xs_means_slice)):
+                        phase_space_xs[len(freq_bin_edges)-1-freq_i, fif_i] = np.nanmean(xs_means_slice)   
 
     if my_rank == 0:
         elapsed = timeit.default_timer() - start_time
@@ -361,3 +374,7 @@ for metric in metrics:
         phase_fn = 'phase_mats/Aeff_{}/phase_{}_{}_{}.npy'.format(Aeff, metric, round(constraint), t_final)
         with open(phase_fn, 'wb') as handle:
             np.save(handle, phase_space)
+        if metric == metrics[0]:
+            phase_fn = 'phase_mats/Aeff_{}/phase_xs_{}_{}.npy'.format(Aeff, round(constraint), t_final)
+            with open(phase_fn, 'wb') as handle:
+                np.save(handle, phase_space_xs)
