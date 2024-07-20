@@ -26,11 +26,12 @@ lr_coord = [2723, 3905]
 max_fri = 66
 A_cell = 270**2 / 1e6 #km^2
 fif_baseline = 1
+baseline_area = 10
 metric_integrand_ratio = 800
 dfri = 0.01
 n_cell_step = 3_000
 num_samples_ratio = 500
-progress = False
+progress = True
 
 def adjustmaps(maps):
     dim_len = []
@@ -132,12 +133,12 @@ if my_rank == 0:
     b_raster = delta_t / np.power(-np.log(1-fdm), 1/c)
     fri_raster = b_raster * gamma(1+1/c)
 
-    # Flatten FDM & SDM
-    fri_sub = fri_raster[(sdm > 0) & (fdm > 0)] # Why are there any zeros in FDM at all?
-    fri_flat = fri_sub.flatten()
-    sdm_sub = sdm[(sdm > 0) & (fdm > 0)]
-    sdm_flat = sdm_sub.flatten()
+    # Flatten and filter FDM & SDM
+    fri_flat = fri_raster[(sdm > 0) & (fdm > 0)] # Why are there any zeros in FDM at all?
+    sdm_flat = sdm[(sdm > 0) & (fdm > 0)]
+    # Ignore fri above what we simulated, only a small amount
     sdm_flat = sdm_flat[fri_flat < max(fri_vec)]
+    fri_flat = fri_flat[fri_flat < max(fri_vec)] 
 
     with open("../model_fitting/mortality/map.json", "r") as handle:
         mort_params = json.load(handle)
@@ -151,7 +152,7 @@ fri_flat = comm_world.bcast(fri_flat)
 sdm_flat = comm_world.bcast(sdm_flat)
 
 # Sort fire frequency and habitat suitability data
-fire_freqs = 1 / fri_flat[fri_flat < max(fri_vec)] #ignore fri above what we simulated, only a small amount
+fire_freqs = 1 / fri_flat
 freq_argsort = np.argsort(fire_freqs)
 fire_freqs_sorted = fire_freqs[freq_argsort]
 sdm_sorted = sdm_flat[freq_argsort]
@@ -165,7 +166,6 @@ freq_bin_cntrs = np.array([edge+freq_bw/2 for edge in freq_bin_edges])
 
 # Loop over different resource constraint values
 #baseline_areas = np.array([10]) #km
-baseline_area = 10
 
 # Generate resource allocation scenarios
 n_cell_baseline = round(baseline_area/A_cell)
@@ -214,12 +214,11 @@ if my_rank == 0:
 for metric in metrics:
     if my_rank == 0:
         start_time = timeit.default_timer()
-
-    # Initialize final data matricies
-    phase_space = np.zeros((len(freq_bin_edges), len(fif_vec)))
-    # Add a matrix for computing excess resources; only do this once
-    if metric == metrics[0]:
-        phase_space_xs = np.zeros((len(freq_bin_edges), len(fif_vec))) 
+        # Initialize final data matricies
+        phase_space = np.zeros((len(freq_bin_edges), len(fif_vec)))
+        # Add a matrix for computing excess resources; only do this once
+        if metric == metrics[0]:
+            phase_space_xs = np.zeros((len(freq_bin_edges), len(fif_vec))) 
 
     # Sample random slices of init fire freqs for each intervention freq
     for fif_i, fif in enumerate(tqdm(fif_vec, disable=False)):#(not progress))):
@@ -262,9 +261,10 @@ for metric in metrics:
             print(f"adding nochange to rank {my_rank} for {sub_samples} total iterations at fif {fif}")
 
         # Loop over random realizations of this fire alteration strategy
-        for sub_sample_i, fire_sample_i in enumerate(tqdm(range(sub_start, sub_start+sub_samples), disable=(not progress))):
+        for sub_sample_i, fire_sample_i in enumerate(tqdm(range(sub_start, sub_start+sub_samples), disable=True)):#(not progress))):
             # Re-sort fire frequencies and get slice for this rank
-            fire_freqs_sorted = np.array(sorted(fire_freqs))
+            #fire_freqs_sorted = np.array(sorted(fire_freqs))
+            fire_freqs_sorted = fire_freqs[freq_argsort]
             freq_left = freq_left_samples_sub[fif_i][sub_sample_i]
             slice_left = np.nonzero(fire_freqs_sorted > freq_left)[0][0]
             fire_freq_slice = fire_freqs_sorted[slice_left:slice_left+n_cell]
@@ -277,17 +277,16 @@ for metric in metrics:
             max_fif = fire_freq_slice - fire_freqs_sorted[slice_left_min]
             # Skip if computing the no change scenario
             if sub_sample_i < len(sub_freq_means):
-                #fire_freqs_sorted[slice_left:slice_left+n_cell] = np.where(fif < max_fif, fire_freq_slice - fif, fire_freq_slice - max_fif)
                 # First create array of replacement frequencies
                 replacement_freqs = np.ones(n_cell)
                 xsresource_filt = (fif > max_fif)
-                xsresources = (fif - max_fif)[xsresource_filt]
                 replacement_freqs[xsresource_filt] = (fire_freq_slice - max_fif)[xsresource_filt]
                 replacement_freqs[(fif < max_fif)] = (fire_freq_slice - fif)[(fif < max_fif)]
                 # Now replace them in the full array of frequencies
                 fire_freqs_sorted[slice_left:slice_left+n_cell] = replacement_freqs 
                 if metric == metrics[0]:
-                    # Store the mean value of excess resources, nan if no excess
+                    # Store the mean value of excess resources, keep at nan if no excess
+                    xsresources = (fif - max_fif)[xsresource_filt]
                     if len(xsresources) > 0:
                         sub_xs_means[fire_sample_i-sub_start] = np.mean(xsresources)
 
@@ -360,6 +359,7 @@ for metric in metrics:
                 metric_expect_slice = sampled_metric_expect[freq_filt]
                 if len(metric_expect_slice) > 0:
                     phase_space[len(freq_bin_edges)-1-freq_i, fif_i] = np.mean(metric_expect_slice)
+                # Populate excess resources if on first metric
                 if metric == metrics[0]:
                     xs_means_slice = sampled_xs_means[freq_filt]
                     if not np.all(np.isnan(xs_means_slice)):
