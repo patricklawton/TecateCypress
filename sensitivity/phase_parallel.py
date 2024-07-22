@@ -6,7 +6,7 @@ from scipy.special import gamma
 import scipy
 import os
 import json
-from tqdm import tqdm
+from tqdm.auto import tqdm
 from mpi4py import MPI
 import timeit
 import pickle
@@ -14,7 +14,7 @@ import copy
 import sys
 
 # Some constants
-metrics = ['r', 'Nf', 'g']
+metrics = ['g']#['r', 'Nf', 'g']
 overwrite_metrics = False
 metric_thresh = 0.98
 metric_bw_ratio = 50
@@ -50,11 +50,9 @@ def plot_phase(phase_space, metric, metric_nochange, freq_bin_cntrs, n_cell_vec,
     '''doing this for now bc some runs are bad'''
     if (metric=='r') or (metric=='g'):
         phase_max = np.quantile(phase_flat[phase_flat != np.ma.masked], 0.98)
-        # phase_max = 0.11
     if (metric=='Nf') or (metric=='xs'):
         phase_max = max(phase_flat[phase_flat != np.ma.masked])
     cmap.set_bad('white')
-    # cmap.set_over('k')
     im = ax.imshow(phase_space, norm=matplotlib.colors.Normalize(vmin=metric_nochange, vmax=phase_max), cmap=cmap)
     cbar = ax.figure.colorbar(im, ax=ax, location="right", shrink=0.6)
     cbar.ax.set_ylabel(r'$<{}>$'.format(metric), rotation=-90, fontsize=10, labelpad=20)
@@ -71,6 +69,7 @@ def plot_phase(phase_space, metric, metric_nochange, freq_bin_cntrs, n_cell_vec,
     secax.set_xticks(xticks, labels=np.round(fif_vec[::xtick_spacing], decimals=3));
     secax.set_xlabel('Frequency of fire interventions per cell')
     fig.savefig(fig_fn, bbox_inches='tight')
+    plt.close(fig)
 
 comm_world = MPI.COMM_WORLD
 my_rank = comm_world.Get_rank()
@@ -139,6 +138,7 @@ if my_rank == 0:
             if not os.path.isdir(figs_root):
                 os.makedirs(figs_root)
             fig.savefig(figs_root + f"/sensitivity", bbox_inches='tight')
+            plt.close(fig)
 
             metric_data[metric].update({'all_metric': all_metric})
             metric_data[metric].update({'metric_hist': metric_hist[:3]})
@@ -266,9 +266,10 @@ for metric in metrics:
         if not os.path.isdir(figs_root):
             os.makedirs(figs_root)
         # Delete existing map figures
-        for item in os.listdir(figs_root + f"/const_{constraint}"):
-            if "map_ncell_" in item:
-                os.remove(os.path.join(figs_root + f"/const_{constraint}", item))
+        if os.path.isdir(figs_root + f"/const_{constraint}"):
+            for item in os.listdir(figs_root + f"/const_{constraint}"):
+                if "map_ncell_" in item:
+                    os.remove(os.path.join(figs_root + f"/const_{constraint}", item))
         data_root = f"data/Aeff_{Aeff}/tfinal_{t_final}/const_{constraint}/metric_{metric}"
         if not os.path.isdir(data_root):
             os.makedirs(data_root)
@@ -480,3 +481,4 @@ for metric in metrics:
             cbar.ax.set_ylabel(r'$<{}>$'.format(metric), rotation=-90, fontsize=10, labelpad=20)
             fig_fn = figs_root + f"/const_{constraint}/map_ncell_{n_cell}.png"
             fig.savefig(fig_fn, bbox_inches='tight')
+            plt.close(fig)

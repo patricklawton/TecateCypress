@@ -83,7 +83,7 @@ def compute_decay_rate(job):
         for b in b_vec:
             N_tot_mean = np.array(job.data[f"N_tot_mean/{b}"])
 
-            burn_in_end_i = 150
+            burn_in_end_i = 200
             final_i = len(N_tot_mean)
 
             x = census_t[burn_in_end_i:final_i]
