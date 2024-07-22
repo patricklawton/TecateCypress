@@ -11,6 +11,7 @@ from mpi4py import MPI
 import timeit
 import pickle
 import copy
+import sys
 
 # Some constants
 metrics = ['r', 'Nf', 'g']
@@ -29,7 +30,7 @@ fif_baseline = 1
 baseline_area = 10
 metric_integrand_ratio = 800
 dfri = 0.01
-n_cell_step = 20_000#3_000
+n_cell_step = 3_000
 num_samples_ratio = 500
 progress = True
 
@@ -41,7 +42,7 @@ def adjustmaps(maps):
         maps[mi] = m[0:dim_len[0], 0:dim_len[1]]
     return maps
 
-def plot_phase(phase_space, metric, metric_nochange, freq_bin_cntrs, n_cell_vec):
+def plot_phase(phase_space, metric, metric_nochange, freq_bin_cntrs, n_cell_vec, fig_fn):
     fig, ax = plt.subplots(figsize=(12,12))
     phase_space = np.ma.masked_where(phase_space==0, phase_space)
     phase_flat = phase_space.flatten()
@@ -69,7 +70,7 @@ def plot_phase(phase_space, metric, metric_nochange, freq_bin_cntrs, n_cell_vec)
     secax = ax.secondary_xaxis('top')
     secax.set_xticks(xticks, labels=np.round(fif_vec[::xtick_spacing], decimals=3));
     secax.set_xlabel('Frequency of fire interventions per cell')
-    fig.savefig('figs/Aeff_{}/phase_{}_{}.png'.format(Aeff,metric,round(constraint)), bbox_inches='tight')
+    fig.savefig(fig_fn, bbox_inches='tight')
 
 comm_world = MPI.COMM_WORLD
 my_rank = comm_world.Get_rank()
@@ -96,16 +97,18 @@ if my_rank == 0:
     fri_edges = np.concatenate(([0], np.arange(fri_step/2, fri_vec[-1]+fri_step, fri_step)))
 
     jobs = project.find_jobs({'doc.simulated': True, 'Aeff': Aeff, 't_final': t_final, 'method': sim_method})
-    if not os.path.isdir('aggregate_data/Aeff_{}'.format(Aeff)):
-        os.makedirs('aggregate_data/Aeff_{}'.format(Aeff))
-    fn = f"aggregate_data/Aeff_{Aeff}/all_fri_{t_final}.npy"
+    data_root = f"data/Aeff_{Aeff}/tfinal_{t_final}"
+    figs_root = f"figs/Aeff_{Aeff}/tfinal_{t_final}"
+    if not os.path.isdir(data_root):
+        os.makedirs(data_root)
+    fn = data_root + "/all_fri.npy"
     if (not os.path.isfile(fn)) or overwrite_metrics:
         all_fri = np.tile(fri_vec, len(jobs))
         np.save(fn, all_fri)
     else:
         all_fri = np.load(fn)
 
-    fn = f"aggregate_data/Aeff_{Aeff}/metric_data_{t_final}.pkl"
+    fn = data_root + "/metric_data.pkl"
     if (not os.path.isfile(fn)) or overwrite_metrics:
         metric_data = {m: {} for m in metrics}
         for metric in [m for m in metrics if m != "Nf"]: #metrics:
@@ -131,9 +134,11 @@ if my_rank == 0:
             cbar.ax.set_ylabel('demographic robustness', rotation=-90, fontsize=10, labelpad=20)
             ax.set_xlabel('<FRI>')
             ax.set_ylabel(metric)
-            if not os.path.isdir('figs/Aeff_{}'.format(Aeff)):
-                os.makedirs('figs/Aeff_{}'.format(Aeff))
-            fig.savefig('figs/Aeff_{}/sensitvity_{}_tfinal_{}.png'.format(Aeff, metric, t_final), bbox_inches='tight')
+            print(f"on metric {metric}")
+            figs_root = f"figs/Aeff_{Aeff}/tfinal_{t_final}/metric_{metric}"
+            if not os.path.isdir(figs_root):
+                os.makedirs(figs_root)
+            fig.savefig(figs_root + f"/sensitivity", bbox_inches='tight')
 
             metric_data[metric].update({'all_metric': all_metric})
             metric_data[metric].update({'metric_hist': metric_hist[:3]})
@@ -211,8 +216,11 @@ fif_vec = np.array([constraint/n_cell for n_cell in n_cell_vec])
 
 # Save a few more things
 if my_rank == 0:
-    np.save(f"aggregate_data/freq_bin_cntrs.npy", freq_bin_cntrs)
-    np.save(f"aggregate_data/Aeff_{Aeff}/n_cell_vec_{constraint}.npy", n_cell_vec)
+    np.save("data/freq_bin_cntrs.npy", freq_bin_cntrs)
+    data_root = f"data/Aeff_{Aeff}/tfinal_{t_final}/const_{constraint}"
+    if not os.path.isdir(data_root):
+        os.makedirs(data_root)
+    np.save(data_root + "/n_cell_vec.npy", n_cell_vec)
     start_time = timeit.default_timer()
 
 # Draw all freq slice random starting points for this rank
@@ -254,6 +262,20 @@ for metric in metrics:
         # Add a matrix for computing excess resources; only do this once
         if metric == metrics[0]:
             phase_space_xs = np.zeros((len(freq_bin_edges), len(fif_vec))) 
+        figs_root = f"figs/Aeff_{Aeff}/tfinal_{t_final}/metric_{metric}"
+        if not os.path.isdir(figs_root):
+            os.makedirs(figs_root)
+        # Delete existing map figures
+        for item in os.listdir(figs_root + f"/const_{constraint}"):
+            if "map_ncell_" in item:
+                os.remove(os.path.join(figs_root + f"/const_{constraint}", item))
+        data_root = f"data/Aeff_{Aeff}/tfinal_{t_final}/const_{constraint}/metric_{metric}"
+        if not os.path.isdir(data_root):
+            os.makedirs(data_root)
+        # Delete existing map files
+        for item in os.listdir(data_root):
+            if "map_ncell_" in item:
+                os.remove(os.path.join(data_root, item))
 
     # Sample random slices of init fire freqs for each intervention freq
     for fif_i, fif in enumerate(tqdm(fif_vec, disable=False)):#(not progress))):
@@ -388,8 +410,10 @@ for metric in metrics:
             elif my_rank == 0:
                 print(f"Not adding sample with index {fire_sample_i} / {fire_sample_i-sub_start} on rank {my_rank}, instead saving as nochange")
                 metric_nochange = metric_expect
-                with open("aggregate_data/Aeff_{}/{}_expect_nochange_{}.json".format(Aeff, metric,  t_final), "w") as handle:
+                with open(data_root + "/nochange.json", "w") as handle:
                     json.dump({f'{metric}_expect_nochange': metric_nochange}, handle)
+                if not os.path.isdir(figs_root + f"/const_{constraint}"):
+                    os.makedirs(figs_root + f"/const_{constraint}")
 
         # Collect data across ranks
         comm_world.Gatherv(sub_freq_means, sampled_freq_means, root=0)
@@ -400,7 +424,6 @@ for metric in metrics:
         comm_world.Allreduce(sub_cellcounts, cellcounts, op=MPI.SUM)
         celltotals = np.zeros(maps_filt.shape)
         comm_world.Allreduce(sub_celltotals, celltotals, op=MPI.SUM)
-        #if my_rank == 0: print(np.unique(celltotals))
 
         if my_rank == 0:
             # Bin results into final phase matricies
@@ -420,22 +443,40 @@ for metric in metrics:
             metric_map = celltotals / cellcounts
             # Wherever cellcounts==0 -> nan, now replace within habitat cells to no_change
             metric_map[maps_filt & np.isnan(metric_map)] = metric_nochange
-            fn = f"aggregate_data/Aeff_{Aeff}/map_{constraint}_{t_final}_{metric}_{n_cell}.npy"
+            fn = data_root + f"/map_ncell_{n_cell}"
             np.save(fn, metric_map)
 
     if my_rank == 0:
         elapsed = timeit.default_timer() - start_time
         print('{} seconds to run metric {}'.format(elapsed, metric))
         # Save phase mats to files
-        if not os.path.isdir('phase_mats/Aeff_{}'.format(Aeff)):
-            os.makedirs('phase_mats/Aeff_{}'.format(Aeff))
-        phase_fn = 'phase_mats/Aeff_{}/phase_{}_{}_{}.npy'.format(Aeff, metric, round(constraint), t_final)
+        phase_fn = data_root + "/phase.npy"
         with open(phase_fn, 'wb') as handle:
             np.save(handle, phase_space)
-        # Also plot
-        plot_phase(phase_space, metric, metric_nochange, freq_bin_cntrs, n_cell_vec)
+        # Plot phase
+        phase_fig_fn = figs_root + f"/const_{constraint}" + "/phase.png"
+        plot_phase(phase_space, metric, metric_nochange, freq_bin_cntrs, n_cell_vec, phase_fig_fn)
         if metric == metrics[0]:
-            phase_fn = 'phase_mats/Aeff_{}/phase_xs_{}_{}.npy'.format(Aeff, round(constraint), t_final)
+            phase_fn = f"data/Aeff_{Aeff}/tfinal_{t_final}/const_{constraint}/phase_xs.npy"
             with open(phase_fn, 'wb') as handle:
                 np.save(handle, phase_space_xs)
-            plot_phase(phase_space_xs, 'xs', 0, freq_bin_cntrs, n_cell_vec)
+            phase_fig_fn = figs_root + f"/const_{constraint}" + "/phase_xs.png"
+            plot_phase(phase_space_xs, 'xs', 0, freq_bin_cntrs, n_cell_vec, phase_fig_fn)
+
+        # Plot geographical representations
+        # First, get the global max across n_cell values for the colorbar limit
+        vmaxes = []
+        for n_cell in n_cell_vec:
+            metric_map = np.load(data_root + f"/map_ncell_{n_cell}.npy")
+            vmaxes.append(np.max(metric_map[np.isnan(metric_map) == False]))
+        # Now actually plot
+        for n_cell in n_cell_vec:
+            fig, ax = plt.subplots(figsize=(12,12))
+            cmap = copy.copy(matplotlib.cm.plasma)
+            cmap.set_bad(alpha=0)
+            metric_map = np.load(data_root + f"/map_ncell_{n_cell}.npy")
+            im = ax.imshow(metric_map, vmin=metric_nochange, vmax=max(vmaxes), cmap=cmap)
+            cbar = ax.figure.colorbar(im, ax=ax, location="right", shrink=0.6)
+            cbar.ax.set_ylabel(r'$<{}>$'.format(metric), rotation=-90, fontsize=10, labelpad=20)
+            fig_fn = figs_root + f"/const_{constraint}/map_ncell_{n_cell}.png"
+            fig.savefig(fig_fn, bbox_inches='tight')

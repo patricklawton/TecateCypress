@@ -25,3 +25,4 @@ N_tot_vec.npy
 FDE_current.txt
 *save
 *.asc
+*map_ncell*
