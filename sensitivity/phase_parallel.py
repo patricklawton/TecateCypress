@@ -6,11 +6,11 @@ from scipy.special import gamma
 import scipy
 import os
 import json
-from tqdm.auto import tqdm
-#from tqdm import tqdm
+from tqdm import tqdm
 from mpi4py import MPI
 import timeit
 import pickle
+import copy
 
 # Some constants
 metrics = ['r', 'Nf', 'g']
@@ -29,7 +29,7 @@ fif_baseline = 1
 baseline_area = 10
 metric_integrand_ratio = 800
 dfri = 0.01
-n_cell_step = 3_000
+n_cell_step = 20_000#3_000
 num_samples_ratio = 500
 progress = True
 
@@ -40,6 +40,36 @@ def adjustmaps(maps):
     for mi, m in enumerate(maps):
         maps[mi] = m[0:dim_len[0], 0:dim_len[1]]
     return maps
+
+def plot_phase(phase_space, metric, metric_nochange, freq_bin_cntrs, n_cell_vec):
+    fig, ax = plt.subplots(figsize=(12,12))
+    phase_space = np.ma.masked_where(phase_space==0, phase_space)
+    phase_flat = phase_space.flatten()
+    cmap = copy.copy(matplotlib.cm.plasma)
+    '''doing this for now bc some runs are bad'''
+    if (metric=='r') or (metric=='g'):
+        phase_max = np.quantile(phase_flat[phase_flat != np.ma.masked], 0.98)
+        # phase_max = 0.11
+    if (metric=='Nf') or (metric=='xs'):
+        phase_max = max(phase_flat[phase_flat != np.ma.masked])
+    cmap.set_bad('white')
+    # cmap.set_over('k')
+    im = ax.imshow(phase_space, norm=matplotlib.colors.Normalize(vmin=metric_nochange, vmax=phase_max), cmap=cmap)
+    cbar = ax.figure.colorbar(im, ax=ax, location="right", shrink=0.6)
+    cbar.ax.set_ylabel(r'$<{}>$'.format(metric), rotation=-90, fontsize=10, labelpad=20)
+    ytick_spacing = 2
+    ytick_labels = np.flip(freq_bin_cntrs)[::ytick_spacing]
+    yticks = np.arange(0,len(freq_bin_cntrs),ytick_spacing)
+    ax.set_yticks(yticks, labels=np.round(ytick_labels, decimals=3));
+    ax.set_ylabel('Avg fire frequency in intervened cells')
+    xtick_spacing = 3
+    xticks = np.arange(0,len(n_cell_vec),xtick_spacing)
+    ax.set_xticks(xticks, labels=n_cell_vec[::xtick_spacing]);
+    ax.set_xlabel('Number of cells intervened in')
+    secax = ax.secondary_xaxis('top')
+    secax.set_xticks(xticks, labels=np.round(fif_vec[::xtick_spacing], decimals=3));
+    secax.set_xlabel('Frequency of fire interventions per cell')
+    fig.savefig('figs/Aeff_{}/phase_{}_{}.png'.format(Aeff,metric,round(constraint)), bbox_inches='tight')
 
 comm_world = MPI.COMM_WORLD
 my_rank = comm_world.Get_rank()
@@ -53,6 +83,8 @@ fri_vec = None
 K_adult = None
 fri_flat = None
 sdm_flat = None
+maps_filt = None
+mapindices = None
 
 # Handle data reading on rank 0 alone
 if my_rank == 0:
@@ -134,11 +166,12 @@ if my_rank == 0:
     fri_raster = b_raster * gamma(1+1/c)
 
     # Flatten and filter FDM & SDM
-    fri_flat = fri_raster[(sdm > 0) & (fdm > 0)] # Why are there any zeros in FDM at all?
-    sdm_flat = sdm[(sdm > 0) & (fdm > 0)]
     # Ignore fri above what we simulated, only a small amount
-    sdm_flat = sdm_flat[fri_flat < max(fri_vec)]
-    fri_flat = fri_flat[fri_flat < max(fri_vec)] 
+    # Why are there any zeros in FDM at all?
+    maps_filt = (sdm > 0) & (fdm > 0) & (fri_raster < max(fri_vec))
+    mapindices = np.argwhere(maps_filt) #2d raster indicies to reference later 
+    fri_flat = fri_raster[maps_filt]
+    sdm_flat = sdm[maps_filt]
 
     with open("../model_fitting/mortality/map.json", "r") as handle:
         mort_params = json.load(handle)
@@ -150,6 +183,8 @@ fri_edges = comm_world.bcast(fri_edges)
 fri_vec = comm_world.bcast(fri_vec)
 fri_flat = comm_world.bcast(fri_flat)
 sdm_flat = comm_world.bcast(sdm_flat)
+maps_filt = comm_world.bcast(maps_filt)
+mapindices = comm_world.bcast(mapindices)
 
 # Sort fire frequency and habitat suitability data
 fire_freqs = 1 / fri_flat
@@ -227,7 +262,7 @@ for metric in metrics:
         slice_left_max = len(fire_freqs) - n_cell - 1 #slice needs to fit
         num_samples = round((slice_left_max-slice_left_min)/num_samples_ratio)
 
-        # Get slice indices of samples for this rank
+        # Get size and position of sample chunk for this rank
         sub_samples = num_samples // num_procs
         num_larger_procs = num_samples - num_procs*sub_samples
         if my_rank < num_larger_procs:
@@ -242,7 +277,8 @@ for metric in metrics:
         # Initialize data to store sample means across all ranks
         sampled_freq_means = None
         sampled_metric_expect = None
-        sampled_xs_means = None
+        if metric == metrics[0]:
+            sampled_xs_means = None
         if my_rank == 0:
             sampled_freq_means = np.empty(num_samples)
             sampled_metric_expect = np.empty(num_samples)        
@@ -252,6 +288,8 @@ for metric in metrics:
         # Initialize data for this rank's chunk of samples
         sub_freq_means = np.empty(sub_samples)
         sub_metric_expect = np.empty(sub_samples)
+        sub_cellcounts = np.zeros(maps_filt.shape)
+        sub_celltotals = np.zeros(maps_filt.shape)
         if metric == metrics[0]:
             sub_xs_means = np.ones(sub_samples) * np.nan
 
@@ -263,7 +301,6 @@ for metric in metrics:
         # Loop over random realizations of this fire alteration strategy
         for sub_sample_i, fire_sample_i in enumerate(tqdm(range(sub_start, sub_start+sub_samples), disable=True)):#(not progress))):
             # Re-sort fire frequencies and get slice for this rank
-            #fire_freqs_sorted = np.array(sorted(fire_freqs))
             fire_freqs_sorted = fire_freqs[freq_argsort]
             freq_left = freq_left_samples_sub[fif_i][sub_sample_i]
             slice_left = np.nonzero(fire_freqs_sorted > freq_left)[0][0]
@@ -340,20 +377,33 @@ for metric in metrics:
             # Add sample to list if not computing no change scenario
             if sub_sample_i < len(sub_freq_means):
                 sub_metric_expect[fire_sample_i-sub_start] = metric_expect
+
+                # Also update spatial representation of metric
+                mapindices_slice = mapindices[freq_argsort][slice_left:slice_left+n_cell]
+                map_mask = np.zeros(maps_filt.shape, dtype=bool)
+                map_mask[mapindices_slice[:,0], mapindices_slice[:,1]] = True
+                sub_cellcounts[map_mask] += 1
+                sub_celltotals[map_mask] += metric_expect
             # Otherwise save no change scenario to file
             elif my_rank == 0:
                 print(f"Not adding sample with index {fire_sample_i} / {fire_sample_i-sub_start} on rank {my_rank}, instead saving as nochange")
+                metric_nochange = metric_expect
                 with open("aggregate_data/Aeff_{}/{}_expect_nochange_{}.json".format(Aeff, metric,  t_final), "w") as handle:
-                    json.dump({f'{metric}_expect_nochange': metric_expect}, handle)
+                    json.dump({f'{metric}_expect_nochange': metric_nochange}, handle)
+
         # Collect data across ranks
         comm_world.Gatherv(sub_freq_means, sampled_freq_means, root=0)
         comm_world.Gatherv(sub_metric_expect, sampled_metric_expect, root=0)
         if metric == metrics[0]:
             comm_world.Gatherv(sub_xs_means, sampled_xs_means, root=0)
+        cellcounts = np.zeros(maps_filt.shape)
+        comm_world.Allreduce(sub_cellcounts, cellcounts, op=MPI.SUM)
+        celltotals = np.zeros(maps_filt.shape)
+        comm_world.Allreduce(sub_celltotals, celltotals, op=MPI.SUM)
+        #if my_rank == 0: print(np.unique(celltotals))
 
         if my_rank == 0:
             # Bin results into final phase matricies
-            #fif_i = np.nonzero(fif_vec == fif)[0][0]
             for freq_i, freq_left in enumerate(freq_bin_edges):
                 freq_filt = (sampled_freq_means > freq_left) & (sampled_freq_means < freq_left+freq_bw)
                 metric_expect_slice = sampled_metric_expect[freq_filt]
@@ -365,6 +415,14 @@ for metric in metrics:
                     if not np.all(np.isnan(xs_means_slice)):
                         phase_space_xs[len(freq_bin_edges)-1-freq_i, fif_i] = np.nanmean(xs_means_slice)   
 
+            # Save spatial representation for this n_cell value
+            # <metric> per cell, assume at baseline if cell  
+            metric_map = celltotals / cellcounts
+            # Wherever cellcounts==0 -> nan, now replace within habitat cells to no_change
+            metric_map[maps_filt & np.isnan(metric_map)] = metric_nochange
+            fn = f"aggregate_data/Aeff_{Aeff}/map_{constraint}_{t_final}_{metric}_{n_cell}.npy"
+            np.save(fn, metric_map)
+
     if my_rank == 0:
         elapsed = timeit.default_timer() - start_time
         print('{} seconds to run metric {}'.format(elapsed, metric))
@@ -374,7 +432,10 @@ for metric in metrics:
         phase_fn = 'phase_mats/Aeff_{}/phase_{}_{}_{}.npy'.format(Aeff, metric, round(constraint), t_final)
         with open(phase_fn, 'wb') as handle:
             np.save(handle, phase_space)
+        # Also plot
+        plot_phase(phase_space, metric, metric_nochange, freq_bin_cntrs, n_cell_vec)
         if metric == metrics[0]:
             phase_fn = 'phase_mats/Aeff_{}/phase_xs_{}_{}.npy'.format(Aeff, round(constraint), t_final)
             with open(phase_fn, 'wb') as handle:
                 np.save(handle, phase_space_xs)
+            plot_phase(phase_space_xs, 'xs', 0, freq_bin_cntrs, n_cell_vec)
