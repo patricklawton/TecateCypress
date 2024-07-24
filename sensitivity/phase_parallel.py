@@ -34,7 +34,8 @@ n_cell_step = 3_000
 num_samples_ratio = 500
 progress = True
 #baseline_area = 20 #km^2
-baseline_areas = np.arange(30, 100, 10)
+baseline_areas = np.arange(10, 110, 10)
+#baseline_areas = np.array([10,20,30,40])
 
 comm_world = MPI.COMM_WORLD
 my_rank = comm_world.Get_rank()
@@ -51,132 +52,136 @@ sdm_flat = None
 maps_filt = None
 mapindices = None
 
-for baseline_area in baseline_areas:
-    # Handle data reading on rank 0 alone
-    if my_rank == 0:
-        project = sg.get_project()
-        with sg.H5Store('shared_data.h5').open(mode='r') as sd:
-            b_vec = np.array(sd['b_vec'])
-        fri_vec = b_vec * gamma(1+1/c)
-        fri_step = (b_vec[1]-b_vec[0]) * gamma(1+1/c)
-        fri_edges = np.concatenate(([0], np.arange(fri_step/2, fri_vec[-1]+fri_step, fri_step)))
+# Handle data reading on rank 0 alone
+if my_rank == 0:
+    project = sg.get_project()
+    with sg.H5Store('shared_data.h5').open(mode='r') as sd:
+        b_vec = np.array(sd['b_vec'])
+    fri_vec = b_vec * gamma(1+1/c)
+    fri_step = (b_vec[1]-b_vec[0]) * gamma(1+1/c)
+    fri_edges = np.concatenate(([0], np.arange(fri_step/2, fri_vec[-1]+fri_step, fri_step)))
 
-        jobs = project.find_jobs({'doc.simulated': True, 'Aeff': Aeff, 't_final': t_final, 'method': sim_method})
-        data_root = f"data/Aeff_{Aeff}/tfinal_{t_final}"
-        figs_root = f"figs/Aeff_{Aeff}/tfinal_{t_final}"
-        if not os.path.isdir(data_root):
-            os.makedirs(data_root)
-        fn = data_root + "/all_fri.npy"
-        if (not os.path.isfile(fn)) or overwrite_metrics:
-            all_fri = np.tile(fri_vec, len(jobs))
-            np.save(fn, all_fri)
-        else:
-            all_fri = np.load(fn)
+    jobs = project.find_jobs({'doc.simulated': True, 'Aeff': Aeff, 't_final': t_final, 'method': sim_method})
+    data_root = f"data/Aeff_{Aeff}/tfinal_{t_final}"
+    figs_root = f"figs/Aeff_{Aeff}/tfinal_{t_final}"
+    if not os.path.isdir(data_root):
+        os.makedirs(data_root)
+    fn = data_root + "/all_fri.npy"
+    if (not os.path.isfile(fn)) or overwrite_metrics:
+        all_fri = np.tile(fri_vec, len(jobs))
+        np.save(fn, all_fri)
+    else:
+        all_fri = np.load(fn)
 
-        fn = data_root + "/metric_data.pkl"
-        if (not os.path.isfile(fn)) or overwrite_metrics:
-            metric_data = {m: {} for m in metrics}
-            for metric in [m for m in metrics if m != "Nf"]: #metrics:
-                if metric == 'r': metric_label = 'fractional_change'
-                elif metric == 'Nf': metric_label = metric
-                elif metric == 'g': metric_label = 'decay_rate'
-                all_metric = np.array([])
-                for job_i, job in enumerate(jobs):
-                    with job.data as data:
-                        metric_vec = []
-                        for b in b_vec:
-                            metric_vec.append(float(data[f'{metric_label}/{b}']))
-                    all_metric = np.append(all_metric, metric_vec)
-                    
-                metric_min, metric_max = (np.quantile(all_metric, 1-metric_thresh), np.quantile(all_metric, metric_thresh))
-                metric_bw = (metric_max - metric_min) / metric_bw_ratio
-                metric_edges = np.arange(metric_min, metric_max + metric_bw, metric_bw)
+    fn = data_root + "/metric_data.pkl"
+    if (not os.path.isfile(fn)) or overwrite_metrics:
+        metric_data = {m: {} for m in metrics}
+        for metric in [m for m in metrics if m != "Nf"]: #metrics:
+            if metric == 'r': metric_label = 'fractional_change'
+            elif metric == 'Nf': metric_label = metric
+            elif metric == 'g': metric_label = 'decay_rate'
+            all_metric = np.array([])
+            for job_i, job in enumerate(jobs):
+                with job.data as data:
+                    metric_vec = []
+                    for b in b_vec:
+                        metric_vec.append(float(data[f'{metric_label}/{b}']))
+                all_metric = np.append(all_metric, metric_vec)
+                
+            metric_min, metric_max = (np.quantile(all_metric, 1-metric_thresh), np.quantile(all_metric, metric_thresh))
+            metric_bw = (metric_max - metric_min) / metric_bw_ratio
+            metric_edges = np.arange(metric_min, metric_max + metric_bw, metric_bw)
 
-                fig, ax = plt.subplots(figsize=(13,8))
-                metric_hist = ax.hist2d(all_fri, all_metric, bins=[fri_edges, metric_edges], 
-                                 norm=matplotlib.colors.LogNorm(vmax=int(len(all_metric)/len(b_vec))))
-                cbar = ax.figure.colorbar(metric_hist[-1], ax=ax, location="right")
-                cbar.ax.set_ylabel('demographic robustness', rotation=-90, fontsize=10, labelpad=20)
-                ax.set_xlabel('<FRI>')
-                ax.set_ylabel(metric)
-                print(f"on metric {metric}")
-                figs_root = f"figs/Aeff_{Aeff}/tfinal_{t_final}/metric_{metric}"
-                if not os.path.isdir(figs_root):
-                    os.makedirs(figs_root)
-                fig.savefig(figs_root + f"/sensitivity", bbox_inches='tight')
-                plt.close(fig)
+            fig, ax = plt.subplots(figsize=(13,8))
+            metric_hist = ax.hist2d(all_fri, all_metric, bins=[fri_edges, metric_edges], 
+                             norm=matplotlib.colors.LogNorm(vmax=int(len(all_metric)/len(b_vec))))
+            cbar = ax.figure.colorbar(metric_hist[-1], ax=ax, location="right")
+            cbar.ax.set_ylabel('demographic robustness', rotation=-90, fontsize=10, labelpad=20)
+            ax.set_xlabel('<FRI>')
+            ax.set_ylabel(metric)
+            print(f"on metric {metric}")
+            figs_root = f"figs/Aeff_{Aeff}/tfinal_{t_final}/metric_{metric}"
+            if not os.path.isdir(figs_root):
+                os.makedirs(figs_root)
+            fig.savefig(figs_root + f"/sensitivity", bbox_inches='tight')
+            plt.close(fig)
 
-                metric_data[metric].update({'all_metric': all_metric})
-                metric_data[metric].update({'metric_hist': metric_hist[:3]})
-            with open(fn, 'wb') as handle:
-                pickle.dump(metric_data, handle, protocol=pickle.HIGHEST_PROTOCOL)
-        else:
-            with open(fn, 'rb') as handle:
-                metric_data = pickle.load(handle)
+            metric_data[metric].update({'all_metric': all_metric})
+            metric_data[metric].update({'metric_hist': metric_hist[:3]})
+        with open(fn, 'wb') as handle:
+            pickle.dump(metric_data, handle, protocol=pickle.HIGHEST_PROTOCOL)
+    else:
+        with open(fn, 'rb') as handle:
+            metric_data = pickle.load(handle)
 
-        # Read in FDM
+    # Read in FDM
+    usecols = np.arange(ul_coord[0],lr_coord[0])
+    fdmfn = '../shared_maps/FDE_current_allregions.asc'
+    if fdmfn[-3:] == 'txt':
+        fdm = np.loadtxt(fdmfn)
+    else:
+        # Assume these are uncropped .asc maps
         usecols = np.arange(ul_coord[0],lr_coord[0])
-        fdmfn = '../shared_maps/FDE_current_allregions.asc'
-        if fdmfn[-3:] == 'txt':
-            fdm = np.loadtxt(fdmfn)
-        else:
-            # Assume these are uncropped .asc maps
-            usecols = np.arange(ul_coord[0],lr_coord[0])
-            fdm = np.loadtxt(fdmfn,skiprows=6+ul_coord[1],
-                                     max_rows=lr_coord[1], usecols=usecols)
-
-        # Read in SDM
-        sdmfn = "../shared_maps/SDM_1995.asc"
-        sdm = np.loadtxt(sdmfn,skiprows=6+ul_coord[1],
+        fdm = np.loadtxt(fdmfn,skiprows=6+ul_coord[1],
                                  max_rows=lr_coord[1], usecols=usecols)
-        sdm, fdm = adjustmaps([sdm, fdm])
 
-        # Convert FDM probabilities to expected fire return intervals 
-        delta_t = 30
-        b_raster = delta_t / np.power(-np.log(1-fdm), 1/c)
-        fri_raster = b_raster * gamma(1+1/c)
+    # Read in SDM
+    sdmfn = "../shared_maps/SDM_1995.asc"
+    sdm = np.loadtxt(sdmfn,skiprows=6+ul_coord[1],
+                             max_rows=lr_coord[1], usecols=usecols)
+    sdm, fdm = adjustmaps([sdm, fdm])
 
-        # Flatten and filter FDM & SDM
-        # Ignore fri above what we simulated, only a small amount
-        # Why are there any zeros in FDM at all?
-        maps_filt = (sdm > 0) & (fdm > 0) & (fri_raster < max(fri_vec))
-        mapindices = np.argwhere(maps_filt) #2d raster indicies to reference later 
-        fri_flat = fri_raster[maps_filt]
-        sdm_flat = sdm[maps_filt]
+    # Convert FDM probabilities to expected fire return intervals 
+    delta_t = 30
+    b_raster = delta_t / np.power(-np.log(1-fdm), 1/c)
+    fri_raster = b_raster * gamma(1+1/c)
 
-        with open("../model_fitting/mortality/map.json", "r") as handle:
-            mort_params = json.load(handle)
-        K_adult = mort_params['K_adult']
-    metric_data = comm_world.bcast(metric_data)
-    K_adult = comm_world.bcast(K_adult)
-    all_fri = comm_world.bcast(all_fri)
-    fri_edges = comm_world.bcast(fri_edges)
-    fri_vec = comm_world.bcast(fri_vec)
-    fri_flat = comm_world.bcast(fri_flat)
-    sdm_flat = comm_world.bcast(sdm_flat)
-    maps_filt = comm_world.bcast(maps_filt)
-    mapindices = comm_world.bcast(mapindices)
+    # Flatten and filter FDM & SDM
+    # Ignore fri above what we simulated, only a small amount
+    # Why are there any zeros in FDM at all?
+    maps_filt = (sdm > 0) & (fdm > 0) & (fri_raster < max(fri_vec))
+    mapindices = np.argwhere(maps_filt) #2d raster indicies to reference later 
+    fri_flat = fri_raster[maps_filt]
+    sdm_flat = sdm[maps_filt]
 
-    # Sort fire frequency and habitat suitability data
-    fire_freqs = 1 / fri_flat
-    freq_argsort = np.argsort(fire_freqs)
+    with open("../model_fitting/mortality/map.json", "r") as handle:
+        mort_params = json.load(handle)
+    K_adult = mort_params['K_adult']
+metric_data = comm_world.bcast(metric_data)
+K_adult = comm_world.bcast(K_adult)
+all_fri = comm_world.bcast(all_fri)
+fri_edges = comm_world.bcast(fri_edges)
+fri_vec = comm_world.bcast(fri_vec)
+fri_flat = comm_world.bcast(fri_flat)
+sdm_flat = comm_world.bcast(sdm_flat)
+maps_filt = comm_world.bcast(maps_filt)
+mapindices = comm_world.bcast(mapindices)
+
+# Sort fire frequency and habitat suitability data
+fire_freqs = 1 / fri_flat
+freq_argsort = np.argsort(fire_freqs)
+fire_freqs_sorted = fire_freqs[freq_argsort]
+sdm_sorted = sdm_flat[freq_argsort]
+
+# Get bins of initial fire frequency for phase data
+slice_left_min = np.nonzero(fire_freqs_sorted > (1/max_fri))[0][0]
+freq_range = fire_freqs_sorted[-1] - fire_freqs_sorted[slice_left_min]
+freq_bw = freq_range/20
+freq_bin_edges = np.arange(fire_freqs_sorted[slice_left_min], fire_freqs_sorted[-1], freq_bw)
+freq_bin_cntrs = np.array([edge+freq_bw/2 for edge in freq_bin_edges])
+
+# Generate resource allocation scenarios
+n_cell_baseline_max = round(max(baseline_areas)/A_cell)
+n_cell_vec = np.arange(n_cell_baseline_max, len(fire_freqs)-slice_left_min, n_cell_step)
+
+# Loop over different resource constraint values
+#baseline_areas = np.array([10]) #km
+for baseline_area in baseline_areas:
+    # Resort fire freqs
     fire_freqs_sorted = fire_freqs[freq_argsort]
-    sdm_sorted = sdm_flat[freq_argsort]
-
-    # Get bins of initial fire frequency for phase data
-    slice_left_min = np.nonzero(fire_freqs_sorted > (1/max_fri))[0][0]
-    freq_range = fire_freqs_sorted[-1] - fire_freqs_sorted[slice_left_min]
-    freq_bw = freq_range/20
-    freq_bin_edges = np.arange(fire_freqs_sorted[slice_left_min], fire_freqs_sorted[-1], freq_bw)
-    freq_bin_cntrs = np.array([edge+freq_bw/2 for edge in freq_bin_edges])
-
-    # Loop over different resource constraint values
-    #baseline_areas = np.array([10]) #km
-
-    # Generate resource allocation scenarios
+    # Get some info for this allocation scenario
     n_cell_baseline = round(baseline_area/A_cell)
     constraint = n_cell_baseline * fif_baseline
-    n_cell_vec = np.arange(n_cell_baseline, len(fire_freqs)-slice_left_min, n_cell_step)
     #n_cell_vec = np.arange(100, 300, 100)
     fif_vec = np.array([constraint/n_cell for n_cell in n_cell_vec])
 
