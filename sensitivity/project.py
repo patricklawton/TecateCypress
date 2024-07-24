@@ -4,6 +4,7 @@ import signac as sg
 from flow import FlowProject
 import pickle
 from scipy.optimize import curve_fit
+from global_functions import line
 
 # Open up signac project
 project = sg.get_project()
@@ -14,10 +15,6 @@ with sg.H5Store(sd_fn).open(mode='r') as sd:
 
 with open('../model_fitting/mortality/fixed.pkl', 'rb') as handle:
     mort_fixed = pickle.load(handle)
-
-# Define line function to be used for fitting later
-def line(x, m, b):
-    return m*x + b
 
 @FlowProject.post(lambda job: job.doc.get('simulated'))
 @FlowProject.operation
