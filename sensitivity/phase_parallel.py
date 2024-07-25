@@ -34,8 +34,8 @@ n_cell_step = 3_000
 num_samples_ratio = 500
 progress = True
 #baseline_area = 20 #km^2
-baseline_areas = np.arange(10, 110, 10)
-#baseline_areas = np.array([10,20,30,40])
+#baseline_areas = np.arange(10, 110, 10)
+baseline_areas = np.arange(10, 155, 5)
 
 comm_world = MPI.COMM_WORLD
 my_rank = comm_world.Get_rank()
@@ -174,6 +174,14 @@ freq_bin_cntrs = np.array([edge+freq_bw/2 for edge in freq_bin_edges])
 n_cell_baseline_max = round(max(baseline_areas)/A_cell)
 n_cell_vec = np.arange(n_cell_baseline_max, len(fire_freqs)-slice_left_min, n_cell_step)
 
+# Save some things
+if my_rank == 0:
+    np.save("data/freq_bin_cntrs.npy", freq_bin_cntrs)
+    data_root = f"data/Aeff_{Aeff}/tfinal_{t_final}"
+    if not os.path.isdir(data_root):
+        os.makedirs(data_root)
+    np.save(data_root + "/n_cell_vec.npy", n_cell_vec)
+
 # Loop over different resource constraint values
 #baseline_areas = np.array([10]) #km
 for baseline_area in baseline_areas:
@@ -185,16 +193,9 @@ for baseline_area in baseline_areas:
     #n_cell_vec = np.arange(100, 300, 100)
     fif_vec = np.array([constraint/n_cell for n_cell in n_cell_vec])
 
-    # Save a few more things
-    if my_rank == 0:
-        np.save("data/freq_bin_cntrs.npy", freq_bin_cntrs)
-        data_root = f"data/Aeff_{Aeff}/tfinal_{t_final}/const_{constraint}"
-        if not os.path.isdir(data_root):
-            os.makedirs(data_root)
-        np.save(data_root + "/n_cell_vec.npy", n_cell_vec)
-        start_time = timeit.default_timer()
-
     # Draw all freq slice random starting points for this rank
+    if my_rank == 0:
+        start_time = timeit.default_timer()
     freq_left_samples_sub = []
     for fif_i, fif in enumerate(tqdm(fif_vec, disable=(not progress))):
         # Set number of slices to generate for fire freq slices of this size
