@@ -30,14 +30,16 @@ A_cell = 270**2 / 1e6 #km^2
 fif_baseline = 1
 metric_integrand_ratio = 800
 dfri = 0.01
-n_cell_step = 3_000
-num_samples_ratio = 500
+n_cell_step = 5_000#3_000
+num_samples_ratio = 750#500
 progress = True
 #baseline_area = 20 #km^2
 #baseline_areas = np.arange(10, 110, 10)
 baseline_areas = np.arange(10, 155, 5)
 n_cell_baseline_max = round(max(baseline_areas)/A_cell)
-delta_fri_sys = np.arange(-10, 11, 1)
+delta_fri_sys = np.arange(-10, 11, 1) #yrs
+#delta_fri_sys = np.arange(0,11,1)
+rng = np.random.default_rng()
 
 comm_world = MPI.COMM_WORLD
 my_rank = comm_world.Get_rank()
@@ -64,8 +66,6 @@ if my_rank == 0:
     fri_edges = np.concatenate(([0], np.arange(fri_step/2, fri_vec[-1]+fri_step, fri_step)))
 
     jobs = project.find_jobs({'doc.simulated': True, 'Aeff': Aeff, 't_final': t_final, 'method': sim_method})
-    #data_root = f"data/Aeff_{Aeff}/tfinal_{t_final}/deltafri_{delta_fri}"
-    #figs_root = f"figs/Aeff_{Aeff}/tfinal_{t_final}/deltafri_{delta_fri}"
     data_root = f"data/Aeff_{Aeff}/tfinal_{t_final}"
     figs_root = f"figs/Aeff_{Aeff}/tfinal_{t_final}"
     if not os.path.isdir(data_root):
@@ -104,7 +104,6 @@ if my_rank == 0:
             ax.set_xlabel('<FRI>')
             ax.set_ylabel(metric)
             print(f"on metric {metric}")
-            #figs_root = f"figs/Aeff_{Aeff}/tfinal_{t_final}/deltafri_{delta_fri}/metric_{metric}"
             if not os.path.isdir(figs_root):
                 os.makedirs(figs_root)
             fig.savefig(figs_root + f"/sensitivity_{metric}", bbox_inches='tight')
@@ -152,10 +151,6 @@ if my_rank == 0:
     with open("../model_fitting/mortality/map.json", "r") as handle:
         mort_params = json.load(handle)
     K_adult = mort_params['K_adult']
-
-    ## Initialize data for max(<r>) across (constraint, n_cell, delta_fri) 
-    #n_cell_vec = np.arange(n_cell_baseline_max, len(fri_flat)-slice_left_min, n_cell_step)
-    #delta_fri_phase = np.empty((len(baseline_areas), len(n_cell_vec), len(delta_fri_sys)))
 # Broadcast some data to all ranks
 metric_data = comm_world.bcast(metric_data)
 K_adult = comm_world.bcast(K_adult)
@@ -170,19 +165,20 @@ mapindices = comm_world.bcast(mapindices)
 # Generate resource allocation scenarios shared across delta_fri
 # Convert fri to freq, with added uncertainty on fri
 fire_freqs = 1 / (fri_flat + max(delta_fri_sys)) #note we use the max increase in fri
+#fri_max_uncertain = fri_flat + rng.normal(0, max(delta_fri_sys), len(fri_flat))
+#fri_max_uncertain = np.where(fri_max_uncertain > 1, fri_max_uncertain, 1)
+#fire_freqs = 1 / fri_max_uncertain
 # Sort fire frequency 
 freq_argsort = np.argsort(fire_freqs)
 fire_freqs_sorted = fire_freqs[freq_argsort]
-## Get bins of initial fire frequency for phase data
 slice_left_min = np.nonzero(fire_freqs_sorted > (1/max_fri))[0][0]
-#freq_range = fire_freqs_sorted[-1] - fire_freqs_sorted[slice_left_min]
-#freq_bw = freq_range/20
-#freq_bin_edges = np.arange(fire_freqs_sorted[slice_left_min], fire_freqs_sorted[-1], freq_bw)
-#freq_bin_cntrs = np.array([edge+freq_bw/2 for edge in freq_bin_edges])
 # Generate resource allocation scenarios
 n_cell_vec = np.arange(n_cell_baseline_max, len(fire_freqs)-slice_left_min, n_cell_step)
 
 if my_rank == 0:
+    # Save shared n_cell_vec
+    np.save(data_root + "/n_cell_vec.npy", n_cell_vec)
+
     # Initialize data for max(<r>) across (constraint, n_cell, delta_fri) 
     delta_fri_phase = np.empty((len(baseline_areas), len(n_cell_vec), len(delta_fri_sys)))
 
@@ -190,6 +186,10 @@ if my_rank == 0:
 for delta_fri_i, delta_fri in enumerate(delta_fri_sys): 
     # Convert fri to freq, with added uncertainty on fri
     fire_freqs = 1 / (fri_flat + delta_fri)
+    #fri_uncertain = fri_flat + rng.normal(0, delta_fri, len(fri_flat))
+    #fri_min = 5
+    #fri_uncertain = np.where(fri_uncertain > fri_min, fri_uncertain, fri_min)
+    #fire_freqs = 1 / fri_uncertain
     # Sort fire frequency 
     freq_argsort = np.argsort(fire_freqs)
     fire_freqs_sorted = fire_freqs[freq_argsort]
@@ -199,7 +199,8 @@ for delta_fri_i, delta_fri in enumerate(delta_fri_sys):
     # Get bins of initial fire frequency for phase data
     slice_left_min = np.nonzero(fire_freqs_sorted > (1/max_fri))[0][0]
     freq_range = fire_freqs_sorted[-1] - fire_freqs_sorted[slice_left_min]
-    freq_bw = freq_range/20
+    #freq_bw = freq_range/20
+    freq_bw = 0.002
     freq_bin_edges = np.arange(fire_freqs_sorted[slice_left_min], fire_freqs_sorted[-1], freq_bw)
     freq_bin_cntrs = np.array([edge+freq_bw/2 for edge in freq_bin_edges])
 
@@ -207,11 +208,11 @@ for delta_fri_i, delta_fri in enumerate(delta_fri_sys):
     #n_cell_vec = np.arange(n_cell_baseline_max, len(fire_freqs)-slice_left_min, n_cell_step)
 
     if my_rank == 0:
+        print(f"delta_fri: {delta_fri}")
         # Save some things
         data_root = f"data/Aeff_{Aeff}/tfinal_{t_final}/deltafri_{delta_fri}"
         if not os.path.isdir(data_root):
             os.makedirs(data_root)
-        np.save(data_root + "/n_cell_vec.npy", n_cell_vec)
         np.save(data_root + "/freq_bin_cntrs.npy", freq_bin_cntrs)
 
     # Loop over different resource constraint values
