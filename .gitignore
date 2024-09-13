@@ -27,3 +27,4 @@ FDE_current.txt
 *.asc
 *map_ncell*
 data
+optimal_fire
