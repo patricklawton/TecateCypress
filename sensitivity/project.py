@@ -89,5 +89,23 @@ def compute_decay_rate(job):
             job.data[f'decay_rate/{b}'] = popt[0] / line(x[0], *popt)
     job.doc['decay_rate_computed'] = True
 
+#@FlowProject.pre(lambda job: job.doc.get('simulated'))
+#@FlowProject.post(lambda job: job.doc.get('mu_s_computed'))
+#@FlowProject.operation
+#def compute_decay_rate(job):
+#    with job.data:
+#        census_t = np.array(job.data["census_t"])
+#        for b in b_vec:
+#            N_tot_mean = np.array(job.data[f"N_tot_mean/{b}"])
+#
+#            burn_in_end_i = 200
+#            final_i = len(N_tot_mean)
+#
+#            t = census_t[burn_in_end_i:final_i]
+#            N_mean_t = N_tot_mean[burn_in_end_i:final_i]
+#
+#            job.data[f'mu_s/{b}'] = 
+#    job.doc['mu_s_computed'] = True
+
 if __name__ == "__main__":
     FlowProject().main()
