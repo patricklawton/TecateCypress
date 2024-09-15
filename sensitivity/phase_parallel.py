@@ -13,6 +13,7 @@ import pickle
 import copy
 import sys
 from global_functions import adjustmaps, plot_phase
+import itertools
 
 # Some constants
 metrics = ['mu_s']#['r', 'Nf', 'g']
@@ -37,9 +38,9 @@ progress = True
 #baseline_areas = np.arange(10, 110, 10)
 baseline_areas = np.arange(10, 155, 5)
 n_cell_baseline_max = round(max(baseline_areas)/A_cell)
-#delta_fri_sys = np.arange(-10, 11, 1) #yrs
+delta_fri_sys = np.arange(-10, 11, 1) #yrs
 #delta_fri_sys = np.arange(0,11,1)
-delta_fri_sys = [0]
+#delta_fri_sys = [0]
 rng = np.random.default_rng()
 
 comm_world = MPI.COMM_WORLD
@@ -94,9 +95,13 @@ if my_rank == 0:
                 all_metric = np.append(all_metric, metric_vec)
                 
             metric_min, metric_max = (np.quantile(all_metric, 1-metric_thresh), np.quantile(all_metric, metric_thresh))
-            metric_bw = (metric_max - metric_min) / metric_bw_ratio
-            #metric_bw = 0.001
-            metric_edges = np.arange(metric_min, metric_max + metric_bw, metric_bw)
+            if metric == 'mu_s':
+                coarse_grained = np.arange(metric_min, -0.02, 0.02)
+                fine_grained = np.arange(-0.02, metric_max + 0.001, 0.0001)
+                metric_edges = np.concatenate((coarse_grained[:-1], fine_grained))
+            else:
+                metric_bw = (metric_max - metric_min) / metric_bw_ratio
+                metric_edges = np.arange(metric_min, metric_max + metric_bw, metric_bw)
             
             # First plot the metric probability density
             fig, ax = plt.subplots(figsize=(13,8))
@@ -372,8 +377,18 @@ for delta_fri_i, delta_fri in enumerate(delta_fri_sys):
                     metric_expect = 0
                     if metric != "Nf":
                         metric_hist = metric_data[metric]['metric_hist']
-                        dm = (max(metric_hist[2]) - min(metric_hist[2])) / metric_integrand_ratio
-                        metric_vals = np.arange(min(metric_hist[2]), max(metric_hist[2])+dm, dm)
+                        if metric == 'mu_s':
+                            metric_edges = metric_hist[2]
+                            metric_vals = []
+                            bw_ratio = 1000
+                            diffs = np.diff(metric_edges)
+                            for edge_i, edge in enumerate(metric_edges[:-1]):
+                                dm = diffs[edge_i] / bw_ratio
+                                metric_vals.append(list(np.arange(edge, metric_edges[edge_i+1]+dm, dm)))
+                            metric_vals = np.array(list(itertools.chain.from_iterable(metric_vals)))
+                        else:
+                            dm = (max(metric_hist[2]) - min(metric_hist[2])) / metric_integrand_ratio
+                            metric_vals = np.arange(min(metric_hist[2]), max(metric_hist[2])+dm, dm)
                     for fri_i in range(len(fri_edges) - 1):
                         # Get the expected values in this fri bin
                         fri_slice = fris[(fris >= fri_edges[fri_i]) & (fris < fri_edges[fri_i+1])]
@@ -386,7 +401,7 @@ for delta_fri_i, delta_fri in enumerate(delta_fri_sys):
 
                         # Now get <metric>
                         if metric != "Nf":
-                            P_metric_fri = scipy.stats.rv_histogram((metric_hist[0][fri_i], metric_hist[2]))
+                            P_metric_fri = scipy.stats.rv_histogram((metric_hist[0][fri_i], metric_hist[2]), density=True)
                             metric_expect_fri = np.trapz(y=P_metric_fri.pdf(metric_vals)*metric_vals, x=metric_vals)
                             metric_expect += metric_expect_fri * P_dfri
                         else:
