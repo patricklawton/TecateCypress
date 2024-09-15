@@ -89,23 +89,47 @@ def compute_decay_rate(job):
             job.data[f'decay_rate/{b}'] = popt[0] / line(x[0], *popt)
     job.doc['decay_rate_computed'] = True
 
-#@FlowProject.pre(lambda job: job.doc.get('simulated'))
-#@FlowProject.post(lambda job: job.doc.get('mu_s_computed'))
-#@FlowProject.operation
-#def compute_decay_rate(job):
-#    with job.data:
-#        census_t = np.array(job.data["census_t"])
-#        for b in b_vec:
-#            N_tot_mean = np.array(job.data[f"N_tot_mean/{b}"])
-#
-#            burn_in_end_i = 200
-#            final_i = len(N_tot_mean)
-#
-#            t = census_t[burn_in_end_i:final_i]
-#            N_mean_t = N_tot_mean[burn_in_end_i:final_i]
-#
-#            job.data[f'mu_s/{b}'] = 
-#    job.doc['mu_s_computed'] = True
+@FlowProject.pre(lambda job: job.doc.get('simulated'))
+@FlowProject.post(lambda job: job.doc.get('mu_s_computed'))
+@FlowProject.operation
+def compute_mu_s(job):
+    with job.data:
+        census_t = np.array(job.data["census_t"])
+        for b in b_vec:
+            N_tot_mean = np.array(job.data[f"N_tot_mean/{b}"])
+
+            burn_in_end_i = 200
+
+            zero_is = np.nonzero(N_tot_mean == 0)[0]
+            if len(zero_is) > 0:
+                if (min(zero_is) < burn_in_end_i) or ((min(zero_is) - burn_in_end_i) < 300):
+                    start_i = 0
+                    final_i = min(zero_is)
+                    tooquick = True
+                else:
+                    start_i = burn_in_end_i
+                    final_i = min(zero_is)
+                    tooquick = False
+            else:
+                start_i = burn_in_end_i
+                final_i = len(N_tot_mean)
+                tooquick = False
+
+            t = census_t[start_i:final_i]
+            N_mean_t = N_tot_mean[start_i:final_i]
+            if tooquick:
+                mu_s = -np.log(N_mean_t[0]) / len(t)
+            else:
+                mu_s = np.sum(np.log(N_mean_t[1:] / np.roll(N_mean_t, 1)[1:])) / len(t)
+
+            #if (len(zero_is) > 0) and ((min(zero_is) < burn_in_end_i) or ((min(zero_is) - burn_in_end_i) < 300)):
+            #    ...
+            #else:
+            #    t = census_t[start_i:final_i]
+            #    N_mean_t = N_tot_mean[start_i:final_i]
+                
+            job.data[f'mu_s/{b}'] = mu_s 
+    job.doc['mu_s_computed'] = True
 
 if __name__ == "__main__":
     FlowProject().main()

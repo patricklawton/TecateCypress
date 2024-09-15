@@ -23,7 +23,7 @@ def plot_phase(phase_space, metric, metric_nochange, freq_bin_cntrs, n_cell_vec,
     '''doing this for now bc some runs are bad'''
     if (metric=='r') or (metric=='g'):
         phase_max = np.quantile(phase_flat[phase_flat != np.ma.masked], 0.98)
-    if (metric=='Nf') or (metric=='xs'):
+    if metric in ['Nf', 'xs', 'mu_s']:
         phase_max = max(phase_flat[phase_flat != np.ma.masked])
     cmap.set_bad('white')
     im = ax.imshow(phase_space, norm=matplotlib.colors.Normalize(vmin=metric_nochange, vmax=phase_max), cmap=cmap)

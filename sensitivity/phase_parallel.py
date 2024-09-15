@@ -15,7 +15,7 @@ import sys
 from global_functions import adjustmaps, plot_phase
 
 # Some constants
-metrics = ['r']#, 'Nf', 'g']
+metrics = ['mu_s']#['r', 'Nf', 'g']
 overwrite_metrics = False
 metric_thresh = 0.98
 metric_bw_ratio = 50
@@ -37,8 +37,9 @@ progress = True
 #baseline_areas = np.arange(10, 110, 10)
 baseline_areas = np.arange(10, 155, 5)
 n_cell_baseline_max = round(max(baseline_areas)/A_cell)
-delta_fri_sys = np.arange(-10, 11, 1) #yrs
+#delta_fri_sys = np.arange(-10, 11, 1) #yrs
 #delta_fri_sys = np.arange(0,11,1)
+delta_fri_sys = [0]
 rng = np.random.default_rng()
 
 comm_world = MPI.COMM_WORLD
@@ -82,7 +83,7 @@ if my_rank == 0:
         metric_data = {m: {} for m in metrics}
         for metric in [m for m in metrics if m != "Nf"]: #metrics:
             if metric == 'r': metric_label = 'fractional_change'
-            elif metric == 'Nf': metric_label = metric
+            elif metric in ['Nf', 'mu_s']: metric_label = metric
             elif metric == 'g': metric_label = 'decay_rate'
             all_metric = np.array([])
             for job_i, job in enumerate(jobs):
@@ -94,11 +95,14 @@ if my_rank == 0:
                 
             metric_min, metric_max = (np.quantile(all_metric, 1-metric_thresh), np.quantile(all_metric, metric_thresh))
             metric_bw = (metric_max - metric_min) / metric_bw_ratio
+            #metric_bw = 0.001
             metric_edges = np.arange(metric_min, metric_max + metric_bw, metric_bw)
-
+            
+            # First plot the metric probability density
             fig, ax = plt.subplots(figsize=(13,8))
             metric_hist = ax.hist2d(all_fri, all_metric, bins=[fri_edges, metric_edges], 
-                             norm=matplotlib.colors.LogNorm(vmax=int(len(all_metric)/len(b_vec))))
+                             norm=matplotlib.colors.LogNorm(vmax=int(len(all_metric)/len(b_vec))), 
+                             density=False)
             cbar = ax.figure.colorbar(metric_hist[-1], ax=ax, location="right")
             cbar.ax.set_ylabel('demographic robustness', rotation=-90, fontsize=10, labelpad=20)
             ax.set_xlabel('<FRI>')
@@ -108,6 +112,9 @@ if my_rank == 0:
                 os.makedirs(figs_root)
             fig.savefig(figs_root + f"/sensitivity_{metric}", bbox_inches='tight')
             plt.close(fig)
+            # Now remake with density=True for calculations later
+            metric_hist = np.histogram2d(all_fri, all_metric, bins=[fri_edges, metric_edges], 
+                                         density=True)
 
             metric_data[metric].update({'all_metric': all_metric})
             metric_data[metric].update({'metric_hist': metric_hist[:3]})
@@ -375,6 +382,7 @@ for delta_fri_i, delta_fri in enumerate(delta_fri_sys):
                         # First get the probability of being in the fri bin
                         fri_vals = np.arange(fri_edges[fri_i], fri_edges[fri_i+1], dfri)
                         P_dfri = np.trapz(y=P_fri_xo.pdf(fri_vals), x=fri_vals)
+                        #P_dfri = P_fri_xo.expect(func=lambda x: dfri, lb=fri_edges[fri_i], ub=fri_edges[fri_i+1])
 
                         # Now get <metric>
                         if metric != "Nf":
