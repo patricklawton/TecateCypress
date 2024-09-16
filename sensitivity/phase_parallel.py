@@ -401,8 +401,13 @@ for delta_fri_i, delta_fri in enumerate(delta_fri_sys):
 
                         # Now get <metric>
                         if metric != "Nf":
-                            P_metric_fri = scipy.stats.rv_histogram((metric_hist[0][fri_i], metric_hist[2]), density=True)
-                            metric_expect_fri = np.trapz(y=P_metric_fri.pdf(metric_vals)*metric_vals, x=metric_vals)
+                            metric_fri = metric_hist[0][fri_i]
+                            P_metric_fri = scipy.stats.rv_histogram((metric_fri, metric_hist[2]), density=True)
+                            m_min = metric_hist[2][min(np.nonzero(metric_fri)[0])]
+                            m_max = metric_hist[2][max(np.nonzero(metric_fri)[0])]
+                            metric_filt = (metric_vals >= m_min) & (metric_vals <= m_max)
+                            m = metric_vals[metric_filt]
+                            metric_expect_fri = np.trapz(y=P_metric_fri.pdf(m)*m, x=m)
                             metric_expect += metric_expect_fri * P_dfri
                         else:
                             sdm_slice = sdm_sorted[(fris >= fri_edges[fri_i]) & (fris < fri_edges[fri_i+1])]
