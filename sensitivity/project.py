@@ -127,7 +127,6 @@ def compute_mu_s(job):
 @FlowProject.post(lambda job: job.doc.get('lambda_s_computed'))
 @FlowProject.operation
 def compute_lambda_s(job):
-    print('job id', job.id)
     with job.data:
         census_t = np.array(job.data["census_t"])
         burn_in_end_i = 200
@@ -139,11 +138,8 @@ def compute_lambda_s(job):
 
             # First handle replicas where extirpations occur
             lam_s_extir = []
-            #for N_t in N_tot:
             for rep_i in extirpated_replicas:
                 N_t = N_tot[rep_i]
-                #zero_is = np.nonzero(N_t == 0)[0]
-                #zero_i_min = job.sp.t_final * (1 - (1 - (nonzero_counts[rep_i] - 1)))
                 zero_i_min = nonzero_counts[rep_i]
                 final_i = zero_i_min
                 if (zero_i_min < burn_in_end_i) or ((zero_i_min - burn_in_end_i) < 300):
@@ -157,7 +153,6 @@ def compute_lambda_s(job):
                 if tooquick:
                     lam_s_replica = -np.log(N_slice[0]) / len(t)
                 else:
-                    if np.any(N_slice == 0): print(np.nonzero(N_slice == 0)[0], start_i, final_i, b)
                     lam_s_replica = np.sum(np.log(N_slice[1:] / np.roll(N_slice, 1)[1:])) / len(t)
                 lam_s_extir.append(lam_s_replica)
 
@@ -169,7 +164,6 @@ def compute_lambda_s(job):
             log_ratios = np.log(N_slice[:,1:] / np.roll(N_slice, 1, 1)[:,1:])
             lam_s_vec = np.sum(log_ratios, axis=1) / N_slice.shape[1]
 
-            #lam_s_all = np.concatenate((lam_s_vec, lam_s_extir))
             job.data[f'lambda_s/{b}'] = np.mean(np.concatenate((lam_s_vec, lam_s_extir))) 
 
     job.doc['lambda_s_computed'] = True

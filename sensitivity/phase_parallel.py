@@ -17,7 +17,7 @@ import itertools
 
 # Some constants
 metrics = ['lambda_s']#['mu_s']#['r', 'Nf', 'g']
-overwrite_metrics = True
+overwrite_metrics = False
 metric_thresh = 0.98
 metric_bw_ratio = 50
 c = 1.42
@@ -99,6 +99,11 @@ if my_rank == 0:
             if metric == 'mu_s':
                 coarse_grained = np.arange(metric_min, -0.02, 0.02)
                 fine_grained = np.arange(-0.02, metric_max + 0.001, 0.0001)
+                metric_edges = np.concatenate((coarse_grained[:-1], fine_grained))
+            elif metric == 'lambda_s':
+                coarse_grained = np.arange(metric_min, -0.2, 0.04)
+                fine_step = 0.003
+                fine_grained = np.arange(-0.2, metric_max + fine_step, fine_step)
                 metric_edges = np.concatenate((coarse_grained[:-1], fine_grained))
             else:
                 metric_bw = (metric_max - metric_min) / metric_bw_ratio
@@ -378,7 +383,7 @@ for delta_fri_i, delta_fri in enumerate(delta_fri_sys):
                     metric_expect = 0
                     if metric != "Nf":
                         metric_hist = metric_data[metric]['metric_hist']
-                        if metric == 'mu_s':
+                        if metric in ['mu_s', 'lambda_s']:
                             metric_edges = metric_hist[2]
                             metric_vals = []
                             bw_ratio = 1000
