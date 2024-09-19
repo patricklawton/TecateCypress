@@ -216,23 +216,19 @@ class Model:
             fire_indices = np.argwhere(t_fire_pop!=0).flatten()
             # Handle inter-fire intervals
             for fire_num, fire_i in enumerate(fire_indices):
-                #print(f'fire_num {fire_num}')
                 # Initialize first interval with specified initial abundance
                 if fire_i == min(fire_indices):
                     t_eval = np.arange(self.delta_t, fire_i+self.delta_t)
                     t_eval = t_eval + self.init_age[0]
-                    #print(f"t_eval: {t_eval}")
                     init_i = 0
                     N_i = self.K_adult
                 # Otherwise set initial conditions for a given interval
                 else:
                     t_eval = np.arange(self.delta_t, fire_i - fire_indices[fire_num-1] + self.delta_t, self.delta_t)
-                    #print(f"t_eval: {t_eval}")
                     init_i = fire_indices[fire_num-1]
                     if num_births < 1:
                         num_births = 0
                     N_i = num_births
-                    #print(f"N_i: {N_i}")
                 # Handle cases with nonzero abundance
                 if N_i > 0:
                     if len(t_eval) > 1:
@@ -244,36 +240,26 @@ class Model:
                             num_births = _get_num_births(len(t_eval) + self.init_age[0], sol.y[0][-1])
                         else:
                             t_bounds = [self.delta_t, fire_i - fire_indices[fire_num-1] + self.delta_t]
-                            #t_bounds = [self.delta_t, fire_i]
                             sol = solve_ivp(_dNdt, t_bounds, [N_i], t_eval=t_eval) 
                             # Set any abundances < 1 to zero
                             sol.y[0] = np.where(sol.y[0] > 1, sol.y[0], 0)
                             num_births = _get_num_births(len(t_eval), sol.y[0][-1])
-                            if np.any(sol.y[0]==0) and (len(np.nonzero(sol.y[0]==0)[0]) == 1):
-                                print(f"Zero ab occurs {np.nonzero(sol.y[0]==0)[0][0]} timesteps after fire {fire_num} for population {pop_i}. Integration bounds were {t_bounds} evaluated btwn {t_eval[0], t_eval[-1]}. dN/dt in this interval was {[np.round(_dNdt(t,N),2) for (t,N) in zip(t_eval, sol.y[0])]}")
-                        #print(f"solution from timestep {init_i} to {fire_i-1}")
-                        #print(sol.y)
                         self.N_tot_vec[pop_i][init_i:fire_i] = sol.y[0]
                     # Handle case of consecutive fires or first fire on timestep 1
                     elif len(t_eval) == 1:
                         # Get num births for first fire on timestep 1 
                         if fire_i == min(fire_indices):
                             num_births = _get_num_births(len(t_eval) + self.init_age[0], N_i)
-                        #print(f"solution from timestep {init_i} to {fire_i-1}")
-                        #print(num_births)
                         self.N_tot_vec[pop_i][init_i] = num_births
                         # Get num births following consecutive fire
                         num_births = _get_num_births(len(t_eval), num_births)
-                        #print(f"num_births after consecutive fire: {num_births}")
                     # Handle case where fire occurs on timestep 0
                     elif len(t_eval) == 0:
                         num_births = _get_num_births(1 + self.init_age[0], N_i)
-                        #print(f"num_births following fire on timestep {init_i}: {num_births}")
                         if num_births < 1:
                             num_births = 0
                 # If pop extirpated, keep abundance at zero
                 else:
-                    #print(f"solution from timestep {init_i} to {fire_i-1}: 0")
                     self.N_tot_vec[pop_i][init_i:fire_i+1] = 0.
                     num_births = 0
 
@@ -298,7 +284,6 @@ class Model:
             elif len(self.t_vec) == fire_i+1:
                 fire_num += 1
                 num_births = _get_num_births(len(t_eval) - 1, self.N_tot_vec[pop_i][-2])
-                #print(f"num_births on final timestep: {num_births}")
                 if num_births < 1:
                     num_births = 0.
                 self.N_tot_vec[pop_i][-1] = num_births
