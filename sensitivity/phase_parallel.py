@@ -16,8 +16,8 @@ from global_functions import adjustmaps, plot_phase
 import itertools
 
 # Some constants
-metrics = ['mu_s']#['r', 'Nf', 'g']
-overwrite_metrics = False
+metrics = ['lambda_s']#['mu_s']#['r', 'Nf', 'g']
+overwrite_metrics = True
 metric_thresh = 0.98
 metric_bw_ratio = 50
 c = 1.42
@@ -84,7 +84,7 @@ if my_rank == 0:
         metric_data = {m: {} for m in metrics}
         for metric in [m for m in metrics if m != "Nf"]: #metrics:
             if metric == 'r': metric_label = 'fractional_change'
-            elif metric in ['Nf', 'mu_s']: metric_label = metric
+            elif metric in ['Nf', 'mu_s', 'lambda_s']: metric_label = metric
             elif metric == 'g': metric_label = 'decay_rate'
             all_metric = np.array([])
             for job_i, job in enumerate(jobs):
@@ -95,6 +95,7 @@ if my_rank == 0:
                 all_metric = np.append(all_metric, metric_vec)
                 
             metric_min, metric_max = (np.quantile(all_metric, 1-metric_thresh), np.quantile(all_metric, metric_thresh))
+            print(metric_min, metric_max)
             if metric == 'mu_s':
                 coarse_grained = np.arange(metric_min, -0.02, 0.02)
                 fine_grained = np.arange(-0.02, metric_max + 0.001, 0.0001)

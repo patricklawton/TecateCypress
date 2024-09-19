@@ -37,10 +37,11 @@ def run_sims(job):
         model.set_t_vec(t_vec)
         model.set_weibull_fire(b=b, c=1.42)
         model.generate_fires()
-        model.simulate(method=job.sp.method, census_every=1, progress=True) 
+        model.simulate(method=job.sp.method, census_every=1, progress=False) 
         # Store some results
         N_tot_mean = model.N_tot_vec.mean(axis=0)
         job.data[f'N_tot_mean/{b}'] = N_tot_mean 
+        job.data[f'N_tot/{b}'] = model.N_tot_vec
         frac_extirpated = np.array([sum(model.N_tot_vec[:,t_i]==0)/model.N_tot_vec.shape[0] for t_i in range(model.N_tot_vec.shape[1])])
         job.data[f'frac_extirpated/{b}'] = frac_extirpated
 
@@ -97,9 +98,7 @@ def compute_mu_s(job):
         census_t = np.array(job.data["census_t"])
         for b in b_vec:
             N_tot_mean = np.array(job.data[f"N_tot_mean/{b}"])
-
             burn_in_end_i = 200
-
             zero_is = np.nonzero(N_tot_mean == 0)[0]
             if len(zero_is) > 0:
                 if (min(zero_is) < burn_in_end_i) or ((min(zero_is) - burn_in_end_i) < 300):
@@ -121,15 +120,59 @@ def compute_mu_s(job):
                 mu_s = -np.log(N_mean_t[0]) / len(t)
             else:
                 mu_s = np.sum(np.log(N_mean_t[1:] / np.roll(N_mean_t, 1)[1:])) / len(t)
-
-            #if (len(zero_is) > 0) and ((min(zero_is) < burn_in_end_i) or ((min(zero_is) - burn_in_end_i) < 300)):
-            #    ...
-            #else:
-            #    t = census_t[start_i:final_i]
-            #    N_mean_t = N_tot_mean[start_i:final_i]
-                
             job.data[f'mu_s/{b}'] = mu_s 
     job.doc['mu_s_computed'] = True
+
+@FlowProject.pre(lambda job: job.doc.get('simulated'))
+@FlowProject.post(lambda job: job.doc.get('lambda_s_computed'))
+@FlowProject.operation
+def compute_lambda_s(job):
+    with job.data:
+        census_t = np.array(job.data["census_t"])
+        burn_in_end_i = 200
+        for b in b_vec:
+            #N_tot_mean = np.array(job.data[f"N_tot_mean/{b}"])
+            N_tot = np.array(job.data[f"N_tot/{b}"])
+            nonzero_counts = np.count_nonzero(N_tot, axis=1)
+            extirpated_replicas = np.nonzero(nonzero_counts < job.sp.t_final)[0]
+
+            # First handle replicas where extirpations occur
+            lam_s_extir = []
+            #for N_t in N_tot:
+            for rep_i in extirpated_replicas:
+                N_t = N_tot[rep_i]
+                #zero_is = np.nonzero(N_t == 0)[0]
+                #zero_i_min = job.sp.t_final * (1 - (1 - (nonzero_counts[rep_i] - 1)))
+                zero_i_min = nonzero_counts[rep_i]
+                final_i = zero_i_min
+                if (zero_i_min < burn_in_end_i) or ((zero_i_min - burn_in_end_i) < 300):
+                    start_i = 0
+                    tooquick = True
+                else:
+                    start_i = burn_in_end_i
+                    tooquick = False
+                t = census_t[start_i:final_i]
+                N_slice = N_t[start_i:final_i]
+                if tooquick:
+                    lam_s_replica = -np.log(N_slice[0]) / len(t)
+                else:
+                    if len(t) == 0: print(start_i, final_i)
+                    if np.any(N_slice == 0): print(N_slice, '/n', start_i, final_i)
+                    lam_s_replica = np.sum(np.log(N_slice[1:] / np.roll(N_slice, 1)[1:])) / len(t)
+                lam_s_extir.append(lam_s_replica)
+
+            # Now handle cases with no extirpation
+            N_tot = np.delete(N_tot, extirpated_replicas, axis=0)
+            start_i = 200
+            final_i = N_tot.shape[1]
+            N_slice = N_tot[:,start_i:final_i]
+            log_ratios = np.log(N_slice[:,1:] / np.roll(N_slice, 1, 1)[:,1:])
+            lam_s_vec = np.sum(log_ratios, axis=1) / N_slice.shape[1]
+
+            #lam_s_all = np.concatenate((lam_s_vec, lam_s_extir))
+            job.data[f'lambda_s/{b}'] = np.mean(np.concatenate((lam_s_vec, lam_s_extir))) 
+
+    job.doc['lambda_s_computed'] = True
 
 if __name__ == "__main__":
     FlowProject().main()

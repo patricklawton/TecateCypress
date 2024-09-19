@@ -20,9 +20,8 @@ if not os.path.isfile(sd_fn):
 
 A_cell = 270**2 / 10_000 #Ha
 sdm_min = 0.32649827003479004 
-#Aeff_vec = np.array([np.round(A_cell*sdm_min, 2)])
+Aeff_vec = np.array([np.round(A_cell*sdm_min, 2)])
 #Aeff_vec = np.array([np.round(A_cell, 2)])
-Aeff_vec = np.array([np.round(A_cell, 2)])
 t_final_vec = np.array([600])
 demographic_samples_vec = np.array([500])
 method_vec = ["nint"]
