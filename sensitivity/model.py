@@ -187,17 +187,20 @@ class Model:
     def _simulate_nint(self, progress):
         # Instantaneous mortality for numerical integration
         def _dNdt(t, N):
-            # Age-dependent mortality functions
-            m_t = self.alph_m * np.exp(-self.beta_m*t) + self.gamm_m
-            K_t = self.K_seedling * np.exp(-self.kappa*t) + self.K_adult
-            nu_t = self.alph_nu * np.exp(-self.beta_nu*t) + self.gamm_nu
-            delta, theta = (1.05, 0.050000000000000044) #just hardcoding these in
-            eta_t = (theta*2)/((nu_t*(1-m_t)) * (A_o*h_o*self.K_adult) * (delta-1))
-            dens_dep = ((nu_t)*(1-m_t)) / (1 + np.exp(-eta_t*self.K_adult*(N/K_t - self.Aeff)))
-            m_t_N = m_t + dens_dep
-            sigm_m_t = self.sigm_m*np.exp(-self.tau_m*t)
-            epsilon_m_mean = np.exp(self.mu_m + (sigm_m_t**2 / 2))
-            return -m_t_N * N * epsilon_m_mean
+            if N < 0:
+                return 0.0
+            else:
+                # Age-dependent mortality functions
+                m_t = self.alph_m * np.exp(-self.beta_m*t) + self.gamm_m
+                K_t = self.K_seedling * np.exp(-self.kappa*t) + self.K_adult
+                nu_t = self.alph_nu * np.exp(-self.beta_nu*t) + self.gamm_nu
+                delta, theta = (1.05, 0.050000000000000044) #just hardcoding these in
+                eta_t = (theta*2)/((nu_t*(1-m_t)) * (A_o*h_o*self.K_adult) * (delta-1))
+                dens_dep = ((nu_t)*(1-m_t)) / (1 + np.exp(-eta_t*self.K_adult*(N/K_t - self.Aeff)))
+                m_t_N = m_t + dens_dep
+                sigm_m_t = self.sigm_m*np.exp(-self.tau_m*t)
+                epsilon_m_mean = np.exp(self.mu_m + (sigm_m_t**2 / 2))
+                return -m_t_N * N * epsilon_m_mean
 
         # Number of 1 yr old seedlings following fire for numerical integration
         def _get_num_births(t, N):
@@ -223,7 +226,7 @@ class Model:
                     N_i = self.K_adult
                 # Otherwise set initial conditions for a given interval
                 else:
-                    t_eval = np.arange(self.delta_t, fire_i - fire_indices[fire_num-1] + self.delta_t)
+                    t_eval = np.arange(self.delta_t, fire_i - fire_indices[fire_num-1] + self.delta_t, self.delta_t)
                     #print(f"t_eval: {t_eval}")
                     init_i = fire_indices[fire_num-1]
                     if num_births < 1:
@@ -240,10 +243,14 @@ class Model:
                             sol.y[0] = np.where(sol.y[0] > 1, sol.y[0], 0)
                             num_births = _get_num_births(len(t_eval) + self.init_age[0], sol.y[0][-1])
                         else:
-                            sol = solve_ivp(_dNdt, [self.delta_t,fire_i], [N_i], t_eval=t_eval) 
+                            t_bounds = [self.delta_t, fire_i - fire_indices[fire_num-1] + self.delta_t]
+                            #t_bounds = [self.delta_t, fire_i]
+                            sol = solve_ivp(_dNdt, t_bounds, [N_i], t_eval=t_eval) 
                             # Set any abundances < 1 to zero
                             sol.y[0] = np.where(sol.y[0] > 1, sol.y[0], 0)
                             num_births = _get_num_births(len(t_eval), sol.y[0][-1])
+                            if np.any(sol.y[0]==0) and (len(np.nonzero(sol.y[0]==0)[0]) == 1):
+                                print(f"Zero ab occurs {np.nonzero(sol.y[0]==0)[0][0]} timesteps after fire {fire_num} for population {pop_i}. Integration bounds were {t_bounds} evaluated btwn {t_eval[0], t_eval[-1]}. dN/dt in this interval was {[np.round(_dNdt(t,N),2) for (t,N) in zip(t_eval, sol.y[0])]}")
                         #print(f"solution from timestep {init_i} to {fire_i-1}")
                         #print(sol.y)
                         self.N_tot_vec[pop_i][init_i:fire_i] = sol.y[0]
@@ -266,8 +273,7 @@ class Model:
                             num_births = 0
                 # If pop extirpated, keep abundance at zero
                 else:
-                    #print(f"solution from timestep {init_i} to {fire_i-1}")
-                    #print("0")
+                    #print(f"solution from timestep {init_i} to {fire_i-1}: 0")
                     self.N_tot_vec[pop_i][init_i:fire_i+1] = 0.
                     num_births = 0
 

@@ -127,6 +127,7 @@ def compute_mu_s(job):
 @FlowProject.post(lambda job: job.doc.get('lambda_s_computed'))
 @FlowProject.operation
 def compute_lambda_s(job):
+    print('job id', job.id)
     with job.data:
         census_t = np.array(job.data["census_t"])
         burn_in_end_i = 200
@@ -156,8 +157,7 @@ def compute_lambda_s(job):
                 if tooquick:
                     lam_s_replica = -np.log(N_slice[0]) / len(t)
                 else:
-                    if len(t) == 0: print(start_i, final_i)
-                    if np.any(N_slice == 0): print(N_slice, '/n', start_i, final_i)
+                    if np.any(N_slice == 0): print(np.nonzero(N_slice == 0)[0], start_i, final_i, b)
                     lam_s_replica = np.sum(np.log(N_slice[1:] / np.roll(N_slice, 1)[1:])) / len(t)
                 lam_s_extir.append(lam_s_replica)
 
