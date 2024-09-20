@@ -158,7 +158,7 @@ def compute_lambda_s(job):
 
             # Now handle cases with no extirpation
             N_tot = np.delete(N_tot, extirpated_replicas, axis=0)
-            start_i = 200
+            start_i = burn_in_end_i
             final_i = N_tot.shape[1]
             N_slice = N_tot[:,start_i:final_i]
             log_ratios = np.log(N_slice[:,1:] / np.roll(N_slice, 1, 1)[:,1:])

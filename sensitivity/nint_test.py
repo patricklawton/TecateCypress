@@ -20,7 +20,11 @@ for pr in ['mortality', 'fecundity']:
 # Constants
 overwrite_discrete = False
 overwrite_fire = True
-Aeff = 7.29 #2.38
+A_cell = 270**2 / 10_000 #Ha
+sdm_mean = 0.51
+#Aeff = 7.29 
+Aeff = 2.38
+#Aeff = np.round(4*A_cell*sdm_mean)
 #fri = 40
 c = 1.42
 b = 66#fri / gamma(1+1/c)
@@ -76,5 +80,7 @@ model.simulate(method="nint", census_every=1, progress=True)
 N_tot_mean_nint = model.N_tot_vec.mean(axis=0)
 nint_fn = 'nint_data/N_tot_mean_nint.npy'
 np.save(nint_fn, N_tot_mean_nint)
+np.save('nint_data/census_t.npy', model.census_t)
+np.save('nint_data/N_tot.npy', model.N_tot_vec)
 elapsed = timeit.default_timer() - start_time
 print('{} seconds'.format(elapsed))
