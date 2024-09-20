@@ -386,7 +386,7 @@ for delta_fri_i, delta_fri in enumerate(delta_fri_sys):
                         if metric in ['mu_s', 'lambda_s']:
                             metric_edges = metric_hist[2]
                             metric_vals = []
-                            bw_ratio = 1000
+                            bw_ratio = 100
                             diffs = np.diff(metric_edges)
                             for edge_i, edge in enumerate(metric_edges[:-1]):
                                 dm = diffs[edge_i] / bw_ratio
