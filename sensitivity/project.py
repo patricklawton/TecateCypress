@@ -151,9 +151,11 @@ def compute_lambda_s(job):
                 t = census_t[start_i:final_i]
                 N_slice = N_t[start_i:final_i]
                 if tooquick:
-                    lam_s_replica = -np.log(N_slice[0]) / len(t)
+                    #lam_s_replica = -np.log(N_slice[0]) / len(t)
+                    lam_s_replica = np.exp(-np.log(N_slice[0]) / len(t))
                 else:
-                    lam_s_replica = np.sum(np.log(N_slice[1:] / np.roll(N_slice, 1)[1:])) / len(t)
+                    #lam_s_replica = np.sum(np.log(N_slice[1:] / np.roll(N_slice, 1)[1:])) / len(t)
+                    lam_s_replica = np.product(N_slice[1:] / np.roll(N_slice, 1)[1:]) ** (1/len(t))
                 lam_s_extir.append(lam_s_replica)
 
             # Now handle cases with no extirpation
@@ -161,8 +163,10 @@ def compute_lambda_s(job):
             start_i = burn_in_end_i
             final_i = N_tot.shape[1]
             N_slice = N_tot[:,start_i:final_i]
-            log_ratios = np.log(N_slice[:,1:] / np.roll(N_slice, 1, 1)[:,1:])
-            lam_s_vec = np.sum(log_ratios, axis=1) / N_slice.shape[1]
+            #log_ratios = np.log(N_slice[:,1:] / np.roll(N_slice, 1, 1)[:,1:])
+            #lam_s_vec = np.sum(log_ratios, axis=1) / N_slice.shape[1]
+            lam_products = np.product(N_slice[:,1:] / np.roll(N_slice, 1, 1)[:,1:], axis=1)
+            lam_s_vec = lam_products ** (1/N_slice.shape[1]) 
 
             job.data[f'lambda_s/{b}'] = np.mean(np.concatenate((lam_s_vec, lam_s_extir))) 
 

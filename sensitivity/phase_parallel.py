@@ -35,12 +35,13 @@ n_cell_step = 5_000#3_000
 num_samples_ratio = 750#500
 progress = True
 #baseline_area = 20 #km^2
-#baseline_areas = np.arange(10, 110, 10)
-baseline_areas = np.arange(10, 155, 5)
+#baseline_areas = np.arange(10, 155, 5)
+baseline_areas = np.arange(10, 150, 10)
 n_cell_baseline_max = round(max(baseline_areas)/A_cell)
-delta_fri_sys = np.arange(-10, 11, 1) #yrs
+#delta_fri_sys = np.arange(-10, 11, 1) #yrs
+#delta_fri_sys = np.concatenate(([0], range(-10,0), range(1,11)))
 #delta_fri_sys = np.arange(0,11,1)
-#delta_fri_sys = [0]
+delta_fri_sys = [0]
 rng = np.random.default_rng()
 
 comm_world = MPI.COMM_WORLD
@@ -83,6 +84,7 @@ if my_rank == 0:
     if (not os.path.isfile(fn)) or overwrite_metrics:
         metric_data = {m: {} for m in metrics}
         for metric in [m for m in metrics if m != "Nf"]: #metrics:
+            print(f"Creating {metric} histogram") 
             if metric == 'r': metric_label = 'fractional_change'
             elif metric in ['Nf', 'mu_s', 'lambda_s']: metric_label = metric
             elif metric == 'g': metric_label = 'decay_rate'
@@ -95,15 +97,16 @@ if my_rank == 0:
                 all_metric = np.append(all_metric, metric_vec)
                 
             metric_min, metric_max = (np.quantile(all_metric, 1-metric_thresh), np.quantile(all_metric, metric_thresh))
-            print(metric_min, metric_max)
             if metric == 'mu_s':
                 coarse_grained = np.arange(metric_min, -0.02, 0.02)
                 fine_grained = np.arange(-0.02, metric_max + 0.001, 0.0001)
                 metric_edges = np.concatenate((coarse_grained[:-1], fine_grained))
             elif metric == 'lambda_s':
-                coarse_grained = np.arange(metric_min, -0.2, 0.04)
-                fine_step = 0.003
-                fine_grained = np.arange(-0.2, metric_max + fine_step, fine_step)
+                coarse_step = 0.02
+                fine_step = coarse_step/100
+                fine_start = 0.6
+                coarse_grained = np.arange(metric_min, fine_start, coarse_step)
+                fine_grained = np.arange(fine_start, metric_max + fine_step, fine_step)
                 metric_edges = np.concatenate((coarse_grained[:-1], fine_grained))
             else:
                 metric_bw = (metric_max - metric_min) / metric_bw_ratio
@@ -236,6 +239,7 @@ for delta_fri_i, delta_fri in enumerate(delta_fri_sys):
     # Loop over different resource constraint values
     #baseline_areas = np.array([10]) #km
     for constraint_i, baseline_area in enumerate(baseline_areas):
+        if my_rank == 0: print(f"On baseline area {baseline_area}")
         # Resort fire freqs
         fire_freqs_sorted = fire_freqs[freq_argsort]
         # Get some info for this allocation scenario
@@ -303,7 +307,7 @@ for delta_fri_i, delta_fri in enumerate(delta_fri_sys):
                         os.remove(os.path.join(data_root, item))
 
             # Sample random slices of init fire freqs for each intervention freq
-            for fif_i, fif in enumerate(tqdm(fif_vec, disable=False)):#(not progress))):
+            for fif_i, fif in enumerate(tqdm(fif_vec, disable=True)):#(not progress))):
                 # Set number of slices to generate for fire freq slices of this size
                 n_cell = n_cell_vec[np.nonzero(fif_vec == fif)[0][0]]
                 slice_left_max = len(fire_freqs) - n_cell - 1 #slice needs to fit
@@ -376,6 +380,7 @@ for delta_fri_i, delta_fri in enumerate(delta_fri_sys):
 
                     # Get new probability distribution across fire return interval
                     fris = 1/fire_freqs_sorted
+                    fris = fris[fris <= max(fri_vec)] # cut off fri distribution at max fri we simulated, shouldn't leave this forever
                     fri_hist = np.histogram(fris, bins=50, density=True);
                     P_fri_xo = scipy.stats.rv_histogram((fri_hist[0], fri_hist[1]))
 
@@ -386,12 +391,15 @@ for delta_fri_i, delta_fri in enumerate(delta_fri_sys):
                         if metric in ['mu_s', 'lambda_s']:
                             metric_edges = metric_hist[2]
                             metric_vals = []
-                            bw_ratio = 100
                             diffs = np.diff(metric_edges)
+                            #bw_ratio = 100
+                            #for edge_i, edge in enumerate(metric_edges[:-1]):
+                            #    dm = diffs[edge_i] / bw_ratio
+                            #    metric_vals.append(list(np.arange(edge, metric_edges[edge_i+1]+dm, dm)))
+                            #metric_vals = np.array(list(itertools.chain.from_iterable(metric_vals)))
                             for edge_i, edge in enumerate(metric_edges[:-1]):
-                                dm = diffs[edge_i] / bw_ratio
-                                metric_vals.append(list(np.arange(edge, metric_edges[edge_i+1]+dm, dm)))
-                            metric_vals = np.array(list(itertools.chain.from_iterable(metric_vals)))
+                                metric_vals.append(edge + diffs[edge_i]/2) 
+                            metric_vals = np.array(metric_vals)
                         else:
                             dm = (max(metric_hist[2]) - min(metric_hist[2])) / metric_integrand_ratio
                             metric_vals = np.arange(min(metric_hist[2]), max(metric_hist[2])+dm, dm)
