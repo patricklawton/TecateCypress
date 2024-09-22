@@ -41,7 +41,8 @@ n_cell_baseline_max = round(max(baseline_areas)/A_cell)
 #delta_fri_sys = np.arange(-10, 11, 1) #yrs
 #delta_fri_sys = np.concatenate(([0], range(-10,0), range(1,11)))
 #delta_fri_sys = np.arange(0,11,1)
-delta_fri_sys = [0]
+#delta_fri_sys = [0]
+delta_fri_sys = [-10, 0, 10]
 rng = np.random.default_rng()
 
 comm_world = MPI.COMM_WORLD
@@ -220,8 +221,8 @@ for delta_fri_i, delta_fri in enumerate(delta_fri_sys):
     # Get bins of initial fire frequency for phase data
     slice_left_min = np.nonzero(fire_freqs_sorted > (1/max_fri))[0][0]
     freq_range = fire_freqs_sorted[-1] - fire_freqs_sorted[slice_left_min]
-    #freq_bw = freq_range/20
-    freq_bw = 0.002
+    freq_bw = freq_range/40
+    #freq_bw = 0.002
     freq_bin_edges = np.arange(fire_freqs_sorted[slice_left_min], fire_freqs_sorted[-1], freq_bw)
     freq_bin_cntrs = np.array([edge+freq_bw/2 for edge in freq_bin_edges])
 
