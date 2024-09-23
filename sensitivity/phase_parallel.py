@@ -14,6 +14,7 @@ import copy
 import sys
 from global_functions import adjustmaps, plot_phase
 import itertools
+MPI.COMM_WORLD.Set_errhandler(MPI.ERRORS_RETURN)
 
 # Some constants
 metrics = ['lambda_s']#['mu_s']#['r', 'Nf', 'g']
@@ -32,17 +33,18 @@ fif_baseline = 1
 metric_integrand_ratio = 800
 dfri = 0.01
 n_cell_step = 5_000#3_000
-num_samples_ratio = 750#500
+num_samples_ratio = 650#500
 progress = True
 #baseline_area = 20 #km^2
 #baseline_areas = np.arange(10, 155, 5)
 baseline_areas = np.arange(10, 150, 10)
 n_cell_baseline_max = round(max(baseline_areas)/A_cell)
 #delta_fri_sys = np.arange(-10, 11, 1) #yrs
+delta_fri_sys = np.arange(0,10.5,0.5)
+#delta_fri_sys = np.array([10])
 #delta_fri_sys = np.concatenate(([0], range(-10,0), range(1,11)))
-#delta_fri_sys = np.arange(0,11,1)
 #delta_fri_sys = [0]
-delta_fri_sys = [-10, 0, 10]
+#delta_fri_sys = [-10, 0, 10]
 rng = np.random.default_rng()
 
 comm_world = MPI.COMM_WORLD
@@ -105,10 +107,11 @@ if my_rank == 0:
             elif metric == 'lambda_s':
                 coarse_step = 0.02
                 fine_step = coarse_step/100
-                fine_start = 0.6
-                coarse_grained = np.arange(metric_min, fine_start, coarse_step)
-                fine_grained = np.arange(fine_start, metric_max + fine_step, fine_step)
-                metric_edges = np.concatenate((coarse_grained[:-1], fine_grained))
+                #fine_start = 0.6
+                #coarse_grained = np.arange(metric_min, fine_start, coarse_step)
+                #fine_grained = np.arange(fine_start, metric_max + fine_step, fine_step)
+                #metric_edges = np.concatenate((coarse_grained[:-1], fine_grained))
+                metric_edges = np.arange(metric_min, metric_max + fine_step, fine_step)
             else:
                 metric_bw = (metric_max - metric_min) / metric_bw_ratio
                 metric_edges = np.arange(metric_min, metric_max + metric_bw, metric_bw)
@@ -186,10 +189,10 @@ mapindices = comm_world.bcast(mapindices)
 
 # Generate resource allocation scenarios shared across delta_fri
 # Convert fri to freq, with added uncertainty on fri
-fire_freqs = 1 / (fri_flat + max(delta_fri_sys)) #note we use the max increase in fri
-#fri_max_uncertain = fri_flat + rng.normal(0, max(delta_fri_sys), len(fri_flat))
-#fri_max_uncertain = np.where(fri_max_uncertain > 1, fri_max_uncertain, 1)
-#fire_freqs = 1 / fri_max_uncertain
+#fire_freqs = 1 / (fri_flat + max(delta_fri_sys)) #note we use the max increase in fri
+fri_max_uncertain = fri_flat + rng.normal(0, max(delta_fri_sys), len(fri_flat))
+fri_max_uncertain = np.where(fri_max_uncertain > 1, fri_max_uncertain, 1)
+fire_freqs = 1 / fri_max_uncertain
 # Sort fire frequency 
 freq_argsort = np.argsort(fire_freqs)
 fire_freqs_sorted = fire_freqs[freq_argsort]
@@ -207,11 +210,11 @@ if my_rank == 0:
 # Loop over considered values of fire freq uncertainty
 for delta_fri_i, delta_fri in enumerate(delta_fri_sys): 
     # Convert fri to freq, with added uncertainty on fri
-    fire_freqs = 1 / (fri_flat + delta_fri)
-    #fri_uncertain = fri_flat + rng.normal(0, delta_fri, len(fri_flat))
-    #fri_min = 5
-    #fri_uncertain = np.where(fri_uncertain > fri_min, fri_uncertain, fri_min)
-    #fire_freqs = 1 / fri_uncertain
+    #fire_freqs = 1 / (fri_flat + delta_fri)
+    fri_uncertain = fri_flat + rng.normal(0, delta_fri, len(fri_flat))
+    fri_min = 5
+    fri_uncertain = np.where(fri_uncertain > fri_min, fri_uncertain, fri_min)
+    fire_freqs = 1 / fri_uncertain
     # Sort fire frequency 
     freq_argsort = np.argsort(fire_freqs)
     fire_freqs_sorted = fire_freqs[freq_argsort]
@@ -226,9 +229,6 @@ for delta_fri_i, delta_fri in enumerate(delta_fri_sys):
     freq_bin_edges = np.arange(fire_freqs_sorted[slice_left_min], fire_freqs_sorted[-1], freq_bw)
     freq_bin_cntrs = np.array([edge+freq_bw/2 for edge in freq_bin_edges])
 
-    ## Generate resource allocation scenarios
-    #n_cell_vec = np.arange(n_cell_baseline_max, len(fire_freqs)-slice_left_min, n_cell_step)
-
     if my_rank == 0:
         print(f"delta_fri: {delta_fri}")
         # Save some things
@@ -238,7 +238,6 @@ for delta_fri_i, delta_fri in enumerate(delta_fri_sys):
         np.save(data_root + "/freq_bin_cntrs.npy", freq_bin_cntrs)
 
     # Loop over different resource constraint values
-    #baseline_areas = np.array([10]) #km
     for constraint_i, baseline_area in enumerate(baseline_areas):
         if my_rank == 0: print(f"On baseline area {baseline_area}")
         # Resort fire freqs
@@ -246,7 +245,6 @@ for delta_fri_i, delta_fri in enumerate(delta_fri_sys):
         # Get some info for this allocation scenario
         n_cell_baseline = round(baseline_area/A_cell)
         constraint = n_cell_baseline * fif_baseline
-        #n_cell_vec = np.arange(100, 300, 100)
         fif_vec = np.array([constraint/n_cell for n_cell in n_cell_vec])
 
         # Draw all freq slice random starting points for this rank
@@ -326,17 +324,6 @@ for delta_fri_i, delta_fri in enumerate(delta_fri_sys):
                     sub_start = -1
                     sub_samples = 0
 
-                # Initialize data to store sample means across all ranks
-                sampled_freq_means = None
-                sampled_metric_expect = None
-                if metric == metrics[0]:
-                    sampled_xs_means = None
-                if my_rank == 0:
-                    sampled_freq_means = np.empty(num_samples)
-                    sampled_metric_expect = np.empty(num_samples)        
-                    if metric == metrics[0]:
-                        sampled_xs_means = np.ones(num_samples) * np.nan
-
                 # Initialize data for this rank's chunk of samples
                 sub_freq_means = np.empty(sub_samples)
                 sub_metric_expect = np.empty(sub_samples)
@@ -412,7 +399,6 @@ for delta_fri_i, delta_fri in enumerate(delta_fri_sys):
                         # First get the probability of being in the fri bin
                         fri_vals = np.arange(fri_edges[fri_i], fri_edges[fri_i+1], dfri)
                         P_dfri = np.trapz(y=P_fri_xo.pdf(fri_vals), x=fri_vals)
-                        #P_dfri = P_fri_xo.expect(func=lambda x: dfri, lb=fri_edges[fri_i], ub=fri_edges[fri_i+1])
 
                         # Now get <metric>
                         if metric != "Nf":
@@ -466,6 +452,19 @@ for delta_fri_i, delta_fri in enumerate(delta_fri_sys):
                             os.makedirs(figs_root + f"/const_{constraint}")
 
                 # Collect data across ranks
+                # Initialize data to store sample means across all ranks
+                sendcounts = np.array(comm_world.gather(len(sub_freq_means), root=0))
+                if my_rank == 0:
+                    sampled_freq_means = np.empty(sum(sendcounts))
+                    sampled_metric_expect = np.empty(sum(sendcounts))        
+                    if metric == metrics[0]:
+                        sampled_xs_means = np.ones(sum(sendcounts)) * np.nan
+                else:
+                    sampled_freq_means = None
+                    sampled_metric_expect = None
+                    if metric == metrics[0]:
+                        sampled_xs_means = None
+                # Now gather data
                 comm_world.Gatherv(sub_freq_means, sampled_freq_means, root=0)
                 comm_world.Gatherv(sub_metric_expect, sampled_metric_expect, root=0)
                 if metric == metrics[0]:
