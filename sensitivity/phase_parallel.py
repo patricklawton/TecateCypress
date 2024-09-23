@@ -27,14 +27,14 @@ t_final = 600
 sim_method = 'nint'
 ul_coord = [1500, 2800]
 lr_coord = [2723, 3905]
-max_fri = 66 #yrs
+max_fri = 90 #yrs
 A_cell = 270**2 / 1e6 #km^2
 fif_baseline = 1
 metric_integrand_ratio = 800
 dfri = 0.01
 n_cell_step = 5_000#3_000
 num_samples_ratio = 650#500
-progress = True
+progress = False
 #baseline_area = 20 #km^2
 #baseline_areas = np.arange(10, 155, 5)
 baseline_areas = np.arange(10, 150, 10)
@@ -43,7 +43,7 @@ n_cell_baseline_max = round(max(baseline_areas)/A_cell)
 delta_fri_sys = np.arange(0,10.5,0.5)
 #delta_fri_sys = np.array([10])
 #delta_fri_sys = np.concatenate(([0], range(-10,0), range(1,11)))
-#delta_fri_sys = [0]
+delta_fri_sys = [0]
 #delta_fri_sys = [-10, 0, 10]
 rng = np.random.default_rng()
 
@@ -189,10 +189,10 @@ mapindices = comm_world.bcast(mapindices)
 
 # Generate resource allocation scenarios shared across delta_fri
 # Convert fri to freq, with added uncertainty on fri
-#fire_freqs = 1 / (fri_flat + max(delta_fri_sys)) #note we use the max increase in fri
-fri_max_uncertain = fri_flat + rng.normal(0, max(delta_fri_sys), len(fri_flat))
-fri_max_uncertain = np.where(fri_max_uncertain > 1, fri_max_uncertain, 1)
-fire_freqs = 1 / fri_max_uncertain
+fire_freqs = 1 / (fri_flat + max(delta_fri_sys)) #note we use the max increase in fri
+#fri_max_uncertain = fri_flat + rng.normal(0, max(delta_fri_sys), len(fri_flat))
+#fri_max_uncertain = np.where(fri_max_uncertain > 1, fri_max_uncertain, 1)
+#fire_freqs = 1 / fri_max_uncertain
 # Sort fire frequency 
 freq_argsort = np.argsort(fire_freqs)
 fire_freqs_sorted = fire_freqs[freq_argsort]
@@ -210,11 +210,11 @@ if my_rank == 0:
 # Loop over considered values of fire freq uncertainty
 for delta_fri_i, delta_fri in enumerate(delta_fri_sys): 
     # Convert fri to freq, with added uncertainty on fri
-    #fire_freqs = 1 / (fri_flat + delta_fri)
-    fri_uncertain = fri_flat + rng.normal(0, delta_fri, len(fri_flat))
-    fri_min = 5
-    fri_uncertain = np.where(fri_uncertain > fri_min, fri_uncertain, fri_min)
-    fire_freqs = 1 / fri_uncertain
+    fire_freqs = 1 / (fri_flat + delta_fri)
+    #fri_uncertain = fri_flat + rng.normal(0, delta_fri, len(fri_flat))
+    #fri_min = 5
+    #fri_uncertain = np.where(fri_uncertain > fri_min, fri_uncertain, fri_min)
+    #fire_freqs = 1 / fri_uncertain
     # Sort fire frequency 
     freq_argsort = np.argsort(fire_freqs)
     fire_freqs_sorted = fire_freqs[freq_argsort]
