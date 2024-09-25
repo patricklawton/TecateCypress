@@ -17,8 +17,9 @@ import itertools
 MPI.COMM_WORLD.Set_errhandler(MPI.ERRORS_RETURN)
 
 # Some constants
-metrics = ['lambda_s']#['mu_s']#['r', 'Nf', 'g']
+progress = False
 overwrite_metrics = False
+metrics = ['lambda_s']#['mu_s']#['r', 'Nf', 'g']
 metric_thresh = 0.98
 metric_bw_ratio = 50
 c = 1.42
@@ -27,14 +28,15 @@ t_final = 600
 sim_method = 'nint'
 ul_coord = [1500, 2800]
 lr_coord = [2723, 3905]
-max_fri = 90 #yrs
+max_fri = 66 #yrs
 A_cell = 270**2 / 1e6 #km^2
-fif_baseline = 1
+fri_bw_ratio = 50 #For binning initial fri (with uncertainty)
+fric_baseline = 200 #years, max fire return interval change possible
+                    #at lowest n_cell for a given C value
 metric_integrand_ratio = 800
 dfri = 0.01
 n_cell_step = 5_000#3_000
 num_samples_ratio = 650#500
-progress = False
 #baseline_area = 20 #km^2
 #baseline_areas = np.arange(10, 155, 5)
 baseline_areas = np.arange(10, 150, 10)
@@ -188,17 +190,13 @@ maps_filt = comm_world.bcast(maps_filt)
 mapindices = comm_world.bcast(mapindices)
 
 # Generate resource allocation scenarios shared across delta_fri
-# Convert fri to freq, with added uncertainty on fri
-fire_freqs = 1 / (fri_flat + max(delta_fri_sys)) #note we use the max increase in fri
-#fri_max_uncertain = fri_flat + rng.normal(0, max(delta_fri_sys), len(fri_flat))
-#fri_max_uncertain = np.where(fri_max_uncertain > 1, fri_max_uncertain, 1)
-#fire_freqs = 1 / fri_max_uncertain
-# Sort fire frequency 
-freq_argsort = np.argsort(fire_freqs)
-fire_freqs_sorted = fire_freqs[freq_argsort]
-slice_left_min = np.nonzero(fire_freqs_sorted > (1/max_fri))[0][0]
+fri_argsort = np.argsort(fri_flat)
+#Use the max delta_fri to get an upper bound on right hand of slice
+fri_sorted = fri_flat[fri_argsort] + max(delta_fri_sys)
+slice_right_max = min(np.nonzero(fri_sorted > max_fri)[0])
 # Generate resource allocation scenarios
-n_cell_vec = np.arange(n_cell_baseline_max, len(fire_freqs)-slice_left_min, n_cell_step)
+'''add step to endpoint? s.t. max possible n_cell is included'''
+n_cell_vec = np.arange(n_cell_baseline_max, slice_right_max, n_cell_step)
 
 if my_rank == 0:
     # Save shared n_cell_vec
@@ -207,27 +205,26 @@ if my_rank == 0:
     # Initialize data for max(<r>) across (constraint, n_cell, delta_fri) 
     delta_fri_phase = np.empty((len(baseline_areas), len(n_cell_vec), len(delta_fri_sys)))
 
-# Loop over considered values of fire freq uncertainty
+# Loop over considered values of fri uncertainty
 for delta_fri_i, delta_fri in enumerate(delta_fri_sys): 
-    # Convert fri to freq, with added uncertainty on fri
-    fire_freqs = 1 / (fri_flat + delta_fri)
-    #fri_uncertain = fri_flat + rng.normal(0, delta_fri, len(fri_flat))
-    #fri_min = 5
-    #fri_uncertain = np.where(fri_uncertain > fri_min, fri_uncertain, fri_min)
-    #fire_freqs = 1 / fri_uncertain
-    # Sort fire frequency 
-    freq_argsort = np.argsort(fire_freqs)
-    fire_freqs_sorted = fire_freqs[freq_argsort]
-    # Sort habitat suitability data
-    sdm_sorted = sdm_flat[freq_argsort]
+    ##fri_uncertain = fri_flat + rng.normal(0, delta_fri, len(fri_flat))
+    ##fri_min = 5
+    ##fri_uncertain = np.where(fri_uncertain > fri_min, fri_uncertain, fri_min)
+    ##fire_freqs = 1 / fri_uncertain
+    # Add uncertainty to <fri> values and re-sort
+    fri_expected = fri_flat + delta_fri
+    fri_argsort = np.argsort(fri_expected)
+    fri_sorted = fri_expected[fri_argsort]
+    # Sort habitat suitability data by fri value per cell
+    sdm_sorted = sdm_flat[fri_argsort]
 
-    # Get bins of initial fire frequency for phase data
-    slice_left_min = np.nonzero(fire_freqs_sorted > (1/max_fri))[0][0]
-    freq_range = fire_freqs_sorted[-1] - fire_freqs_sorted[slice_left_min]
-    freq_bw = freq_range/40
-    #freq_bw = 0.002
-    freq_bin_edges = np.arange(fire_freqs_sorted[slice_left_min], fire_freqs_sorted[-1], freq_bw)
-    freq_bin_cntrs = np.array([edge+freq_bw/2 for edge in freq_bin_edges])
+    # Get bins of initial fri for phase data
+    slice_right_max = min(np.nonzero(fri_sorted > max_fri)[0])
+    fri_range = fri_sorted[slice_right_max] - fri_sorted[0]
+    fri_bw = fri_range / fri_bw_ratio
+    #fri_bw = 0.75
+    fri_bin_edges = np.arange(fri_sorted[0], fri_sorted[slice_right_max], fri_bw)
+    fri_bin_cntrs = np.array([edge + fri_bw/2 for edge in fri_bin_edges])
 
     if my_rank == 0:
         print(f"delta_fri: {delta_fri}")
@@ -235,28 +232,29 @@ for delta_fri_i, delta_fri in enumerate(delta_fri_sys):
         data_root = f"data/Aeff_{Aeff}/tfinal_{t_final}/deltafri_{delta_fri}"
         if not os.path.isdir(data_root):
             os.makedirs(data_root)
-        np.save(data_root + "/freq_bin_cntrs.npy", freq_bin_cntrs)
+        np.save(data_root + "/fri_bin_cntrs.npy", fri_bin_cntrs)
 
     # Loop over different resource constraint values
     for constraint_i, baseline_area in enumerate(baseline_areas):
         if my_rank == 0: print(f"On baseline area {baseline_area}")
-        # Resort fire freqs
-        fire_freqs_sorted = fire_freqs[freq_argsort]
+        # Resort fri
+        fri_sorted = fri_expected[fri_argsort]
         # Get some info for this allocation scenario
         n_cell_baseline = round(baseline_area/A_cell)
-        constraint = n_cell_baseline * fif_baseline
-        fif_vec = np.array([constraint/n_cell for n_cell in n_cell_vec])
+        constraint = n_cell_baseline * fric_baseline
+        fric_vec = np.array([constraint/n_cell for n_cell in n_cell_vec])
 
-        # Draw all freq slice random starting points for this rank
-        # Store in nested list, sublist for each fif value
+        # Draw all fri slice random starting points for this rank
+        # Store in nested list, sublist for each fric value
         if my_rank == 0:
             start_time = timeit.default_timer()
-        freq_left_samples_sub = []
-        for fif_i, fif in enumerate(tqdm(fif_vec, disable=(not progress))):
-            # Set number of slices to generate for fire freq slices of this size
-            n_cell = n_cell_vec[np.nonzero(fif_vec == fif)[0][0]]
-            slice_left_max = len(fire_freqs) - n_cell - 1 #slice needs to fit
-            num_samples = round((slice_left_max-slice_left_min)/num_samples_ratio)
+        fri_left_samples_sub = []
+        for fric_i, fric in enumerate(tqdm(fric_vec, disable=(not progress))):
+            # Set number of slices to generate for fri slices of this size
+            n_cell = n_cell_vec[fric_i]
+            slice_left_max = slice_right_max - n_cell #slice needs to fit
+            num_samples = round(slice_left_max / num_samples_ratio)
+            #print(f"{num_samples} samples will be taken at (n_cell, fric)=({n_cell}, {fric}), C={constraint}, delta_fri={delta_fri}")
 
             # Get slice indices of samples for this rank
             sub_samples = num_samples // num_procs
@@ -271,24 +269,24 @@ for delta_fri_i, delta_fri in enumerate(delta_fri_sys):
                 sub_samples = 0
 
             # Add one sample for computing the no change scenario
-            if (fif==max(fif_vec)) and (my_rank==0):
+            if (fric==max(fric_vec)) and (my_rank==0):
                 sub_samples += 1
 
-            # Draw and store freq bin edges for this fif value
-            freq_left_sub_vec = np.random.uniform(fire_freqs_sorted[slice_left_min], fire_freqs_sorted[slice_left_max], size=sub_samples)
-            freq_left_samples_sub.append(freq_left_sub_vec)
+            # Draw and store fri bin edges for this fric value
+            fri_left_sub_vec = np.random.uniform(fri_sorted[0], fri_sorted[slice_left_max], size=sub_samples)
+            fri_left_samples_sub.append(fri_left_sub_vec)
         if my_rank == 0:
             elapsed = timeit.default_timer() - start_time
-            print('{} seconds to draw frequency samples'.format(elapsed))
+            print('{} seconds to draw fri left samples'.format(elapsed))
 
         for metric in metrics:
             if my_rank == 0:
                 start_time = timeit.default_timer()
                 # Initialize final data matricies
-                phase_space = np.zeros((len(freq_bin_edges), len(fif_vec)))
+                phase_space = np.zeros((len(fri_bin_edges), len(fric_vec)))
                 # Add a matrix for computing excess resources; only do this once
                 if metric == metrics[0]:
-                    phase_space_xs = np.zeros((len(freq_bin_edges), len(fif_vec))) 
+                    phase_space_xs = np.zeros((len(fri_bin_edges), len(fric_vec))) 
                 figs_root = f"figs/Aeff_{Aeff}/tfinal_{t_final}/deltafri_{delta_fri}/metric_{metric}"
                 if not os.path.isdir(figs_root):
                     os.makedirs(figs_root)
@@ -305,12 +303,12 @@ for delta_fri_i, delta_fri in enumerate(delta_fri_sys):
                     if "map_ncell_" in item:
                         os.remove(os.path.join(data_root, item))
 
-            # Sample random slices of init fire freqs for each intervention freq
-            for fif_i, fif in enumerate(tqdm(fif_vec, disable=True)):#(not progress))):
-                # Set number of slices to generate for fire freq slices of this size
-                n_cell = n_cell_vec[np.nonzero(fif_vec == fif)[0][0]]
-                slice_left_max = len(fire_freqs) - n_cell - 1 #slice needs to fit
-                num_samples = round((slice_left_max-slice_left_min)/num_samples_ratio)
+            # Sample random slices of init fri for each fric
+            for fric_i, fric in enumerate(tqdm(fric_vec, disable=(not progress))):
+                # Set number of slices to generate for fri slices of this size
+                n_cell = n_cell_vec[fric_i]
+                slice_left_max = slice_right_max - n_cell #slice needs to fit
+                num_samples = round(slice_left_max / num_samples_ratio)
 
                 # Get size and position of sample chunk for this rank
                 sub_samples = num_samples // num_procs
@@ -325,7 +323,7 @@ for delta_fri_i, delta_fri in enumerate(delta_fri_sys):
                     sub_samples = 0
 
                 # Initialize data for this rank's chunk of samples
-                sub_freq_means = np.empty(sub_samples)
+                sub_fri_means = np.empty(sub_samples)
                 sub_metric_expect = np.empty(sub_samples)
                 sub_cellcounts = np.zeros(maps_filt.shape)
                 sub_celltotals = np.zeros(maps_filt.shape)
@@ -333,42 +331,39 @@ for delta_fri_i, delta_fri in enumerate(delta_fri_sys):
                     sub_xs_means = np.ones(sub_samples) * np.nan
 
                 # Add one sample for computing the no change scenario
-                if (fif==max(fif_vec)) and (my_rank==0):
+                if (fric==max(fric_vec)) and (my_rank==0):
                     sub_samples += 1
-                    print(f"adding nochange to rank {my_rank} for {sub_samples} total iterations at fif {fif}")
+                    print(f"adding nochange to rank {my_rank} for {sub_samples} total iterations at fric {fric}")
 
                 # Loop over random realizations of this fire alteration strategy
                 for sub_sample_i, fire_sample_i in enumerate(tqdm(range(sub_start, sub_start+sub_samples), disable=True)):#(not progress))):
-                    # Re-sort fire frequencies and get slice for this rank
-                    fire_freqs_sorted = fire_freqs[freq_argsort]
-                    freq_left = freq_left_samples_sub[fif_i][sub_sample_i]
-                    slice_left = np.nonzero(fire_freqs_sorted > freq_left)[0][0]
-                    fire_freq_slice = fire_freqs_sorted[slice_left:slice_left+n_cell]
-                    # Store mean of slice's initial fire frequency
-                    # Skip if computing the no change scenario
-                    if sub_sample_i < len(sub_freq_means):
-                        sub_freq_means[fire_sample_i-sub_start] = np.mean(fire_freq_slice)
+                    # Re-sort fri and get slice for this rank
+                    fri_sorted = fri_expected[fri_argsort]
+                    fri_left = fri_left_samples_sub[fric_i][sub_sample_i]
+                    slice_left = np.nonzero(fri_sorted > fri_left)[0][0]
+                    fri_slice = fri_sorted[slice_left:slice_left + n_cell]
+                    if sub_sample_i < len(sub_fri_means): #Skip if computing no change scenario
+                        sub_fri_means[fire_sample_i-sub_start] = np.mean(fri_slice)
 
-                    # Adjust the fire frequency distribution
-                    max_fif = fire_freq_slice - fire_freqs_sorted[slice_left_min]
-                    # Skip if computing the no change scenario
-                    if sub_sample_i < len(sub_freq_means):
-                        # First create array of replacement frequencies
-                        replacement_freqs = np.ones(n_cell)
-                        xsresource_filt = (fif > max_fif)
-                        replacement_freqs[xsresource_filt] = (fire_freq_slice - max_fif)[xsresource_filt]
-                        replacement_freqs[(fif < max_fif)] = (fire_freq_slice - fif)[(fif < max_fif)]
-                        # Now replace them in the full array of frequencies
-                        fire_freqs_sorted[slice_left:slice_left+n_cell] = replacement_freqs 
+                    # Adjust the fri distribution
+                    max_fric = max_fri - fri_slice
+                    if sub_sample_i < len(sub_fri_means): #Skip if computing the no change scenario
+                        # First create array of replacement fri
+                        replacement_fri = np.ones(n_cell) #Initialize
+                        xs_filt = (fric > max_fric) #Find where fric will push fri beyond max
+                        replacement_fri[xs_filt] = max_fri
+                        replacement_fri[xs_filt==False] = (fri_slice + fric)[xs_filt==False]
+                        # Now replace them in the full array of fri
+                        fri_sorted[slice_left:slice_left+n_cell] = replacement_fri 
                         if metric == metrics[0]:
                             # Store the mean value of excess resources, keep at nan if no excess
-                            xsresources = (fif - max_fif)[xsresource_filt]
+                            xsresources = (fric - max_fric)[xs_filt]
                             if len(xsresources) > 0:
                                 sub_xs_means[fire_sample_i-sub_start] = np.mean(xsresources)
 
                     # Get new probability distribution across fire return interval
-                    fris = 1/fire_freqs_sorted
-                    fris = fris[fris <= max(fri_vec)] # cut off fri distribution at max fri we simulated, shouldn't leave this forever
+                    '''cut off fri distribution at max fri we simulated, shouldn't leave this forever'''
+                    fris = fri_sorted[fri_sorted <= max(fri_vec)] 
                     fri_hist = np.histogram(fris, bins=50, density=True);
                     P_fri_xo = scipy.stats.rv_histogram((fri_hist[0], fri_hist[1]))
 
@@ -433,7 +428,7 @@ for delta_fri_i, delta_fri in enumerate(delta_fri_sys):
                             metric_expect += Nf_expect_fri * Aeff_expect_fri * P_dfri
 
                     # Add sample to list if not computing no change scenario
-                    if sub_sample_i < len(sub_freq_means):
+                    if sub_sample_i < len(sub_fri_means):
                         sub_metric_expect[fire_sample_i-sub_start] = metric_expect
 
                         # Also update spatial representation of metric
@@ -453,19 +448,19 @@ for delta_fri_i, delta_fri in enumerate(delta_fri_sys):
 
                 # Collect data across ranks
                 # Initialize data to store sample means across all ranks
-                sendcounts = np.array(comm_world.gather(len(sub_freq_means), root=0))
+                sendcounts = np.array(comm_world.gather(len(sub_fri_means), root=0))
                 if my_rank == 0:
-                    sampled_freq_means = np.empty(sum(sendcounts))
+                    sampled_fri_means = np.empty(sum(sendcounts))
                     sampled_metric_expect = np.empty(sum(sendcounts))        
                     if metric == metrics[0]:
                         sampled_xs_means = np.ones(sum(sendcounts)) * np.nan
                 else:
-                    sampled_freq_means = None
+                    sampled_fri_means = None
                     sampled_metric_expect = None
                     if metric == metrics[0]:
                         sampled_xs_means = None
                 # Now gather data
-                comm_world.Gatherv(sub_freq_means, sampled_freq_means, root=0)
+                comm_world.Gatherv(sub_fri_means, sampled_fri_means, root=0)
                 comm_world.Gatherv(sub_metric_expect, sampled_metric_expect, root=0)
                 if metric == metrics[0]:
                     comm_world.Gatherv(sub_xs_means, sampled_xs_means, root=0)
@@ -476,19 +471,19 @@ for delta_fri_i, delta_fri in enumerate(delta_fri_sys):
 
                 if my_rank == 0:
                     # Bin results into final phase matricies
-                    for freq_i, freq_left in enumerate(freq_bin_edges):
-                        freq_filt = (sampled_freq_means > freq_left) & (sampled_freq_means < freq_left+freq_bw)
-                        metric_expect_slice = sampled_metric_expect[freq_filt]
+                    for fri_i, fri_left in enumerate(fri_bin_edges):
+                        fri_filt = (sampled_fri_means > fri_left) & (sampled_fri_means < fri_left+fri_bw)
+                        metric_expect_slice = sampled_metric_expect[fri_filt]
                         if len(metric_expect_slice) > 0:
-                            phase_space[len(freq_bin_edges)-1-freq_i, fif_i] = np.mean(metric_expect_slice)
+                            phase_space[len(fri_bin_edges)-1-fri_i, fric_i] = np.mean(metric_expect_slice)
                         # Populate excess resources if on first metric
                         if metric == metrics[0]:
-                            xs_means_slice = sampled_xs_means[freq_filt]
+                            xs_means_slice = sampled_xs_means[fri_filt]
                             if not np.all(np.isnan(xs_means_slice)):
-                                phase_space_xs[len(freq_bin_edges)-1-freq_i, fif_i] = np.nanmean(xs_means_slice)   
-                    # Also store data on max(<r>) at (constraint, n_cell, delta_fri)
-                    phase_slice = phase_space[:, fif_i]
-                    delta_fri_phase[constraint_i, fif_i, delta_fri_i] = max(phase_slice[phase_slice != 0])
+                                phase_space_xs[len(fri_bin_edges)-1-fri_i, fric_i] = np.nanmean(xs_means_slice)   
+                    # Also store data on max(<metric>) at (constraint, n_cell, delta_fri)
+                    phase_slice = phase_space[:, fric_i]
+                    delta_fri_phase[constraint_i, fric_i, delta_fri_i] = max(phase_slice[phase_slice != 0])
 
                     # Save spatial representation for this n_cell value
                     # <metric> per cell, assume at baseline if cell  
@@ -507,13 +502,13 @@ for delta_fri_i, delta_fri in enumerate(delta_fri_sys):
                     np.save(handle, phase_space)
                 # Plot phase
                 phase_fig_fn = figs_root + f"/const_{constraint}" + "/phase.png"
-                plot_phase(phase_space, metric, metric_nochange, freq_bin_cntrs, n_cell_vec, phase_fig_fn, fif_vec)
+                plot_phase(phase_space, metric, metric_nochange, fri_bin_cntrs, n_cell_vec, phase_fig_fn, fric_vec)
                 if metric == metrics[0]:
                     phase_fn = f"data/Aeff_{Aeff}/tfinal_{t_final}/deltafri_{delta_fri}/const_{constraint}/phase_xs.npy"
                     with open(phase_fn, 'wb') as handle:
                         np.save(handle, phase_space_xs)
                     phase_fig_fn = figs_root + f"/const_{constraint}" + "/phase_xs.png"
-                    plot_phase(phase_space_xs, 'xs', 0, freq_bin_cntrs, n_cell_vec, phase_fig_fn, fif_vec)
+                    plot_phase(phase_space_xs, 'xs', 0, fri_bin_cntrs, n_cell_vec, phase_fig_fn, fric_vec)
 
                 # Plot geographical representations
                 # First, get the global max across n_cell values for the colorbar limit

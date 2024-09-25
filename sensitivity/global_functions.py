@@ -15,7 +15,7 @@ def adjustmaps(maps):
         maps[mi] = m[0:dim_len[0], 0:dim_len[1]]
     return maps
 
-def plot_phase(phase_space, metric, metric_nochange, freq_bin_cntrs, n_cell_vec, fig_fn, fif_vec):
+def plot_phase(phase_space, metric, metric_nochange, fri_bin_cntrs, n_cell_vec, fig_fn, fric_vec):
     fig, ax = plt.subplots(figsize=(12,12))
     phase_space = np.ma.masked_where(phase_space==0, phase_space)
     phase_flat = phase_space.flatten()
@@ -30,16 +30,16 @@ def plot_phase(phase_space, metric, metric_nochange, freq_bin_cntrs, n_cell_vec,
     cbar = ax.figure.colorbar(im, ax=ax, location="right", shrink=0.6)
     cbar.ax.set_ylabel(r'$<{}>$'.format(metric), rotation=-90, fontsize=10, labelpad=20)
     ytick_spacing = 2
-    ytick_labels = np.flip(freq_bin_cntrs)[::ytick_spacing]
-    yticks = np.arange(0,len(freq_bin_cntrs),ytick_spacing)
+    ytick_labels = np.flip(fri_bin_cntrs)[::ytick_spacing]
+    yticks = np.arange(0,len(fri_bin_cntrs),ytick_spacing)
     ax.set_yticks(yticks, labels=np.round(ytick_labels, decimals=3));
-    ax.set_ylabel('Avg fire frequency in intervened cells')
+    ax.set_ylabel('Avg fri in intervened cells')
     xtick_spacing = 3
     xticks = np.arange(0,len(n_cell_vec),xtick_spacing)
     ax.set_xticks(xticks, labels=n_cell_vec[::xtick_spacing]);
     ax.set_xlabel('Number of cells intervened in')
     secax = ax.secondary_xaxis('top')
-    secax.set_xticks(xticks, labels=np.round(fif_vec[::xtick_spacing], decimals=3));
-    secax.set_xlabel('Frequency of fire interventions per cell')
+    secax.set_xticks(xticks, labels=np.round(fric_vec[::xtick_spacing], decimals=3));
+    secax.set_xlabel('Change in fri per cell')
     fig.savefig(fig_fn, bbox_inches='tight')
     plt.close(fig)
