@@ -35,18 +35,19 @@ fric_baseline = 200 #years, max fire return interval change possible
                     #at lowest n_cell for a given C value
 metric_integrand_ratio = 800
 dfri = 0.01
-n_cell_step = 5_000#3_000
-num_samples_ratio = 500
+n_cell_step = 6_500#5_000#3_000
+num_samples_ratio = 650#500
 #baseline_area = 20 #km^2
 #baseline_areas = np.arange(10, 155, 5)
-baseline_areas = np.arange(10, 150, 10)
+#baseline_areas = np.arange(10, 150, 10)
+baseline_areas = np.arange(10, 160, 30)
 n_cell_baseline_max = round(max(baseline_areas)/A_cell)
-delta_fri_sys = np.arange(-10, 11, 1) #yrs
+#delta_fri_sys = np.arange(-10, 11, 1) #yrs
 #delta_fri_sys = np.arange(0,10.5,0.5)
 #delta_fri_sys = np.array([10])
 #delta_fri_sys = np.concatenate(([0], range(-10,0), range(1,11)))
 #delta_fri_sys = [0]
-#delta_fri_sys = [-10, 0, 10]
+delta_fri_sys = [-10, 0, 10]
 rng = np.random.default_rng()
 
 comm_world = MPI.COMM_WORLD
