@@ -32,16 +32,16 @@ max_fri = 66 #yrs
 A_cell = 270**2 / 1e6 #km^2
 fri_bw_ratio = 50 #For binning initial fri (with uncertainty)
 fric_baseline = 200 #years, max fire return interval change possible
-                    #at lowest n_cell for a given C value
+                    #at lowest ncell for a given C value
 metric_integrand_ratio = 800
 dfri = 0.01
-n_cell_step = 6_500#5_000#3_000
+ncell_step = 6_500#5_000#3_000
 num_samples_ratio = 650#500
 #baseline_area = 20 #km^2
 #baseline_areas = np.arange(10, 155, 5)
 #baseline_areas = np.arange(10, 150, 10)
 baseline_areas = np.arange(10, 160, 30)
-n_cell_baseline_max = round(max(baseline_areas)/A_cell)
+ncell_baseline_max = round(max(baseline_areas)/A_cell)
 #delta_fri_sys = np.arange(-10, 11, 1) #yrs
 #delta_fri_sys = np.arange(0,10.5,0.5)
 #delta_fri_sys = np.array([10])
@@ -196,15 +196,15 @@ fri_argsort = np.argsort(fri_flat)
 fri_sorted = fri_flat[fri_argsort] + max(delta_fri_sys)
 slice_right_max = min(np.nonzero(fri_sorted > max_fri)[0])
 # Generate resource allocation scenarios
-'''add step to endpoint? s.t. max possible n_cell is included'''
-n_cell_vec = np.arange(n_cell_baseline_max, slice_right_max, n_cell_step)
+'''add step to endpoint? s.t. max possible ncell is included'''
+ncell_vec = np.arange(ncell_baseline_max, slice_right_max, ncell_step)
 
 if my_rank == 0:
-    # Save shared n_cell_vec
-    np.save(data_root + "/n_cell_vec.npy", n_cell_vec)
+    # Save shared ncell_vec
+    np.save(data_root + "/ncell_vec.npy", ncell_vec)
 
-    # Initialize data for max(<r>) across (constraint, n_cell, delta_fri) 
-    delta_fri_phase = np.empty((len(baseline_areas), len(n_cell_vec), len(delta_fri_sys)))
+    # Initialize data for max(<r>) across (constraint, ncell, delta_fri) 
+    delta_fri_phase = np.empty((len(baseline_areas), len(ncell_vec), len(delta_fri_sys)))
 
 # Loop over considered values of fri uncertainty
 for delta_fri_i, delta_fri in enumerate(delta_fri_sys): 
@@ -241,9 +241,9 @@ for delta_fri_i, delta_fri in enumerate(delta_fri_sys):
         # Resort fri
         fri_sorted = fri_expected[fri_argsort]
         # Get some info for this allocation scenario
-        n_cell_baseline = round(baseline_area/A_cell)
-        constraint = n_cell_baseline * fric_baseline
-        fric_vec = np.array([constraint/n_cell for n_cell in n_cell_vec])
+        ncell_baseline = round(baseline_area/A_cell)
+        constraint = ncell_baseline * fric_baseline
+        fric_vec = np.array([constraint/ncell for ncell in ncell_vec])
 
         # Draw all fri slice random starting points for this rank
         # Store in nested list, sublist for each fric value
@@ -252,10 +252,10 @@ for delta_fri_i, delta_fri in enumerate(delta_fri_sys):
         fri_left_samples_sub = []
         for fric_i, fric in enumerate(tqdm(fric_vec, disable=(not progress))):
             # Set number of slices to generate for fri slices of this size
-            n_cell = n_cell_vec[fric_i]
-            slice_left_max = slice_right_max - n_cell #slice needs to fit
+            ncell = ncell_vec[fric_i]
+            slice_left_max = slice_right_max - ncell #slice needs to fit
             num_samples = round(slice_left_max / num_samples_ratio)
-            #print(f"{num_samples} samples will be taken at (n_cell, fric)=({n_cell}, {fric}), C={constraint}, delta_fri={delta_fri}")
+            #print(f"{num_samples} samples will be taken at (ncell, fric)=({ncell}, {fric}), C={constraint}, delta_fri={delta_fri}")
 
             # Get slice indices of samples for this rank
             sub_samples = num_samples // num_procs
@@ -307,8 +307,8 @@ for delta_fri_i, delta_fri in enumerate(delta_fri_sys):
             # Sample random slices of init fri for each fric
             for fric_i, fric in enumerate(tqdm(fric_vec, disable=(not progress))):
                 # Set number of slices to generate for fri slices of this size
-                n_cell = n_cell_vec[fric_i]
-                slice_left_max = slice_right_max - n_cell #slice needs to fit
+                ncell = ncell_vec[fric_i]
+                slice_left_max = slice_right_max - ncell #slice needs to fit
                 num_samples = round(slice_left_max / num_samples_ratio)
 
                 # Get size and position of sample chunk for this rank
@@ -342,7 +342,7 @@ for delta_fri_i, delta_fri in enumerate(delta_fri_sys):
                     fri_sorted = fri_expected[fri_argsort]
                     fri_left = fri_left_samples_sub[fric_i][sub_sample_i]
                     slice_left = np.nonzero(fri_sorted > fri_left)[0][0]
-                    fri_slice = fri_sorted[slice_left:slice_left + n_cell]
+                    fri_slice = fri_sorted[slice_left:slice_left + ncell]
                     if sub_sample_i < len(sub_fri_means): #Skip if computing no change scenario
                         sub_fri_means[fire_sample_i-sub_start] = np.mean(fri_slice)
 
@@ -350,12 +350,12 @@ for delta_fri_i, delta_fri in enumerate(delta_fri_sys):
                     max_fric = max_fri - fri_slice
                     if sub_sample_i < len(sub_fri_means): #Skip if computing the no change scenario
                         # First create array of replacement fri
-                        replacement_fri = np.ones(n_cell) #Initialize
+                        replacement_fri = np.ones(ncell) #Initialize
                         xs_filt = (fric > max_fric) #Find where fric will push fri beyond max
                         replacement_fri[xs_filt] = max_fri
                         replacement_fri[xs_filt==False] = (fri_slice + fric)[xs_filt==False]
                         # Now replace them in the full array of fri
-                        fri_sorted[slice_left:slice_left+n_cell] = replacement_fri 
+                        fri_sorted[slice_left:slice_left+ncell] = replacement_fri 
                         if metric == metrics[0]:
                             # Store the mean value of excess resources, keep at nan if no excess
                             xsresources = (fric - max_fric)[xs_filt]
@@ -433,7 +433,7 @@ for delta_fri_i, delta_fri in enumerate(delta_fri_sys):
                         sub_metric_expect[fire_sample_i-sub_start] = metric_expect
 
                         # Also update spatial representation of metric
-                        #mapindices_slice = mapindices[freq_argsort][slice_left:slice_left+n_cell]
+                        #mapindices_slice = mapindices[freq_argsort][slice_left:slice_left+ncell]
                         #map_mask = np.zeros(maps_filt.shape, dtype=bool)
                         #map_mask[mapindices_slice[:,0], mapindices_slice[:,1]] = True
                         #sub_cellcounts[map_mask] += 1
@@ -482,16 +482,16 @@ for delta_fri_i, delta_fri in enumerate(delta_fri_sys):
                             xs_means_slice = sampled_xs_means[fri_filt]
                             if not np.all(np.isnan(xs_means_slice)):
                                 phase_space_xs[len(fri_bin_edges)-1-fri_i, fric_i] = np.nanmean(xs_means_slice)   
-                    # Also store data on max(<metric>) at (constraint, n_cell, delta_fri)
+                    # Also store data on max(<metric>) at (constraint, ncell, delta_fri)
                     phase_slice = phase_space[:, fric_i]
                     delta_fri_phase[constraint_i, fric_i, delta_fri_i] = max(phase_slice[phase_slice != 0])
 
-                    # Save spatial representation for this n_cell value
+                    # Save spatial representation for this ncell value
                     # <metric> per cell, assume at baseline if cell  
                     #metric_map = celltotals / cellcounts
                     ## Wherever cellcounts==0 -> nan, now replace within habitat cells to no_change
                     #metric_map[maps_filt & np.isnan(metric_map)] = metric_nochange
-                    #fn = data_root + f"/map_ncell_{n_cell}"
+                    #fn = data_root + f"/map_ncell_{ncell}"
                     #np.save(fn, metric_map)
 
             if my_rank == 0:
@@ -503,30 +503,30 @@ for delta_fri_i, delta_fri in enumerate(delta_fri_sys):
                     np.save(handle, phase_space)
                 # Plot phase
                 phase_fig_fn = figs_root + f"/const_{constraint}" + "/phase.png"
-                plot_phase(phase_space, metric, metric_nochange, fri_bin_cntrs, n_cell_vec, phase_fig_fn, fric_vec)
+                plot_phase(phase_space, metric, metric_nochange, fri_bin_cntrs, ncell_vec, phase_fig_fn, fric_vec)
                 if metric == metrics[0]:
                     phase_fn = f"data/Aeff_{Aeff}/tfinal_{t_final}/deltafri_{delta_fri}/const_{constraint}/phase_xs.npy"
                     with open(phase_fn, 'wb') as handle:
                         np.save(handle, phase_space_xs)
                     phase_fig_fn = figs_root + f"/const_{constraint}" + "/phase_xs.png"
-                    plot_phase(phase_space_xs, 'xs', 0, fri_bin_cntrs, n_cell_vec, phase_fig_fn, fric_vec)
+                    plot_phase(phase_space_xs, 'xs', 0, fri_bin_cntrs, ncell_vec, phase_fig_fn, fric_vec)
 
                 # Plot geographical representations
-                # First, get the global max across n_cell values for the colorbar limit
+                # First, get the global max across ncell values for the colorbar limit
                 #vmaxes = []
-                #for n_cell in n_cell_vec:
-                #    metric_map = np.load(data_root + f"/map_ncell_{n_cell}.npy")
+                #for ncell in ncell_vec:
+                #    metric_map = np.load(data_root + f"/map_ncell_{ncell}.npy")
                 #    vmaxes.append(np.max(metric_map[np.isnan(metric_map) == False]))
                 ## Now actually plot
-                #for n_cell in n_cell_vec:
+                #for ncell in ncell_vec:
                 #    fig, ax = plt.subplots(figsize=(12,12))
                 #    cmap = copy.copy(matplotlib.cm.plasma)
                 #    cmap.set_bad(alpha=0)
-                #    metric_map = np.load(data_root + f"/map_ncell_{n_cell}.npy")
+                #    metric_map = np.load(data_root + f"/map_ncell_{ncell}.npy")
                 #    im = ax.imshow(metric_map, vmin=metric_nochange, vmax=max(vmaxes), cmap=cmap)
                 #    cbar = ax.figure.colorbar(im, ax=ax, location="right", shrink=0.6)
                 #    cbar.ax.set_ylabel(r'$<{}>$'.format(metric), rotation=-90, fontsize=10, labelpad=20)
-                #    fig_fn = figs_root + f"/const_{constraint}/map_ncell_{n_cell}.png"
+                #    fig_fn = figs_root + f"/const_{constraint}/map_ncell_{ncell}.png"
                 #    fig.savefig(fig_fn, bbox_inches='tight')
                 #    plt.close(fig)
 if my_rank == 0:
