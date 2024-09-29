@@ -18,7 +18,7 @@ MPI.COMM_WORLD.Set_errhandler(MPI.ERRORS_RETURN)
 
 # Some constants
 progress = False
-overwrite_metrics = False
+overwrite_metrics = True
 metrics = ['lambda_s']#['mu_s']#['r', 'Nf', 'g']
 metric_thresh = 0.98
 metric_bw_ratio = 50
@@ -31,8 +31,8 @@ lr_coord = [2723, 3905]
 with sg.H5Store('shared_data.h5').open(mode='r') as sd:
     b_vec = np.array(sd['b_vec'])
 fri_vec = b_vec * gamma(1+1/c)
-#max_fri = 66 #yrs
-max_fri = max(fri_vec)
+#final_max_fri = 66 #yrs
+final_max_fri = max(fri_vec)
 A_cell = 270**2 / 1e6 #km^2
 fri_bw_ratio = 50 #For binning initial fri (with uncertainty)
 fric_baseline = 200 #years, max fire return interval change possible
@@ -46,11 +46,11 @@ num_samples_ratio = 650#500
 #baseline_areas = np.arange(10, 150, 10)
 baseline_areas = np.arange(10, 160, 30)
 ncell_baseline_max = round(max(baseline_areas)/A_cell)
-delta_fri_sys = np.arange(-10, 11, 1) #yrs
+#delta_fri_sys = np.arange(-10, 11, 1) #yrs
 #delta_fri_sys = np.arange(0,10.5,0.5)
 #delta_fri_sys = np.array([10])
 #delta_fri_sys = np.concatenate(([0], range(-10,0), range(1,11)))
-#delta_fri_sys = [0]
+delta_fri_sys = [0]
 #delta_fri_sys = [-10, 0, 10]
 rng = np.random.default_rng()
 
@@ -193,8 +193,8 @@ mapindices = comm_world.bcast(mapindices)
 fri_argsort = np.argsort(fri_flat)
 # Use the max delta_fri to get an upper bound on right hand of slice
 fri_sorted = fri_flat[fri_argsort] + max(delta_fri_sys)
-if max(fri_sorted) > max_fri:
-    slice_right_max = min(np.nonzero(fri_sorted > max_fri)[0])
+if max(fri_sorted) > final_max_fri:
+    slice_right_max = min(np.nonzero(fri_sorted >= final_max_fri)[0])
 else:
     slice_right_max = len(fri_sorted) - 1
 # Generate resource allocation scenarios
@@ -222,8 +222,8 @@ for delta_fri_i, delta_fri in enumerate(delta_fri_sys):
     sdm_sorted = sdm_flat[fri_argsort]
 
     # Get bins of initial fri for phase data
-    if max(fri_sorted) > max_fri:
-        slice_right_max = min(np.nonzero(fri_sorted > max_fri)[0])
+    if max(fri_sorted) > final_max_fri:
+        slice_right_max = min(np.nonzero(fri_sorted > final_max_fri)[0])
     else:
         slice_right_max = len(fri_sorted) - 1
     fri_range = fri_sorted[slice_right_max] - fri_sorted[0]
@@ -352,18 +352,18 @@ for delta_fri_i, delta_fri in enumerate(delta_fri_sys):
                         sub_fri_means[fire_sample_i-sub_start] = np.mean(fri_slice)
 
                     # Adjust the fri distribution
-                    max_fric = max_fri - fri_slice
+                    final_max_fric = final_max_fri - fri_slice
                     if sub_sample_i < len(sub_fri_means): #Skip if computing the no change scenario
                         # First create array of replacement fri
                         replacement_fri = np.ones(ncell) #Initialize
-                        xs_filt = (fric > max_fric) #Find where fric will push fri beyond max
-                        replacement_fri[xs_filt] = max_fri
+                        xs_filt = (fric > final_max_fric) #Find where fric will push fri beyond max
+                        replacement_fri[xs_filt] = final_max_fri
                         replacement_fri[xs_filt==False] = (fri_slice + fric)[xs_filt==False]
                         # Now replace them in the full array of fri
                         fri_sorted[slice_left:slice_left+ncell] = replacement_fri 
                         if metric == metrics[0]:
                             # Store the mean value of excess resources, keep at nan if no excess
-                            xsresources = (fric - max_fric)[xs_filt]
+                            xsresources = (fric - final_max_fric)[xs_filt]
                             if len(xsresources) > 0:
                                 sub_xs_means[fire_sample_i-sub_start] = np.mean(xsresources)
 
