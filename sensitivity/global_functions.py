@@ -17,14 +17,18 @@ def adjustmaps(maps):
 
 def plot_phase(phase_space, metric, metric_nochange, fri_bin_cntrs, n_cell_vec, fig_fn, fric_vec):
     fig, ax = plt.subplots(figsize=(12,12))
-    phase_space = np.ma.masked_where(phase_space==0, phase_space)
+    #phase_space = np.ma.masked_where(phase_space==0, phase_space)
+    phase_space = np.ma.masked_where(np.isnan(phase_space),  phase_space)
     phase_flat = phase_space.flatten()
     cmap = copy.copy(matplotlib.cm.plasma)
-    '''doing this for now bc some runs are bad'''
-    if (metric=='r') or (metric=='g'):
-        phase_max = np.quantile(phase_flat[phase_flat != np.ma.masked], 0.98)
-    if metric in ['Nf', 'xs', 'mu_s', 'lambda_s']:
-        phase_max = max(phase_flat[phase_flat != np.ma.masked])
+    if len(phase_flat[phase_flat != np.ma.masked]) == 0:
+        phase_max = 0
+    else:
+        '''doing this for now bc some runs are bad'''
+        if (metric=='r') or (metric=='g'):
+            phase_max = np.quantile(phase_flat[phase_flat != np.ma.masked], 0.98)
+        if metric in ['Nf', 'xs', 'mu_s', 'lambda_s']:
+            phase_max = max(phase_flat[phase_flat != np.ma.masked])
     cmap.set_bad('white')
     im = ax.imshow(phase_space, norm=matplotlib.colors.Normalize(vmin=metric_nochange, vmax=phase_max), cmap=cmap)
     cbar = ax.figure.colorbar(im, ax=ax, location="right", shrink=0.6)
