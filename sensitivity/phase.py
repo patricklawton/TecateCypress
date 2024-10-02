@@ -18,7 +18,7 @@ MPI.COMM_WORLD.Set_errhandler(MPI.ERRORS_RETURN)
 
 # Some constants
 progress = False
-overwrite_metrics = False
+overwrite_metrics = True
 metrics = ['lambda_s']#['mu_s']#['r', 'Nf', 'g']
 metric_thresh = 0.98
 metric_bw_ratio = 50
@@ -41,18 +41,10 @@ fric_baseline = 200 #years, max fire return interval change possible
 metric_integrand_ratio = 800
 dfri = 0.01
 ncell_step = 6_500#5_000#3_000
-#num_samples_ratio = 650#500
 slice_spacing = 1_000#500
-#baseline_area = 20 #km^2
-#baseline_areas = np.arange(10, 155, 5)
-#baseline_areas = np.arange(10, 150, 10)
-baseline_areas = np.arange(10, 160, 30)
-delta_fri_sys = np.arange(-10, 11, 1) #yrs
-#delta_fri_sys = np.arange(0,10.5,0.5)
-#delta_fri_sys = np.array([10])
-#delta_fri_sys = np.concatenate(([0], range(-10,0), range(1,11)))
-#delta_fri_sys = [0]
-#delta_fri_sys = [-10, 0, 10]
+baseline_areas = np.arange(10, 160, 30) #km^2
+delta_fri_step = 0.25
+delta_fri_sys = np.arange(-10, 10+delta_fri_step, delta_fri_step) #years
 rng = np.random.default_rng()
 
 # Generate resource allocation values
@@ -336,12 +328,11 @@ for delta_fri_i, delta_fri in enumerate(delta_fri_sys):
                     fri_expected = fri_flat + delta_fri
                     # Adjust the fri distribution at cells in slice
                     if sub_sample_i < len(sub_fri_means): #Skip if computing no change scenario
-                        # Get slice for this rank
+                        # Get left bound index of slice for this rank
                         slice_left = slice_left_all[slice_left_sample_i]
                         # First, check that slice is within allowed range
-                        if slice_left > slice_left_max:
-                            #sub_metric_expect[slice_left_sample_i-sub_start] = np.nan
-                            continue
+                        if slice_left > slice_left_max: continue
+                        # If so, get full range of indices from reference
                         slice_indices = fri_argsort_ref[slice_left:slice_left + ncell]
                         fri_slice = fri_expected[slice_indices]
                         # Store mean value of slice
