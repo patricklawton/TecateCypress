@@ -18,7 +18,8 @@ MPI.COMM_WORLD.Set_errhandler(MPI.ERRORS_RETURN)
 
 # Some constants
 progress = False
-overwrite_metrics = True
+overwrite_metrics = False
+fric_method = "scaledtoinit" #"flat"
 metrics = ['lambda_s']#['mu_s']#['r', 'Nf', 'g']
 metric_thresh = 0.98
 metric_bw_ratio = 50
@@ -44,7 +45,8 @@ ncell_step = 6_500#5_000#3_000
 slice_spacing = 1_000#500
 baseline_areas = np.arange(10, 160, 30) #km^2
 delta_fri_step = 0.25
-delta_fri_sys = np.arange(-10, 10+delta_fri_step, delta_fri_step) #years
+#delta_fri_sys = np.arange(-10, 10+delta_fri_step, delta_fri_step).astype(float) #years
+delta_fri_sys = np.array([-10.0])
 rng = np.random.default_rng()
 
 # Generate resource allocation values
@@ -54,6 +56,7 @@ constraint_vec = ncell_baseline_vec * fric_baseline
 
 comm_world = MPI.COMM_WORLD
 my_rank = comm_world.Get_rank()
+root = 0
 num_procs = comm_world.Get_size()
 
 # Init data to be read on rank 0
@@ -190,7 +193,7 @@ mapindices = comm_world.bcast(mapindices)
 # Generate samples of remaining state variables
 # Use the max post alteration fri to get an upper bound on right hand of initial fri slices
 fri_argsort_ref = np.argsort(fri_flat)
-fri_sorted = fri_flat[fri_argsort_ref] #+ max(delta_fri_sys)
+fri_sorted = fri_flat[fri_argsort_ref] 
 if max(fri_sorted) > final_max_fri:
     slice_right_max = min(np.nonzero(fri_sorted >= final_max_fri)[0])
 else:
@@ -226,28 +229,51 @@ for ncell in ncell_vec:
             fri_means_ncell[slice_i] = np.mean(fri_sorted[slice_left:slice_left+ncell])
     fri_means_ref.append(fri_means_ncell)
 
+if fric_method == "scaledtoinit":
+    # Solve for tau_max at every (C, ncell, slice_left) for delta_fri=0, then reuse for delta_fri > 0
+    if my_rank != root:
+        fri_max_all = None
+    else:
+        fri_max_all = np.ones((len(constraint_vec), len(ncell_vec), len(slice_left_all))) * np.nan
+        for constraint_i, constraint in enumerate(constraint_vec):
+            for ncell_i, ncell in enumerate(ncell_vec):
+                slice_left_max = slice_right_max - ncell #slice needs to fit
+                for sl_i, slice_left in enumerate(slice_left_all):
+                    if slice_left > slice_left_max: continue
+                    fri_slice = fri_sorted[slice_left:slice_left+ncell]
+                    def C_diff(fri_max):
+                        # Linear decrease from fri_min to fri_max
+                        fric_slice = fri_max - fri_slice
+                        # No negative values allowed, cut off fric at zero
+                        fric_slice = np.where(fri_slice < fri_max, fric_slice, 0)
+                        return np.abs(constraint - np.sum(fric_slice))
+                    diffmin = scipy.optimize.minimize_scalar(C_diff, bounds=(constraint/ncell, 1e5))
+                    fri_max_all[constraint_i, ncell_i, sl_i] = diffmin.x
+        # Save fri_max data
+        np.save(data_root + "/fri_max_all.npy", fri_max_all)
+    fri_max_all = comm_world.bcast(fri_max_all, root=0)
+
 if my_rank == 0:
     # Save all state variables
     np.save(data_root + "/delta_fri_vec.npy", delta_fri_sys)
     np.save(data_root + "/constraint_vec.npy", constraint_vec)
     np.save(data_root + "/ncell_vec.npy", ncell_vec)
     np.save(data_root + "/slice_left_all.npy", slice_left_all)
-    print(len(slice_left_all))
 
     # Save fri bin centers for plotting
     np.save(data_root + "/fri_bin_cntrs.npy", fri_bin_cntrs)
 
-    # Initialize data for max(<r>) across (constraint, ncell, delta_fri) 
+    # Initialize data for max(<metric>) across (constraint, ncell, delta_fri) 
     delta_fri_phase = np.empty((len(baseline_areas), len(ncell_vec), len(delta_fri_sys)))
     
-    # Initialize data for <r> across (delta_fri, C, ncell, slice_left) space
+    # Initialize data for <metric> across (delta_fri, C, ncell, slice_left) space
     full_phase = np.ones((
                     len(delta_fri_sys), len(constraint_vec), 
                     len(ncell_vec), len(slice_left_all)
                         )) * np.nan
 
 # Loop over considered values of fri uncertainty
-for delta_fri_i, delta_fri in enumerate(delta_fri_sys):  
+for delta_fri_i, delta_fri in enumerate(delta_fri_sys): 
     if my_rank==0: print(f"delta_fri: {delta_fri}")
     ##fri_uncertain = fri_flat + rng.normal(0, delta_fri, len(fri_flat))
     ##fri_min = 5
@@ -261,17 +287,19 @@ for delta_fri_i, delta_fri in enumerate(delta_fri_sys):
     # Loop over different resource constraint values
     for constraint_i, constraint in enumerate(constraint_vec):
         if my_rank == 0: print(f"On constraint value {constraint}")
-        # Get some info for this allocation scenario
-        fric_vec = np.array([constraint/ncell for ncell in ncell_vec])
+        if fric_method == "flat":
+            fric_vec = np.array([constraint/ncell for ncell in ncell_vec])
+        else:
+            fric_vec = None
 
         for metric in metrics:
             if my_rank == 0:
                 start_time = timeit.default_timer()
                 # Initialize final data matricies
-                phase_space = np.ones((len(fri_bin_edges), len(fric_vec))) * np.nan
+                phase_space = np.ones((len(fri_bin_edges), len(ncell_vec))) * np.nan
                 # Add a matrix for computing excess resources; only do this once
                 if metric == metrics[0]:
-                    phase_space_xs = np.ones((len(fri_bin_edges), len(fric_vec))) * np.nan
+                    phase_space_xs = np.ones((len(fri_bin_edges), len(ncell_vec))) * np.nan
                 figs_root = f"figs/Aeff_{Aeff}/tfinal_{t_final}/deltafri_{delta_fri}/metric_{metric}"
                 if not os.path.isdir(figs_root):
                     os.makedirs(figs_root)
@@ -290,7 +318,6 @@ for delta_fri_i, delta_fri in enumerate(delta_fri_sys):
 
             # Sample slices of init fri for each ncell
             for ncell_i, ncell in enumerate(tqdm(ncell_vec, disable=(not progress))):
-                fric = fric_vec[ncell_i]
                 ## Get subset of initial fri slices for this ncell value
                 #slice_left_max = slice_right_max - ncell #slice needs to fit
                 #slice_left_samples = slice_left_all[slice_left_all <= slice_left_max]
@@ -319,9 +346,9 @@ for delta_fri_i, delta_fri in enumerate(delta_fri_sys):
                     sub_xs_means = np.ones(sub_samples) * np.nan
 
                 # Add one sample for computing the no change scenario
-                if (fric==max(fric_vec)) and (my_rank==0):
+                if (ncell==max(ncell_vec)) and (my_rank==0):
                     sub_samples += 1
-                    print(f"adding nochange to rank {my_rank} for {sub_samples} total iterations at fric {fric}")
+                    print(f"adding nochange to rank {my_rank} for {sub_samples} total iterations at ncell {ncell}")
 
                 # Loop over sampled realizations of this fire alteration strategy
                 for sub_sample_i, slice_left_sample_i in enumerate(tqdm(range(sub_start, sub_start+sub_samples), disable=True)):#(not progress))):
@@ -341,14 +368,25 @@ for delta_fri_i, delta_fri in enumerate(delta_fri_sys):
                         final_max_fric = final_max_fri - fri_slice
                         # First create array of replacement fri
                         replacement_fri = np.ones(ncell) #Initialize
-                        xs_filt = (fric > final_max_fric) #Find where fric will push fri beyond max
+                        if fric_method == "flat":
+                            fric = fric_vec[ncell_i]
+                            fric_slice = np.repeat(fric, ncell)
+                        elif fric_method == "scaledtoinit":
+                            fri_max = fri_max_all[constraint_i, ncell_i, slice_left_sample_i]
+                            fri_slice_ref = fri_flat[slice_indices]
+                            '''might be worth generating these slices outside loops'''
+                            fric_slice = fri_max - fri_slice_ref
+                            fric_slice = np.where(fri_slice_ref < fri_max, fric_slice, 0)
+                            #print(f"\nfric_slice at (C,ncell,sl_i)=({constraint,ncell,sl_i}) is:\n{fric_slice}\nfri_slice_ref is {fri_slice_ref}\nfri_max={fri_max}")
+                        # Find where fric will push fri beyond max
+                        xs_filt = (fric_slice > final_max_fric) 
                         replacement_fri[xs_filt] = final_max_fri
-                        replacement_fri[xs_filt==False] = (fri_slice + fric)[xs_filt==False]
+                        replacement_fri[xs_filt==False] = (fri_slice + fric_slice)[xs_filt==False]
                         # Now replace them in the full array of fri
                         fri_expected[slice_indices] = replacement_fri 
                         if metric == metrics[0]:
                             # Store the mean value of excess resources, keep at nan if no excess
-                            xsresources = (fric - final_max_fric)[xs_filt]
+                            xsresources = (fric_slice - final_max_fric)[xs_filt]
                             if len(xsresources) > 0:
                                 sub_xs_means[slice_left_sample_i-sub_start] = np.mean(xsresources)
 
@@ -366,11 +404,14 @@ for delta_fri_i, delta_fri in enumerate(delta_fri_sys):
                             metric_edges = metric_hist[2]
                             metric_vals = []
                             diffs = np.diff(metric_edges)
-                            #bw_ratio = 100
+
+                            '''not it'''
+                            #bw_ratio = 10
                             #for edge_i, edge in enumerate(metric_edges[:-1]):
                             #    dm = diffs[edge_i] / bw_ratio
                             #    metric_vals.append(list(np.arange(edge, metric_edges[edge_i+1]+dm, dm)))
                             #metric_vals = np.array(list(itertools.chain.from_iterable(metric_vals)))
+
                             for edge_i, edge in enumerate(metric_edges[:-1]):
                                 metric_vals.append(edge + diffs[edge_i]/2) 
                             metric_vals = np.array(metric_vals)
@@ -379,8 +420,6 @@ for delta_fri_i, delta_fri in enumerate(delta_fri_sys):
                             metric_vals = np.arange(min(metric_hist[2]), max(metric_hist[2])+dm, dm)
                     for fri_i in range(len(fri_edges) - 1):
                         # Get the expected values in this fri bin
-                        #fri_slice = fris[(fris >= fri_edges[fri_i]) & (fris < fri_edges[fri_i+1])]
-                        #if len(fri_slice) == 0: continue #can skip if zero fire probability in bin
                         within_fri_slice = (fris >= fri_edges[fri_i]) & (fris < fri_edges[fri_i+1]) 
                         # Can skip if zero fire probability in bin
                         if np.any(within_fri_slice) == False: continue
@@ -423,6 +462,8 @@ for delta_fri_i, delta_fri in enumerate(delta_fri_sys):
 
                     # Add sample to list if not computing no change scenario
                     if sub_sample_i < len(sub_fri_means):
+                        if metric_expect < 0.45:
+                            print(f"\nfric_slice at (C,ncell,sl_i)=({constraint,ncell,slice_left_sample_i}) is {fric_slice}\nfri_slice_ref is {fri_slice_ref}\nfri_slice (with delta_fri) is {fri_slice}\nfri_max is {fri_max}")
                         sub_metric_expect[slice_left_sample_i-sub_start] = metric_expect
 
                         # Also update spatial representation of metric
@@ -435,7 +476,7 @@ for delta_fri_i, delta_fri in enumerate(delta_fri_sys):
                     elif my_rank == 0:
                         print(f"Not adding sample with index {slice_left_sample_i} / {slice_left_sample_i-sub_start} on rank {my_rank}, instead saving as nochange")
                         metric_nochange = metric_expect
-                        with open(data_root + "/nochange.json", "w") as handle:
+                        with open(data_root + f"/nochange_{fric_method}.json", "w") as handle:
                             json.dump({f'{metric}_expect_nochange': metric_nochange}, handle)
                         if not os.path.isdir(figs_root + f"/const_{constraint}"):
                             os.makedirs(figs_root + f"/const_{constraint}")
@@ -496,17 +537,17 @@ for delta_fri_i, delta_fri in enumerate(delta_fri_sys):
                 elapsed = timeit.default_timer() - start_time
                 print('{} seconds to run metric {}'.format(elapsed, metric))
                 # Save phase mats to files
-                phase_fn = data_root + "/phase.npy"
+                phase_fn = data_root + f"/phase_{fric_method}.npy"
                 with open(phase_fn, 'wb') as handle:
                     np.save(handle, phase_space)
                 # Plot phase
-                phase_fig_fn = figs_root + f"/const_{constraint}" + "/phase.png"
+                phase_fig_fn = figs_root + f"/const_{constraint}" + f"/phase_{fric_method}.png"
                 plot_phase(phase_space, metric, metric_nochange, fri_bin_cntrs, ncell_vec, phase_fig_fn, fric_vec)
                 if metric == metrics[0]:
-                    phase_fn = f"data/Aeff_{Aeff}/tfinal_{t_final}/deltafri_{delta_fri}/const_{constraint}/phase_xs.npy"
+                    phase_fn = f"data/Aeff_{Aeff}/tfinal_{t_final}/deltafri_{delta_fri}/const_{constraint}/phase_xs_{fric_method}.npy"
                     with open(phase_fn, 'wb') as handle:
                         np.save(handle, phase_space_xs)
-                    phase_fig_fn = figs_root + f"/const_{constraint}" + "/phase_xs.png"
+                    phase_fig_fn = figs_root + f"/const_{constraint}" + f"/phase_xs_{fric_method}.png"
                     plot_phase(phase_space_xs, 'xs', 0, fri_bin_cntrs, ncell_vec, phase_fig_fn, fric_vec)
 
                 # Plot geographical representations
@@ -527,8 +568,9 @@ for delta_fri_i, delta_fri in enumerate(delta_fri_sys):
                 #    fig_fn = figs_root + f"/const_{constraint}/map_ncell_{ncell}.png"
                 #    fig.savefig(fig_fn, bbox_inches='tight')
                 #    plt.close(fig)
+sys.exit()
 if my_rank == 0:
-    fn = f"data/Aeff_{Aeff}/tfinal_{t_final}/delta_fri_phase.npy"
+    fn = f"data/Aeff_{Aeff}/tfinal_{t_final}/delta_fri_phase_{fric_method}.npy"
     np.save(fn, delta_fri_phase)
-    fn = f"data/Aeff_{Aeff}/tfinal_{t_final}/full_phase.npy"
+    fn = f"data/Aeff_{Aeff}/tfinal_{t_final}/full_phase_{fric_method}.npy"
     np.save(fn, full_phase)

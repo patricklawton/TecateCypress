@@ -15,7 +15,7 @@ def adjustmaps(maps):
         maps[mi] = m[0:dim_len[0], 0:dim_len[1]]
     return maps
 
-def plot_phase(phase_space, metric, metric_nochange, fri_bin_cntrs, n_cell_vec, fig_fn, fric_vec):
+def plot_phase(phase_space, metric, metric_nochange, fri_bin_cntrs, n_cell_vec, fig_fn, fric_vec=None):
     fig, ax = plt.subplots(figsize=(12,12))
     #phase_space = np.ma.masked_where(phase_space==0, phase_space)
     phase_space = np.ma.masked_where(np.isnan(phase_space),  phase_space)
@@ -42,8 +42,9 @@ def plot_phase(phase_space, metric, metric_nochange, fri_bin_cntrs, n_cell_vec, 
     xticks = np.arange(0,len(n_cell_vec),xtick_spacing)
     ax.set_xticks(xticks, labels=n_cell_vec[::xtick_spacing]);
     ax.set_xlabel('Number of cells intervened in')
-    secax = ax.secondary_xaxis('top')
-    secax.set_xticks(xticks, labels=np.round(fric_vec[::xtick_spacing], decimals=3));
-    secax.set_xlabel('Change in fri per cell')
+    if fric_vec != None:
+        secax = ax.secondary_xaxis('top')
+        secax.set_xticks(xticks, labels=np.round(fric_vec[::xtick_spacing], decimals=3));
+        secax.set_xlabel('Change in fri per cell')
     fig.savefig(fig_fn, bbox_inches='tight')
     plt.close(fig)
