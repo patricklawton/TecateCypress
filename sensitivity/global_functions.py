@@ -42,7 +42,8 @@ def plot_phase(phase_space, metric, metric_nochange, fri_bin_cntrs, n_cell_vec, 
     xticks = np.arange(0,len(n_cell_vec),xtick_spacing)
     ax.set_xticks(xticks, labels=n_cell_vec[::xtick_spacing]);
     ax.set_xlabel('Number of cells intervened in')
-    if fric_vec != None:
+    #if fric_vec != None:
+    if hasattr(fric_vec, "__len__"):
         secax = ax.secondary_xaxis('top')
         secax.set_xticks(xticks, labels=np.round(fric_vec[::xtick_spacing], decimals=3));
         secax.set_xlabel('Change in fri per cell')

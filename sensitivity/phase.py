@@ -19,7 +19,11 @@ MPI.COMM_WORLD.Set_errhandler(MPI.ERRORS_RETURN)
 # Some constants
 progress = False
 overwrite_metrics = False
-fric_method = "scaledtoinit" #"flat"
+if len(sys.argv) > 1:
+    fric_method = sys.argv[1]
+    if fric_method not in ["flat", "scaledtoinit"]: sys.exit("Invalid fric_method")
+else:
+    sys.exit("Need to provide fric_method argument")
 metrics = ['lambda_s']#['mu_s']#['r', 'Nf', 'g']
 metric_thresh = 0.98
 metric_bw_ratio = 50
@@ -44,9 +48,9 @@ dfri = 0.01
 ncell_step = 6_500#5_000#3_000
 slice_spacing = 1_000#500
 baseline_areas = np.arange(10, 160, 30) #km^2
-delta_fri_step = 0.25
-#delta_fri_sys = np.arange(-10, 10+delta_fri_step, delta_fri_step).astype(float) #years
-delta_fri_sys = np.array([-10.0])
+delta_fri_step = 1
+delta_fri_sys = np.arange(-10, 10+delta_fri_step, delta_fri_step).astype(float) #years
+#delta_fri_sys = np.array([-10.0])
 rng = np.random.default_rng()
 
 # Generate resource allocation values
@@ -216,7 +220,6 @@ else:
     slice_right_max = len(fri_sorted) - 1
 fri_range = fri_sorted[slice_right_max] - fri_sorted[0]
 fri_bw = fri_range / fri_bw_ratio
-#fri_bw = 0.75
 fri_bin_edges = np.arange(fri_sorted[0], fri_sorted[slice_right_max], fri_bw)
 fri_bin_cntrs = np.array([edge + fri_bw/2 for edge in fri_bin_edges])
 # Store the mean fri in each preset slice for reference later
@@ -318,10 +321,6 @@ for delta_fri_i, delta_fri in enumerate(delta_fri_sys):
 
             # Sample slices of init fri for each ncell
             for ncell_i, ncell in enumerate(tqdm(ncell_vec, disable=(not progress))):
-                ## Get subset of initial fri slices for this ncell value
-                #slice_left_max = slice_right_max - ncell #slice needs to fit
-                #slice_left_samples = slice_left_all[slice_left_all <= slice_left_max]
-                #num_samples = len(slice_left_samples)
                 slice_left_max = slice_right_max - ncell #slice needs to fit
                 num_samples = len(slice_left_all)
 
@@ -377,7 +376,7 @@ for delta_fri_i, delta_fri in enumerate(delta_fri_sys):
                             '''might be worth generating these slices outside loops'''
                             fric_slice = fri_max - fri_slice_ref
                             fric_slice = np.where(fri_slice_ref < fri_max, fric_slice, 0)
-                            #print(f"\nfric_slice at (C,ncell,sl_i)=({constraint,ncell,sl_i}) is:\n{fric_slice}\nfri_slice_ref is {fri_slice_ref}\nfri_max={fri_max}")
+                            '''shouldn't also be capped by fric_baseline?'''
                         # Find where fric will push fri beyond max
                         xs_filt = (fric_slice > final_max_fric) 
                         replacement_fri[xs_filt] = final_max_fri
@@ -393,8 +392,7 @@ for delta_fri_i, delta_fri in enumerate(delta_fri_sys):
                     # Get new probability distribution across fire return interval
                     '''cut off fri distribution at max fri we simulated, shouldn't leave this forever'''
                     fris = fri_expected[fri_expected <= max(fri_vec)] 
-                    fri_hist = np.histogram(fris, bins=50, density=True);
-                    P_fri_xo = scipy.stats.rv_histogram((fri_hist[0], fri_hist[1]))
+                    ncell_tot = len(fris)
 
                     # Get expected value of metric
                     metric_expect = 0
@@ -404,14 +402,6 @@ for delta_fri_i, delta_fri in enumerate(delta_fri_sys):
                             metric_edges = metric_hist[2]
                             metric_vals = []
                             diffs = np.diff(metric_edges)
-
-                            '''not it'''
-                            #bw_ratio = 10
-                            #for edge_i, edge in enumerate(metric_edges[:-1]):
-                            #    dm = diffs[edge_i] / bw_ratio
-                            #    metric_vals.append(list(np.arange(edge, metric_edges[edge_i+1]+dm, dm)))
-                            #metric_vals = np.array(list(itertools.chain.from_iterable(metric_vals)))
-
                             for edge_i, edge in enumerate(metric_edges[:-1]):
                                 metric_vals.append(edge + diffs[edge_i]/2) 
                             metric_vals = np.array(metric_vals)
@@ -420,13 +410,12 @@ for delta_fri_i, delta_fri in enumerate(delta_fri_sys):
                             metric_vals = np.arange(min(metric_hist[2]), max(metric_hist[2])+dm, dm)
                     for fri_i in range(len(fri_edges) - 1):
                         # Get the expected values in this fri bin
-                        within_fri_slice = (fris >= fri_edges[fri_i]) & (fris < fri_edges[fri_i+1]) 
+                        ncell_within_slice = np.count_nonzero((fris >= fri_edges[fri_i]) & (fris < fri_edges[fri_i+1]))
                         # Can skip if zero fire probability in bin
-                        if np.any(within_fri_slice) == False: continue
+                        if ncell_within_slice == 0: continue
 
                         # First get the probability of being in the fri bin
-                        fri_vals = np.arange(fri_edges[fri_i], fri_edges[fri_i+1], dfri)
-                        P_dfri = np.trapz(y=P_fri_xo.pdf(fri_vals), x=fri_vals)
+                        P_dfri = ncell_within_slice / ncell_tot
 
                         # Now get <metric>
                         if metric != "Nf":
@@ -462,8 +451,8 @@ for delta_fri_i, delta_fri in enumerate(delta_fri_sys):
 
                     # Add sample to list if not computing no change scenario
                     if sub_sample_i < len(sub_fri_means):
-                        if metric_expect < 0.45:
-                            print(f"\nfric_slice at (C,ncell,sl_i)=({constraint,ncell,slice_left_sample_i}) is {fric_slice}\nfri_slice_ref is {fri_slice_ref}\nfri_slice (with delta_fri) is {fri_slice}\nfri_max is {fri_max}")
+                        if metric_expect < 0.74903204:
+                            print(f"\nfric_slice at (C,ncell,sl_i)=({constraint,ncell,slice_left_sample_i}) is {fric_slice}\nfri_slice_ref is {fri_slice_ref}\nfri_slice (with delta_fri) is {fri_slice}\nreplacement_fri are {replacement_fri}\nfri_max is {fri_max}\nlast fri_edge is {fri_edges[-1]}\nmetric_expect={metric_expect}")
                         sub_metric_expect[slice_left_sample_i-sub_start] = metric_expect
 
                         # Also update spatial representation of metric
@@ -568,7 +557,6 @@ for delta_fri_i, delta_fri in enumerate(delta_fri_sys):
                 #    fig_fn = figs_root + f"/const_{constraint}/map_ncell_{ncell}.png"
                 #    fig.savefig(fig_fn, bbox_inches='tight')
                 #    plt.close(fig)
-sys.exit()
 if my_rank == 0:
     fn = f"data/Aeff_{Aeff}/tfinal_{t_final}/delta_fri_phase_{fric_method}.npy"
     np.save(fn, delta_fri_phase)
