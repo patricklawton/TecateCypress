@@ -26,7 +26,6 @@ else:
     sys.exit("Need to provide tauc_method argument")
 metrics = ['lambda_s']#['mu_s']#['r', 'Nf', 'g']
 metric_thresh = 0.98
-metric_bw_ratio = 50
 c = 1.42
 Aeff = 7.29
 t_final = 600
@@ -54,7 +53,6 @@ delta_tau_sys = np.array([-10.0, 0.0,  10.0])
 rng = np.random.default_rng()
 
 # Generate resource allocation values
-ncell_baseline_max = round(max(baseline_areas)/A_cell)
 ncell_baseline_vec = np.round(baseline_areas / A_cell).astype(int) 
 C_vec = ncell_baseline_vec * tauc_baseline
 
@@ -107,7 +105,7 @@ if my_rank == 0:
                         metric_vec.append(float(data[f'{metric_label}/{b}']))
                 all_metric = np.append(all_metric, metric_vec)
                 
-            metric_min, metric_max = (np.quantile(all_metric, 1-metric_thresh), np.quantile(all_metric, metric_thresh))
+            metric_min, metric_max = (min(all_metric), max(all_metric))
             if metric == 'mu_s':
                 coarse_grained = np.arange(metric_min, -0.02, 0.02)
                 fine_grained = np.arange(-0.02, metric_max + 0.001, 0.0001)
@@ -121,7 +119,8 @@ if my_rank == 0:
                 #metric_edges = np.concatenate((coarse_grained[:-1], fine_grained))
                 metric_edges = np.arange(metric_min, metric_max + fine_step, fine_step)
             else:
-                metric_bw = (metric_max - metric_min) / metric_bw_ratio
+                metric_min, metric_max = (np.quantile(all_metric, 1-metric_thresh), np.quantile(all_metric, metric_thresh))
+                metric_bw = (metric_max - metric_min) / 50
                 metric_edges = np.arange(metric_min, metric_max + metric_bw, metric_bw)
             
             # First plot the metric probability density
@@ -175,7 +174,7 @@ if my_rank == 0:
     # Flatten and filter FDM & SDM
     # Ignore tau above what we simulated, only a small amount
     # Why are there any zeros in FDM at all?
-    maps_filt = (sdm > 0) & (fdm > 0) & (tau_raster < max(tau_vec))
+    maps_filt = (sdm > 0) & (fdm > 0) #& (tau_raster <= max(tau_vec))
     mapindices = np.argwhere(maps_filt) #2d raster indicies to reference later 
     tau_flat = tau_raster[maps_filt]
     sdm_flat = sdm[maps_filt]
@@ -206,7 +205,7 @@ else:
 slice_left_min = np.nonzero(tau_sorted > min_tau)[0][0]
 # Generate slice sizes of the tau distribution
 '''add step to endpoint? s.t. max possible ncell is included'''
-ncell_vec = np.arange(ncell_baseline_max, slice_right_max, ncell_step)
+ncell_vec = np.arange(max(ncell_baseline_vec), slice_right_max, ncell_step)
 # Max left bound set by smallest slice size
 slice_left_max = slice_right_max - min(ncell_vec)
 # Generate indices of slice left bounds, 
@@ -214,10 +213,6 @@ slice_left_max = slice_right_max - min(ncell_vec)
 slice_left_all = np.arange(slice_left_min, slice_left_max, slice_spacing)
 
 # Get bins of initial tau for phase data
-if max(tau_sorted) > final_max_tau:
-    slice_right_max = min(np.nonzero(tau_sorted > final_max_tau)[0])
-else:
-    slice_right_max = len(tau_sorted) - 1
 tau_range = tau_sorted[slice_right_max] - tau_sorted[0]
 tau_bw = tau_range / tau_bw_ratio
 tau_bin_edges = np.arange(tau_sorted[0], tau_sorted[slice_right_max], tau_bw)
@@ -287,10 +282,10 @@ for delta_tau_i, delta_tau in enumerate(delta_tau_sys):
     # Loop over different resource C values
     for C_i, C in enumerate(C_vec):
         if my_rank == 0: print(f"On C value {C}")
-        if tauc_method == "flat":
-            tauc_vec = np.array([C/ncell for ncell in ncell_vec])
-        else:
-            tauc_vec = None
+        #if tauc_method == "flat":
+        #    tauc_vec = np.array([C/ncell for ncell in ncell_vec])
+        #else:
+        #    tauc_vec = None
 
         for metric in metrics:
             if my_rank == 0:
@@ -365,7 +360,8 @@ for delta_tau_i, delta_tau in enumerate(delta_tau_sys):
                         # First create array of replacement tau
                         replacement_tau = np.ones(ncell) #Initialize
                         if tauc_method == "flat":
-                            tauc = tauc_vec[ncell_i]
+                            #tauc = tauc_vec[ncell_i]
+                            tauc = C / ncell
                             tauc_slice = np.repeat(tauc, ncell)
                         elif tauc_method == "scaledtoinit":
                             tau_max = tau_max_all[C_i, ncell_i, slice_left_sample_i]
@@ -388,7 +384,8 @@ for delta_tau_i, delta_tau in enumerate(delta_tau_sys):
 
                     # Get new probability distribution across fire return interval
                     '''cut off tau distribution at max tau we simulated, shouldn't leave this forever'''
-                    taus = tau_expected[tau_expected <= max(tau_vec)] 
+                    #taus = tau_expected[tau_expected <= max(tau_vec)] 
+                    taus = tau_expected
                     ncell_tot = len(taus)
 
                     # Get expected value of metric
@@ -406,8 +403,14 @@ for delta_tau_i, delta_tau in enumerate(delta_tau_sys):
                             dm = (max(metric_hist[2]) - min(metric_hist[2])) / metric_integrand_ratio
                             metric_vals = np.arange(min(metric_hist[2]), max(metric_hist[2])+dm, dm)
                     for tau_i in range(len(tau_edges) - 1):
+                        '''For final bin, include all cells gte left bin edge, this will inflate the probability of the 
+                           final bin for cases where delta_tau and/or tauc push tau values past final_max_tau, but 
+                           hopefully that's a fine approximation for now.'''
                         # Get the expected values in this tau bin
-                        ncell_within_slice = np.count_nonzero((taus >= tau_edges[tau_i]) & (taus < tau_edges[tau_i+1]))
+                        if tau_i < len(tau_edges) - 2:
+                            ncell_within_slice = np.count_nonzero((taus >= tau_edges[tau_i]) & (taus < tau_edges[tau_i+1]))
+                        else:
+                            ncell_within_slice = np.count_nonzero(taus >= tau_edges[tau_i])
                         # Can skip if zero fire probability in bin
                         if ncell_within_slice == 0: continue
 
@@ -523,13 +526,21 @@ for delta_tau_i, delta_tau in enumerate(delta_tau_sys):
                     np.save(handle, phase_space)
                 # Plot phase
                 phase_fig_fn = figs_root + f"/C_{C}" + f"/phase_{tauc_method}.png"
-                plot_phase(phase_space, metric, metric_nochange, tau_bin_cntrs, ncell_vec, phase_fig_fn, tauc_vec)
+                if tauc_method == "flat":
+                    tauc_vec = C / ncell_vec
+                    plot_phase(phase_space, metric, metric_nochange, tau_bin_cntrs, ncell_vec, phase_fig_fn, tauc_vec)
+                else:
+                    plot_phase(phase_space, metric, metric_nochange, tau_bin_cntrs, ncell_vec, phase_fig_fn)
                 if metric == metrics[0]:
                     phase_fn = f"data/Aeff_{Aeff}/tfinal_{t_final}/deltatau_{delta_tau}/C_{C}/phase_xs_{tauc_method}.npy"
                     with open(phase_fn, 'wb') as handle:
                         np.save(handle, phase_space_xs)
                     phase_fig_fn = figs_root + f"/C_{C}" + f"/phase_xs_{tauc_method}.png"
-                    plot_phase(phase_space_xs, 'xs', 0, tau_bin_cntrs, ncell_vec, phase_fig_fn, tauc_vec)
+                    if tauc_method == "flat":
+                        tauc_vec = C / ncell_vec
+                        plot_phase(phase_space_xs, 'xs', 0, tau_bin_cntrs, ncell_vec, phase_fig_fn, tauc_vec)
+                    else:
+                        plot_phase(phase_space_xs, 'xs', 0, tau_bin_cntrs, ncell_vec, phase_fig_fn)
 
                 # Plot geographical representations
                 # First, get the global max across ncell values for the colorbar limit
