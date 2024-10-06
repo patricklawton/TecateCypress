@@ -36,7 +36,8 @@ with sg.H5Store('shared_data.h5').open(mode='r') as sd:
     b_vec = np.array(sd['b_vec'])
 tau_vec = b_vec * gamma(1+1/c)
 #final_max_tau = 66 #yrs
-final_max_tau = max(tau_vec)
+#final_max_tau = max(tau_vec)
+final_max_tau = 1000
 min_tau = 3
 A_cell = 270**2 / 1e6 #km^2
 tau_bw_ratio = 50 #For binning initial tau (with uncertainty)
@@ -214,7 +215,8 @@ slice_left_all = np.arange(slice_left_min, slice_left_max, slice_spacing)
 
 # Get bins of initial tau for phase data
 tau_range = tau_sorted[slice_right_max] - tau_sorted[0]
-tau_bw = tau_range / tau_bw_ratio
+#tau_bw = tau_range / tau_bw_ratio
+tau_bw = 1.294
 tau_bin_edges = np.arange(tau_sorted[0], tau_sorted[slice_right_max], tau_bw)
 tau_bin_cntrs = np.array([edge + tau_bw/2 for edge in tau_bin_edges])
 # Store the mean tau in each preset slice for reference later
