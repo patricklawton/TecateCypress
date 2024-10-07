@@ -19,6 +19,7 @@ def plot_phase(phase_space, metric, metric_nochange, fri_bin_cntrs, n_cell_vec, 
     fig, ax = plt.subplots(figsize=(12,12))
     #phase_space = np.ma.masked_where(phase_space==0, phase_space)
     phase_space = np.ma.masked_where(np.isnan(phase_space),  phase_space)
+    #print(f"phase_space from plot_phase: {phase_space}")
     phase_flat = phase_space.flatten()
     cmap = copy.copy(matplotlib.cm.plasma)
     if len(phase_flat[phase_flat != np.ma.masked]) == 0:
