@@ -357,6 +357,22 @@ class Phase:
         # Generate slice left bound indices, reference tau_argsort_ref for full slice indices
         self.slice_left_all = np.linspace(slice_left_min, self.slice_left_max, self.slice_samples)
         self.slice_left_all = np.round(self.slice_left_all).astype(int)
+        if self.tauc_method == "scaledtoinit":
+            # Generate v at every (C, ncell) for delta_tau=0, then reuse for delta_tau > 0
+            '''For now, we will only consider min(v), i.e. the steepest scaling'''
+            if self.rank != self.root:
+                self.v_all = None
+                self.tauc_0_all = None
+            else:
+                self.v_all = np.ones((len(self.C_vec), len(self.ncell_vec))) * np.nan
+                self.tauc_0_all = np.ones((len(self.C_vec), len(self.ncell_vec))) * np.nan
+                for (C_i, C), (ncell_i, ncell) in product(enumerate(self.C_vec), enumerate(self.ncell_vec)):
+                    v_min = -(2*C) / ncell**2
+                    self.v_all[C_i, ncell_i] = v_min
+                    tauc_0_max = 2*(C / ncell)
+                    self.tauc_0_all[C_i, ncell_i] = tauc_0_max
+            self.v_all = self.comm.bcast(self.v_all, root=self.root)
+            self.tauc_0_all = self.comm.bcast(self.tauc_0_all, root=self.root)
 
         # Get bins of initial tau for phase plotting per (delta_tau, C)
         tau_range = tau_sorted[self.slice_right_max] - tau_sorted[0]
@@ -373,41 +389,14 @@ class Phase:
                     tau_means_ncell[slice_i] = np.mean(tau_sorted[slice_left:slice_left+ncell])
             self.tau_means_ref.append(tau_means_ncell)
 
-        if self.tauc_method == "scaledtoinit":
-            # Solve for tau_max at every (C, ncell, slice_left) for delta_tau=0, then reuse for delta_tau > 0
-            if self.rank != self.root:
-                self.tau_max_all = None
-            else:
-                self.tau_max_all = np.ones((len(self.C_vec), 
-                                            len(self.ncell_vec), 
-                                            len(self.slice_left_all))) * np.nan
-                #for C_i, C in enumerate(self.C_vec):
-                #    for ncell_i, ncell in enumerate(self.ncell_vec):
-                for (C_i, C), (ncell_i, ncell) in product(enumerate(self.C_vec), enumerate(self.ncell_vec)):
-                    self.slice_left_max = self.slice_right_max - ncell #slice needs to fit
-                    for sl_i, slice_left in enumerate(self.slice_left_all):
-                        if slice_left > self.slice_left_max: continue
-                        tau_slice = tau_sorted[slice_left:slice_left+ncell]
-                        def C_diff(tau_max):
-                            # Linear decrease from tau_min to tau_max
-                            tauc_slice = tau_max - tau_slice
-                            # No negative values allowed, cut off tauc at zero
-                            tauc_slice = np.where(tau_slice < tau_max, tauc_slice, 0)
-                            return np.abs(C - np.sum(tauc_slice))
-                        # Use scipy to solve for tau_max which satisfies C
-                        '''Multiple tau_max may be possible? But I'm only solving for one'''
-                        diffmin = scipy.optimize.minimize_scalar(C_diff, bounds=(C/ncell, 1e5))
-                        self.tau_max_all[C_i, ncell_i, sl_i] = diffmin.x
-                # Save tau_max data
-                np.save(data_dir + "/tau_max_all.npy", self.tau_max_all)
-            self.tau_max_all = self.comm.bcast(self.tau_max_all, root=self.root)
-
         if self.rank == 0:
             # Save all state variables
             np.save(data_dir + "/delta_tau_vec.npy", self.delta_tau_vec)
             np.save(data_dir + "/C_vec.npy", self.C_vec)
             np.save(data_dir + "/ncell_vec.npy", self.ncell_vec)
             np.save(data_dir + "/slice_left_all.npy", self.slice_left_all)
+            if self.tauc_method == "scaledtoinit":
+                np.save(data_dir + "/v_all.npy", self.v_all)
 
             # Save tau bin centers for plotting
             np.save(data_dir + "/tau_bin_cntrs.npy", self.tau_bin_cntrs)
@@ -461,12 +450,11 @@ class Phase:
             tauc = C / ncell
             tauc_slice = np.repeat(tauc, ncell)
         elif self.tauc_method == "scaledtoinit":
-            tau_max = self.tau_max_all[C_i, ncell_i, slice_left_i]
+            v = self.v_all[C_i, ncell_i]
+            tauc_0 = self.tauc_0_all[C_i, ncell_i]
             tau_slice_ref = self.tau_flat[slice_indices]
             '''might be worth generating these slices outside loops'''
-            tauc_slice = tau_max - tau_slice_ref
-            tauc_slice = np.where(tau_slice_ref < tau_max, tauc_slice, 0)
-            '''shouldn't also be capped by tauc_baseline?'''
+            tauc_slice = v*tau_slice_ref + tauc_0
         # Find where tauc will push tau beyond max
         xs_filt = (tauc_slice > final_max_tauc) 
         replacement_tau[xs_filt] = self.final_max_tau

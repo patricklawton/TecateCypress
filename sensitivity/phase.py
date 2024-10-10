@@ -1,7 +1,7 @@
 import numpy as np
 import signac as sg
 import sys
-from project_new import Phase
+from project import Phase
 from itertools import product
 import timeit
 import os
@@ -10,7 +10,7 @@ from global_functions import plot_phase
 
 constants = {}
 constants['progress'] = False
-constants['overwrite_metrics'] = True
+constants['overwrite_metrics'] = False
 constants['metrics'] = ['lambda_s']
 constants['metric_thresh'] = 0.98
 constants['c'] = 1.42
@@ -26,12 +26,16 @@ constants['tau_bw_ratio'] = 50 #For binning initial tau (with uncertainty)
 constants['tauc_baseline'] = 200 #years, max(tauc) possible at min(ncell) given C
 constants['ncell_samples'] = 10
 constants['slice_samples'] = 75
+#constants['slice_samples'] = 5
 constants['baseline_A_min'] = 10 #km^2
 constants['baseline_A_max'] = 160
-constants['baseline_A_samples'] = 3
+constants['baseline_A_samples'] =10
 constants['delta_tau_min'] = -10.0
 constants['delta_tau_max'] = 10.0
 constants['delta_tau_samples'] = 21
+#constants['delta_tau_min'] = 0.0
+#constants['delta_tau_max'] = 0.0
+#constants['delta_tau_samples'] = 1
 constants['root'] = 0 #For mpi
 
 # Init a phase processor based on above constants
@@ -39,8 +43,9 @@ for tauc_method in ["flat", "scaledtoinit"]:
 #for tauc_method in ["scaledtoinit"]:
     constants.update({'tauc_method': tauc_method})
     pproc = Phase(**constants) 
-    pproc.initialize()
     if pproc.rank == 0: print(f"on {tauc_method} tauc_method")
+    pproc.initialize()
+    #print(pproc.phase.shape)
 
     # Loop over metrics and initial tau uncertainty
     for metric in pproc.metrics:
@@ -62,6 +67,7 @@ for tauc_method in ["flat", "scaledtoinit"]:
             for (C_i, C), (ncell_i, ncell) in product(enumerate(pproc.C_vec), enumerate(pproc.ncell_vec)):
                 pproc.prep_rank_samples(metric, ncell)
                 pproc.process_samples(metric, delta_tau, C, ncell)
+
             if pproc.rank == pproc.root:
                 elapsed = timeit.default_timer() - start_time
                 print('{} seconds to run metric {}'.format(elapsed, metric))
@@ -96,5 +102,5 @@ for tauc_method in ["flat", "scaledtoinit"]:
                         fn = figs_dir + f"/phase_xs_slice_{tauc_method}.png"
                         plot_phase(phase_xs_slice, 'xs', 0, pproc.tau_bin_cntrs, pproc.ncell_vec, fn, tauc_vec)
         if pproc.rank == pproc.root:
-            fn = f"data/Aeff_{pproc.Aeff}/tfinal_{pproc.t_final}/metric_{metric}/full_phase_{pproc.tauc_method}.npy"
+            fn = f"data/Aeff_{pproc.Aeff}/tfinal_{pproc.t_final}/metric_{metric}/phase_{pproc.tauc_method}.npy"
             np.save(fn, pproc.phase)
