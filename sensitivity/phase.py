@@ -24,23 +24,25 @@ constants['min_tau'] = 3
 constants['A_cell'] = 270**2 / 1e6 #km^2
 constants['tau_bw_ratio'] = 50 #For binning initial tau (with uncertainty)
 constants['tauc_baseline'] = 200 #years, max(tauc) possible at min(ncell) given C
-constants['ncell_samples'] = 10
+#constants['ncell_samples'] = 10
+constants['ncell_samples'] = 3
 constants['slice_samples'] = 75
 #constants['slice_samples'] = 5
 constants['baseline_A_min'] = 10 #km^2
 constants['baseline_A_max'] = 160
-constants['baseline_A_samples'] =10
+#constants['baseline_A_samples'] = 10
+constants['baseline_A_samples'] = 3
+#constants['delta_tau_min'] = -10.0
+#constants['delta_tau_max'] = 10.0
+#constants['delta_tau_samples'] = 81
 constants['delta_tau_min'] = -10.0
 constants['delta_tau_max'] = 10.0
-constants['delta_tau_samples'] = 21
-#constants['delta_tau_min'] = 0.0
-#constants['delta_tau_max'] = 0.0
-#constants['delta_tau_samples'] = 1
+constants['delta_tau_samples'] = 3
 constants['root'] = 0 #For mpi
 
 # Init a phase processor based on above constants
-for tauc_method in ["flat", "scaledtoinit"]:
-#for tauc_method in ["scaledtoinit"]:
+for tauc_method in ["flat", "initlinear"]:
+#for tauc_method in ["initlinear"]:
     constants.update({'tauc_method': tauc_method})
     pproc = Phase(**constants) 
     if pproc.rank == 0: print(f"on {tauc_method} tauc_method")

@@ -357,7 +357,7 @@ class Phase:
         # Generate slice left bound indices, reference tau_argsort_ref for full slice indices
         self.slice_left_all = np.linspace(slice_left_min, self.slice_left_max, self.slice_samples)
         self.slice_left_all = np.round(self.slice_left_all).astype(int)
-        if self.tauc_method == "scaledtoinit":
+        if self.tauc_method == "initlinear":
             # Generate v at every (C, ncell) for delta_tau=0, then reuse for delta_tau > 0
             '''For now, we will only consider min(v), i.e. the steepest scaling'''
             if self.rank != self.root:
@@ -395,7 +395,7 @@ class Phase:
             np.save(data_dir + "/C_vec.npy", self.C_vec)
             np.save(data_dir + "/ncell_vec.npy", self.ncell_vec)
             np.save(data_dir + "/slice_left_all.npy", self.slice_left_all)
-            if self.tauc_method == "scaledtoinit":
+            if self.tauc_method == "initlinear":
                 np.save(data_dir + "/v_all.npy", self.v_all)
 
             # Save tau bin centers for plotting
@@ -449,7 +449,7 @@ class Phase:
             '''generate these outside loop to speed up'''
             tauc = C / ncell
             tauc_slice = np.repeat(tauc, ncell)
-        elif self.tauc_method == "scaledtoinit":
+        elif self.tauc_method == "initlinear":
             v = self.v_all[C_i, ncell_i]
             tauc_0 = self.tauc_0_all[C_i, ncell_i]
             tau_slice_ref = self.tau_flat[slice_indices]
@@ -466,9 +466,6 @@ class Phase:
             xsresources = (tauc_slice - final_max_tauc)[xs_filt]
             if len(xsresources) > 0:
                 self.xs_means_rank[slice_left_i-self.rank_start] = np.mean(xsresources)
-        #'''cut off tau distribution at max tau we simulated, shouldn't leave this forever'''
-        #self.tau_expect = self.tau_expect[self.tau_expect <= max(self.tau_vec)] 
-        #self.ncell_tot = len(self.tau_expect)
 
     def calculate_metric_expect(self, metric):
         # Get expected value of metric
