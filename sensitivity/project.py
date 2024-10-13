@@ -373,6 +373,40 @@ class Phase:
                     self.tauc_0_all[C_i, ncell_i] = tauc_0_max
             self.v_all = self.comm.bcast(self.v_all, root=self.root)
             self.tauc_0_all = self.comm.bcast(self.tauc_0_all, root=self.root)
+        if self.tauc_method == "initinverse":
+            # Generate (v,w) at every (C,ncell) for delta_tau=0, then reuse for delta_tau > 0
+            '''For now, we will only consider (v,w) with the largest bias to low initial tau'''
+            if self.rank != self.root:
+                self.v_all = None
+                self.w_all = None
+            else:
+                self.v_all = np.ones((len(self.C_vec), len(self.ncell_vec))) * np.nan
+                self.w_all = np.ones((len(self.C_vec), len(self.ncell_vec))) * np.nan
+                for (C_i, C), (ncell_i, ncell) in product(enumerate(self.C_vec), enumerate(self.ncell_vec)):
+                    # Integral up to the midpoint, i.e. of the lower tau end
+                    def Tstar_pre_midpoint(vars):
+                        v, w = vars
+                        Tstar = v*w*np.log((ncell/(2*w)) + 1)
+                        # Multiply by -1 bc we want max, not min
+                        return -1 * Tstar
+                    # Total integral needs to be eq to C
+                    def Tstar_ncell(vars):
+                        v, w = vars
+                        Tstar = v*w*np.log((ncell/w) + 1)
+                        return Tstar - C
+                    # Set the initial guess
+                    initial_guess = [40, 0.1]
+                    # Define the constraint as a dictionary (equality constraint)
+                    con = {'type': 'eq', 'fun': Tstar_ncell}
+                    # Use scipy to solve for (v,w) which maximizes pre-midpoint integral
+                    result = scipy.optimize.minimize(Tstar_pre_midpoint, initial_guess, method='SLSQP', 
+                                                     constraints=[con], bounds=[(0,1e30), (0,1e30)])
+                    # Print the results
+                    optimal_v, optimal_w = result.x
+                    self.v_all[C_i, ncell_i] = optimal_v
+                    self.w_all[C_i, ncell_i] = optimal_w
+            self.v_all = self.comm.bcast(self.v_all, root=self.root)
+            self.w_all = self.comm.bcast(self.w_all, root=self.root)
 
         # Get bins of initial tau for phase plotting per (delta_tau, C)
         tau_range = tau_sorted[self.slice_right_max] - tau_sorted[0]
@@ -396,7 +430,10 @@ class Phase:
             np.save(data_dir + "/ncell_vec.npy", self.ncell_vec)
             np.save(data_dir + "/slice_left_all.npy", self.slice_left_all)
             if self.tauc_method == "initlinear":
-                np.save(data_dir + "/v_all.npy", self.v_all)
+                np.save(data_dir + f"/v_all_{self.tauc_method}.npy", self.v_all)
+            if self.tauc_method == "initinverse":
+                np.save(data_dir + f"/v_all_{self.tauc_method}.npy", self.v_all)
+                np.save(data_dir + f"/w_all_{self.tauc_method}.npy", self.w_all)
 
             # Save tau bin centers for plotting
             np.save(data_dir + "/tau_bin_cntrs.npy", self.tau_bin_cntrs)
@@ -452,9 +489,16 @@ class Phase:
         elif self.tauc_method == "initlinear":
             v = self.v_all[C_i, ncell_i]
             tauc_0 = self.tauc_0_all[C_i, ncell_i]
-            tau_slice_ref = self.tau_flat[slice_indices]
+            #tau_slice_ref = self.tau_flat[slice_indices]
             '''might be worth generating these slices outside loops'''
-            tauc_slice = v*tau_slice_ref + tauc_0
+            #tauc_slice = v*tau_slice_ref + tauc_0
+            tauc_slice = v*np.arange(0,ncell) + tauc_0
+        elif self.tauc_method == "initinverse":
+            v = self.v_all[C_i, ncell_i]
+            w = self.w_all[C_i, ncell_i]
+            #tau_slice_ref = self.tau_flat[slice_indices]
+            tauc_slice = v / ((np.arange(0,ncell)/w) + 1)
+
         # Find where tauc will push tau beyond max
         xs_filt = (tauc_slice > final_max_tauc) 
         replacement_tau[xs_filt] = self.final_max_tau
@@ -463,9 +507,11 @@ class Phase:
         self.tau_expect[slice_indices] = replacement_tau 
         if metric == self.metrics[0]:
             # Store the mean value of excess resources, keep at nan if no excess
+            '''try relative to C'''
             xsresources = (tauc_slice - final_max_tauc)[xs_filt]
             if len(xsresources) > 0:
-                self.xs_means_rank[slice_left_i-self.rank_start] = np.mean(xsresources)
+                #self.xs_means_rank[slice_left_i-self.rank_start] = np.mean(xsresources)
+                self.xs_means_rank[slice_left_i-self.rank_start] = np.sum(xsresources) / C
 
     def calculate_metric_expect(self, metric):
         # Get expected value of metric
