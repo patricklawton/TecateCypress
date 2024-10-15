@@ -216,6 +216,48 @@ class Phase:
         self.ncell_baseline_vec = np.round(self.baseline_A_vec / self.A_cell).astype(int) 
         self.C_vec = self.ncell_baseline_vec * self.tauc_baseline
 
+    # Generate scaling parameters for non-flat tauc cases
+    def compute_tauc_slice(self, x, method, tau_slice):
+        if method == 'initlinear':
+            tauc_slice = x[0]*tau_slice + x[1]
+        elif method == 'initinverse':
+            tauc_slice = x[0] / ((tau_slice/x[1]) + 1)
+        return tauc_slice    
+
+    def maximize_preflat(self, method, C, ncell, tau_slice, x0=None, penalty_weight=0.05):
+        # Our objective function, the expected value of all tauc > (C/ncell)
+        def tauc_expect_preflat(x):
+            tauc_slice = self.compute_tauc_slice(x, method, tau_slice)
+            tau_mid = (max(tau_slice) - min(tau_slice)) / 2
+            # Multiply by -1 bc we want max, not min
+            return -1 * np.mean(tauc_slice[tau_slice < tau_mid])
+
+        constraints = []
+        # Sum of all tauc must be eq to C
+        def tauc_total_con(x):
+            tauc_slice = self.compute_tauc_slice(x, method, tau_slice)
+            return np.sum(tauc_slice) - C
+        constraints.append({'type': 'eq', 'fun': tauc_total_con})
+        if method == 'initlinear':
+            # Need additional constraint that all tauc > 0
+            def tauc_positive(x):
+                tauc_slice = self.compute_tauc_slice(x, method, tau_slice)
+                return np.min(tauc_slice)
+            constraints.append({'type': 'ineq', 'fun': tauc_positive})
+            bounds = [(None,0), (0,None)]
+            result = scipy.optimize.minimize(tauc_expect_preflat, x0, constraints=constraints, bounds=bounds)
+        elif method == 'initinverse':
+            # Use a global optimization algorithm for this scaling method
+            def penalized_objective(x, penalty_weight=penalty_weight):
+                obj_value = tauc_expect_preflat(x)
+                constraint_violation = tauc_total_con(x)
+                # Add penalty for violating the equality constraint
+                penalty = penalty_weight * constraint_violation**2
+                return obj_value + penalty
+            bounds = [(0,1e4), (0,1e1)]
+            result = scipy.optimize.differential_evolution(penalized_objective, bounds=bounds)
+        return result
+
     def initialize(self):
         '''
         Read in and/or organize data used for subsequent analysis
@@ -226,6 +268,7 @@ class Phase:
             self.metric_data = None
             self.tau_edges = None
             self.tau_flat = None
+            self.data_dir = None
         else:
             # Handle data reading on root alone
             project = sg.get_project()
@@ -235,17 +278,17 @@ class Phase:
 
             jobs = project.find_jobs({'doc.simulated': True, 'Aeff': self.Aeff, 
                                       't_final': self.t_final, 'method': self.sim_method})
-            data_dir = f"data/Aeff_{self.Aeff}/tfinal_{self.t_final}"
-            if not os.path.isdir(data_dir):
-                os.makedirs(data_dir)
-            fn = data_dir + "/all_tau.npy"
+            self.data_dir = f"data/Aeff_{self.Aeff}/tfinal_{self.t_final}"
+            if not os.path.isdir(self.data_dir):
+                os.makedirs(self.data_dir)
+            fn = self.data_dir + "/all_tau.npy"
             if (not os.path.isfile(fn)) or self.overwrite_metrics:
                 all_tau = np.tile(self.tau_vec, len(jobs))
                 np.save(fn, all_tau)
             else:
                 all_tau = np.load(fn)
 
-            fn = data_dir + "/metric_data.pkl"
+            fn = self.data_dir + "/metric_data.pkl"
             if (not os.path.isfile(fn)) or self.overwrite_metrics:
                 self.metric_data = {m: {} for m in self.metrics}
                 for metric in self.metrics:
@@ -337,6 +380,7 @@ class Phase:
         self.metric_data = self.comm.bcast(self.metric_data, root=self.root)
         self.tau_edges = self.comm.bcast(self.tau_edges, root=self.root)
         self.tau_flat = self.comm.bcast(self.tau_flat, root=self.root)
+        self.data_dir = self.comm.bcast(self.data_dir, root=self.root)
 
         # Generate samples of remaining state variables
         self.ncell_tot = len(self.tau_flat)
@@ -358,99 +402,63 @@ class Phase:
         self.slice_left_all = np.linspace(slice_left_min, self.slice_left_max, self.slice_samples)
         self.slice_left_all = np.round(self.slice_left_all).astype(int)
 
-        if self.tauc_method == "initlinear":
-            # Generate v at every (C, ncell) for delta_tau=0, then reuse for delta_tau > 0
-            '''For now, we will only consider min(v), i.e. the steepest scaling'''
-            if self.rank != self.root:
-                self.v_all = None
-                self.tauc_0_all = None
+        if self.tauc_method != "flat":
+            check1 = os.path.isfile(self.data_dir + f"/v_all_{self.tauc_method}.npy")
+            check2 = os.path.isfile(self.data_dir + f"/w_all_{self.tauc_method}.npy")
+            if np.all([check1, check2, self.overwrite_scaleparams == False]):
+                generate_params = False
+                self.v_all = np.load(self.data_dir + f"/v_all_{self.tauc_method}.npy")
+                self.w_all = np.load(self.data_dir + f"/w_all_{self.tauc_method}.npy")
             else:
-                #self.v_all = np.ones((len(self.C_vec), len(self.ncell_vec))) * np.nan
-                #self.tauc_0_all = np.ones((len(self.C_vec), len(self.ncell_vec))) * np.nan
-                #for (C_i, C), (ncell_i, ncell) in product(enumerate(self.C_vec), enumerate(self.ncell_vec)):
-                self.v_all = np.ones((len(self.C_vec), len(self.ncell_vec), len(self.slice_left_all))) * np.nan
-                self.tauc_0_all = np.ones((len(self.C_vec), len(self.ncell_vec), len(self.slice_left_all))) * np.nan
-                for (C_i, C), (ncell_i, ncell), (slice_left_i, slice_left) in product(enumerate(self.C_vec), 
-                                                                                     enumerate(self.ncell_vec),
-                                                                                     enumerate(self.slice_left_all)):
-                    self.slice_left_max = self.slice_right_max - ncell
-                    if slice_left > self.slice_left_max: continue
-                    tau_slice = tau_sorted[slice_left:slice_left+ncell]
-                    def compute_tauc_slice(x, method):
-                        if method == 'linear':
-                            # For linear case, x[0] -> v, x[1] -> tauc_0
-                            tauc_slice = x[0]*tau_slice + x[1]
-                        return tauc_slice
-                        
-                    def maximize_preflat(x0, method):
-                        # Our objective function, the expected value of all tauc > (C/ncell)
-                        def tauc_expect_preflat(x):
-                            tauc_slice = compute_tauc_slice(x, method)
-                            if method == 'linear':
-                                tau_flat = ((C/ncell) - x[1]) / x[0]
-                            # Multiply by -1 bc we want max, not min
-                            return -1 * np.mean(tauc_slice[tau_slice < tau_flat])
-                        
-                        constraints = []
-                        # Sum of all tauc must be eq to C
-                        def tauc_total_con(x):
-                            tauc_slice = compute_tauc_slice(x, method)
-                            return np.sum(tauc_slice) - C
-                        constraints.append({'type': 'eq', 'fun': tauc_total_con})
-                        # print(tauc_total_con(x0))
-                        
-                        if method == 'linear':
-                            # Need additional constraint that all tauc > 0
-                            def tauc_positive(x):
-                                tauc_slice = compute_tauc_slice(x, method)
-                                return np.min(tauc_slice)
-                            constraints.append({'type': 'ineq', 'fun': tauc_positive})
-                            # print(tauc_positive(x0))
-                            
-                        result = scipy.optimize.minimize(tauc_expect_preflat, x0, constraints=constraints)
-                        return result
-                    #v_min = -(2*C) / ncell**2
-                    #self.v_all[C_i, ncell_i] = v_min
-                    #tauc_0_max = 2*(C / ncell)
-                    #self.tauc_0_all[C_i, ncell_i] = tauc_0_max
-                    x0 = [-0.003, 900]
-                    result = maximize_preflat(x0, 'linear')
-                    self.v_all[C_i, ncell_i, slice_left_i] = result.x[0]
-                    self.tauc_0_all[C_i, ncell_i, slice_left_i] = result.x[1]
-            self.v_all = self.comm.bcast(self.v_all, root=self.root)
-            self.tauc_0_all = self.comm.bcast(self.tauc_0_all, root=self.root)
-        if self.tauc_method == "initinverse":
-            # Generate (v,w) at every (C,ncell) for delta_tau=0, then reuse for delta_tau > 0
-            '''For now, we will only consider (v,w) with the largest bias to low initial tau'''
+                generate_params = True
+
+        if generate_params:
             if self.rank != self.root:
                 self.v_all = None
                 self.w_all = None
             else:
-                self.v_all = np.ones((len(self.C_vec), len(self.ncell_vec))) * np.nan
-                self.w_all = np.ones((len(self.C_vec), len(self.ncell_vec))) * np.nan
-                for (C_i, C), (ncell_i, ncell) in product(enumerate(self.C_vec), enumerate(self.ncell_vec)):
-                    # Integral up to the midpoint, i.e. of the lower tau end
-                    def Tstar_pre_midpoint(vars):
-                        v, w = vars
-                        Tstar = v*w*np.log((ncell/(2*w)) + 1)
-                        # Multiply by -1 bc we want max, not min
-                        return -1 * Tstar
-                    # Total integral needs to be eq to C
-                    def Tstar_ncell(vars):
-                        v, w = vars
-                        Tstar = v*w*np.log((ncell/w) + 1)
-                        return Tstar - C
-                    # Set the initial guess
-                    initial_guess = [40, 0.1]
-                    # Define the constraint as a dictionary (equality constraint)
-                    con = {'type': 'eq', 'fun': Tstar_ncell}
-                    # Use scipy to solve for (v,w) which maximizes pre-midpoint integral
-                    result = scipy.optimize.minimize(Tstar_pre_midpoint, initial_guess, method='SLSQP', 
-                                                     constraints=[con], bounds=[(0,1e30), (0,1e30)])
-                    # Print the results
-                    optimal_v, optimal_w = result.x
-                    self.v_all[C_i, ncell_i] = optimal_v
-                    self.w_all[C_i, ncell_i] = optimal_w
+                self.v_all = np.ones((len(self.C_vec), len(self.ncell_vec), len(self.slice_left_all))) * np.nan
+                self.w_all = np.ones((len(self.C_vec), len(self.ncell_vec), len(self.slice_left_all))) * np.nan
+
+            # Distribute work among ranks
+            task_list = list(product(enumerate(self.C_vec), enumerate(self.ncell_vec), enumerate(self.slice_left_all)))
+            rank_tasks = np.array_split(task_list, self.num_procs)[self.rank]  # Split tasks across ranks
+            # Each rank performs optimization on its assigned subset of tasks
+            rank_v_all = []
+            rank_w_all = []
+
+            for (C_i, C), (ncell_i, ncell), (slice_left_i, slice_left) in rank_tasks:
+                self.slice_left_max = self.slice_right_max - ncell
+                if slice_left > self.slice_left_max: continue
+
+                tau_slice = tau_sorted[slice_left:slice_left+ncell]
+                '''Try translating the initial tau so they start at zero'''
+                tau_slice = tau_slice - min(tau_slice)
+
+                if self.tauc_method == "initlinear":
+                    x0 = [-0.003, 900]
+                    result = self.maximize_preflat(self.tauc_method, C, ncell, tau_slice, x0=x0)
+                elif self.tauc_method == "initinverse":
+                    penalty_weight = 0.05
+                    result = self.maximize_preflat(self.tauc_method, C, ncell, tau_slice, penalty_weight=penalty_weight)
+                    while not result.success:
+                        penalty_weight *= 0.5
+                        result = self.maximize_preflat(self.tauc_method, C, ncell, tau_slice, penalty_weight=penalty_weight)
+
+                rank_v_all.append((C_i, ncell_i, slice_left_i, result.x[0]))
+                rank_w_all.append((C_i, ncell_i, slice_left_i, result.x[1]))
+
+            # Gather results from all ranks on the root rank
+            gathered_v_all = self.comm.gather(rank_v_all, root=self.root)
+            gathered_w_all = self.comm.gather(rank_w_all, root=self.root)
+            # Combine results on the root rank
+            if self.rank == self.root:
+                for rank_v, rank_w in zip(gathered_v_all, gathered_w_all):
+                    for (C_i, ncell_i, slice_left_i, v_value) in rank_v:
+                        self.v_all[C_i, ncell_i, slice_left_i] = v_value
+                    for (C_i, ncell_i, slice_left_i, w_value) in rank_w:
+                        self.w_all[C_i, ncell_i, slice_left_i] = w_value
+            # Broadcast to all ranks
             self.v_all = self.comm.bcast(self.v_all, root=self.root)
             self.w_all = self.comm.bcast(self.w_all, root=self.root)
 
@@ -469,20 +477,18 @@ class Phase:
                     tau_means_ncell[slice_i] = np.mean(tau_sorted[slice_left:slice_left+ncell])
             self.tau_means_ref.append(tau_means_ncell)
 
-        if self.rank == 0:
+        if self.rank == self.root:
             # Save all state variables
-            np.save(data_dir + "/delta_tau_vec.npy", self.delta_tau_vec)
-            np.save(data_dir + "/C_vec.npy", self.C_vec)
-            np.save(data_dir + "/ncell_vec.npy", self.ncell_vec)
-            np.save(data_dir + "/slice_left_all.npy", self.slice_left_all)
-            if self.tauc_method == "initlinear":
-                np.save(data_dir + f"/v_all_{self.tauc_method}.npy", self.v_all)
-            if self.tauc_method == "initinverse":
-                np.save(data_dir + f"/v_all_{self.tauc_method}.npy", self.v_all)
-                np.save(data_dir + f"/w_all_{self.tauc_method}.npy", self.w_all)
+            np.save(self.data_dir + "/delta_tau_vec.npy", self.delta_tau_vec)
+            np.save(self.data_dir + "/C_vec.npy", self.C_vec)
+            np.save(self.data_dir + "/ncell_vec.npy", self.ncell_vec)
+            np.save(self.data_dir + "/slice_left_all.npy", self.slice_left_all)
+            if self.tauc_method != "flat":
+                np.save(self.data_dir + f"/v_all_{self.tauc_method}.npy", self.v_all)
+                np.save(self.data_dir + f"/w_all_{self.tauc_method}.npy", self.w_all)
 
             # Save tau bin centers for plotting
-            np.save(data_dir + "/tau_bin_cntrs.npy", self.tau_bin_cntrs)
+            np.save(self.data_dir + "/tau_bin_cntrs.npy", self.tau_bin_cntrs)
 
             # Initialize data for <metric> across (delta_tau, C, ncell, slice_left) space
             self.phase = np.ones((
@@ -532,18 +538,13 @@ class Phase:
             '''generate these outside loop to speed up'''
             tauc = C / ncell
             tauc_slice = np.repeat(tauc, ncell)
-        elif self.tauc_method == "initlinear":
+        else:
             v = self.v_all[C_i, ncell_i, slice_left_i]
-            tauc_0 = self.tauc_0_all[C_i, ncell_i, slice_left_i]
+            w = self.w_all[C_i, ncell_i, slice_left_i]
             tau_slice_ref = self.tau_flat[slice_indices]
+            tau_slice_ref = tau_slice_ref - min(tau_slice_ref)
             '''might be worth generating these slices outside loops'''
-            tauc_slice = v*tau_slice_ref + tauc_0
-            #tauc_slice = v*np.arange(0,ncell) + tauc_0
-        elif self.tauc_method == "initinverse":
-            v = self.v_all[C_i, ncell_i]
-            w = self.w_all[C_i, ncell_i]
-            #tau_slice_ref = self.tau_flat[slice_indices]
-            tauc_slice = v / ((np.arange(0,ncell)/w) + 1)
+            tauc_slice = self.compute_tauc_slice([v,w], self.tauc_method, tau_slice_ref)
 
         # Find where tauc will push tau beyond max
         xs_filt = (tauc_slice > final_max_tauc) 
@@ -618,10 +619,10 @@ class Phase:
                 self.metric_expect_rank[slice_left_i-self.rank_start] = self.metric_expect
             # Otherwise save nochange to file
             elif self.rank == self.root:
-                data_dir = f"data/Aeff_{self.Aeff}/tfinal_{self.t_final}/metric_{metric}/deltatau_{delta_tau}/"
-                if not os.path.isdir(data_dir):
-                    os.makedirs(data_dir)
-                fn = data_dir + f"nochange_{self.tauc_method}.json"
+                self.data_dir = f"data/Aeff_{self.Aeff}/tfinal_{self.t_final}/metric_{metric}/deltatau_{delta_tau}/"
+                if not os.path.isdir(self.data_dir):
+                    os.makedirs(self.data_dir)
+                fn = self.data_dir + f"nochange_{self.tauc_method}.json"
                 with open(fn, "w") as handle:
                     json.dump({f'{metric}_expect_nochange': self.metric_expect}, handle)
 

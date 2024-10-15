@@ -11,6 +11,7 @@ from global_functions import plot_phase
 constants = {}
 constants['progress'] = False
 constants['overwrite_metrics'] = False
+constants['overwrite_scaleparams'] = False
 constants['metrics'] = ['lambda_s']
 constants['metric_thresh'] = 0.98
 constants['c'] = 1.42
@@ -32,9 +33,9 @@ constants['baseline_A_min'] = 10 #km^2
 constants['baseline_A_max'] = 160
 #constants['baseline_A_samples'] = 10
 constants['baseline_A_samples'] = 5
-#constants['delta_tau_min'] = -10.0
-#constants['delta_tau_max'] = 10.0
-#constants['delta_tau_samples'] = 81
+#constants['delta_tau_min'] = 0.0
+#constants['delta_tau_max'] = 0.0
+#constants['delta_tau_samples'] = 1
 constants['delta_tau_min'] = -10.0
 constants['delta_tau_max'] = 10.0
 constants['delta_tau_samples'] = 21
@@ -42,7 +43,7 @@ constants['root'] = 0 #For mpi
 
 # Init a phase processor based on above constants
 #for tauc_method in ["flat", "initlinear", "initinverse"]:
-for tauc_method in ["initlinear"]:
+for tauc_method in ["initlinear", "initinverse"]:
     constants.update({'tauc_method': tauc_method})
     pproc = Phase(**constants) 
     if pproc.rank == 0: print(f"on {tauc_method} tauc_method")

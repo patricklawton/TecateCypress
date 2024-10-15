@@ -1,0 +1,68 @@
+def maximize_preflat(method, C, ncell, tau_slice, x0=None, penalty_weight=0.05):
+    # Our objective function, the expected value of all tauc > (C/ncell)
+    def tauc_expect_preflat(x):
+        tauc_slice = self.compute_tauc_slice(x, method, tau_slice)
+        tau_mid = (max(tau_slice) - min(tau_slice)) / 2
+        # Multiply by -1 bc we want max, not min
+        return -1 * np.mean(tauc_slice[tau_slice < tau_mid])
+
+    constraints = []
+    # Sum of all tauc must be eq to C
+    def tauc_total_con(x):
+        tauc_slice = self.compute_tauc_slice(x, method, tau_slice)
+        return np.sum(tauc_slice) - C
+    constraints.append({'type': 'eq', 'fun': tauc_total_con})
+    if method == 'initlinear':
+        # Need additional constraint that all tauc > 0
+        def tauc_positive(x):
+            tauc_slice = self.compute_tauc_slice(x, method, tau_slice)
+            return np.min(tauc_slice)
+        constraints.append({'type': 'ineq', 'fun': tauc_positive})
+        bounds = [(None,0), (0,None)]
+        result = scipy.optimize.minimize(tauc_expect_preflat, x0, constraints=constraints, bounds=bounds)
+    elif method == 'initinverse':
+        # Use a global optimization algorithm for this scaling method
+        def penalized_objective(x, penalty_weight=penalty_weight):
+            obj_value = tauc_expect_preflat(x)
+            constraint_violation = tauc_total_con(x)
+            # Add penalty for violating the equality constraint
+            penalty = penalty_weight * constraint_violation**2
+            return obj_value + penalty
+        bounds = [(0,1e4), (0,1e1)]
+        result = scipy.optimize.differential_evolution(penalized_objective, bounds=bounds)
+    return result
+
+if self.rank != self.root:
+    self.v_all = None
+    self.w_all = None
+else:
+    self.v_all = np.ones((len(self.C_vec), len(self.ncell_vec), len(self.slice_left_all))) * np.nan
+    self.w_all = np.ones((len(self.C_vec), len(self.ncell_vec), len(self.slice_left_all))) * np.nan
+    # Generate (v,w) at every (C, ncell) for delta_tau=0, then reuse for delta_tau > 0
+    '''For now, we will only consider the steepest scaling'''
+    for (C_i, C), (ncell_i, ncell), (slice_left_i, slice_left) in product(enumerate(self.C_vec), 
+                                                                         enumerate(self.ncell_vec),
+                                                                         enumerate(self.slice_left_all)):
+        self.slice_left_max = self.slice_right_max - ncell
+        if slice_left > self.slice_left_max: continue
+        tau_slice = tau_sorted[slice_left:slice_left+ncell]
+        '''Try translating the initial tau so they start at zero'''
+        tau_slice = tau_slice - min(tau_slice)
+
+        if self.tauc_method == "initlinear":
+            x0 = [-0.003, 900]
+            result = maximize_preflat(self.tauc_method, C, ncell, tau_slice, x0=x0)
+        if self.tauc_method == "initinverse":
+            penalty_weight = 0.05
+            result = maximize_preflat(self.tauc_method, C, ncell, tau_slice, 
+                                                            penalty_weight=penalty_weight)
+            while not result.success:
+                print("Optimization failed, decreasing penalty weight")
+                penalty_weight = 0.5*penalty_weight
+                result = maximize_preflat(self.tauc_method, C, ncell, tau_slice, 
+                                                                penalty_weight=penalty_weight)
+
+        self.v_all[C_i, ncell_i, slice_left_i] = result.x[0]
+        self.w_all[C_i, ncell_i, slice_left_i] = result.x[1]
+self.v_all = self.comm.bcast(self.v_all, root=self.root)
+self.w_all = self.comm.bcast(self.w_all, root=self.root)
