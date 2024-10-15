@@ -48,6 +48,8 @@ def run_sims(job):
     t_vec = np.arange(delta_t, job.sp.t_final+delta_t, delta_t)
 
     for b in b_vec:
+        # Skip if simulations already run at this b value
+        if str(b) in list(job.data['N_tot'].keys()): continue
         model = Model(**params)
         model.set_effective_area(Aeff)
         model.init_N(N_0_1_vec, init_age)
@@ -148,6 +150,8 @@ def compute_lambda_s(job):
         census_t = np.array(job.data["census_t"])
         burn_in_end_i = 200
         for b in b_vec:
+            # Skip if lambda_s already computed at this b value
+            if str(b) in list(job.data['lambda_s'].keys()): continue
             #N_tot_mean = np.array(job.data[f"N_tot_mean/{b}"])
             N_tot = np.array(job.data[f"N_tot/{b}"])
             nonzero_counts = np.count_nonzero(N_tot, axis=1)
@@ -261,7 +265,7 @@ class Phase:
     def initialize(self):
         '''
         Read in and/or organize data used for subsequent analysis
-        Do other miscellaneous pre-processing, for example define statae variable space
+        Do other miscellaneous pre-processing, for example define state variable space
         '''
         if self.rank != self.root:
             # Init data to be read on root
@@ -403,6 +407,7 @@ class Phase:
         self.slice_left_all = np.round(self.slice_left_all).astype(int)
 
         if self.tauc_method != "flat":
+            # Generate tauc scaling parameters, if needed
             check1 = os.path.isfile(self.data_dir + f"/v_all_{self.tauc_method}.npy")
             check2 = os.path.isfile(self.data_dir + f"/w_all_{self.tauc_method}.npy")
             if np.all([check1, check2, self.overwrite_scaleparams == False]):
@@ -412,55 +417,55 @@ class Phase:
             else:
                 generate_params = True
 
-        if generate_params:
-            if self.rank != self.root:
-                self.v_all = None
-                self.w_all = None
-            else:
-                self.v_all = np.ones((len(self.C_vec), len(self.ncell_vec), len(self.slice_left_all))) * np.nan
-                self.w_all = np.ones((len(self.C_vec), len(self.ncell_vec), len(self.slice_left_all))) * np.nan
+            if generate_params:
+                if self.rank != self.root:
+                    self.v_all = None
+                    self.w_all = None
+                else:
+                    self.v_all = np.ones((len(self.C_vec), len(self.ncell_vec), len(self.slice_left_all))) * np.nan
+                    self.w_all = np.ones((len(self.C_vec), len(self.ncell_vec), len(self.slice_left_all))) * np.nan
 
-            # Distribute work among ranks
-            task_list = list(product(enumerate(self.C_vec), enumerate(self.ncell_vec), enumerate(self.slice_left_all)))
-            rank_tasks = np.array_split(task_list, self.num_procs)[self.rank]  # Split tasks across ranks
-            # Each rank performs optimization on its assigned subset of tasks
-            rank_v_all = []
-            rank_w_all = []
+                # Distribute work among ranks
+                task_list = list(product(enumerate(self.C_vec), enumerate(self.ncell_vec), enumerate(self.slice_left_all)))
+                rank_tasks = np.array_split(task_list, self.num_procs)[self.rank]  # Split tasks across ranks
+                # Each rank performs optimization on its assigned subset of tasks
+                rank_v_all = []
+                rank_w_all = []
 
-            for (C_i, C), (ncell_i, ncell), (slice_left_i, slice_left) in rank_tasks:
-                self.slice_left_max = self.slice_right_max - ncell
-                if slice_left > self.slice_left_max: continue
+                for (C_i, C), (ncell_i, ncell), (slice_left_i, slice_left) in rank_tasks:
+                    self.slice_left_max = self.slice_right_max - ncell
+                    if slice_left > self.slice_left_max: continue
 
-                tau_slice = tau_sorted[slice_left:slice_left+ncell]
-                '''Try translating the initial tau so they start at zero'''
-                tau_slice = tau_slice - min(tau_slice)
+                    tau_slice = tau_sorted[slice_left:slice_left+ncell]
+                    '''Try translating the initial tau so they start at zero'''
+                    tau_slice = tau_slice - min(tau_slice)
 
-                if self.tauc_method == "initlinear":
-                    x0 = [-0.003, 900]
-                    result = self.maximize_preflat(self.tauc_method, C, ncell, tau_slice, x0=x0)
-                elif self.tauc_method == "initinverse":
-                    penalty_weight = 0.05
-                    result = self.maximize_preflat(self.tauc_method, C, ncell, tau_slice, penalty_weight=penalty_weight)
-                    while not result.success:
-                        penalty_weight *= 0.5
+                    if self.tauc_method == "initlinear":
+                        x0 = [-0.003, 900]
+                        result = self.maximize_preflat(self.tauc_method, C, ncell, tau_slice, x0=x0)
+                    elif self.tauc_method == "initinverse":
+                        penalty_weight = 0.05
                         result = self.maximize_preflat(self.tauc_method, C, ncell, tau_slice, penalty_weight=penalty_weight)
+                        while not result.success:
+                            penalty_weight *= 0.5
+                            result = self.maximize_preflat(self.tauc_method, C, ncell, tau_slice, penalty_weight=penalty_weight)
 
-                rank_v_all.append((C_i, ncell_i, slice_left_i, result.x[0]))
-                rank_w_all.append((C_i, ncell_i, slice_left_i, result.x[1]))
+                    rank_v_all.append((C_i, ncell_i, slice_left_i, result.x[0]))
+                    rank_w_all.append((C_i, ncell_i, slice_left_i, result.x[1]))
 
-            # Gather results from all ranks on the root rank
-            gathered_v_all = self.comm.gather(rank_v_all, root=self.root)
-            gathered_w_all = self.comm.gather(rank_w_all, root=self.root)
-            # Combine results on the root rank
-            if self.rank == self.root:
-                for rank_v, rank_w in zip(gathered_v_all, gathered_w_all):
-                    for (C_i, ncell_i, slice_left_i, v_value) in rank_v:
-                        self.v_all[C_i, ncell_i, slice_left_i] = v_value
-                    for (C_i, ncell_i, slice_left_i, w_value) in rank_w:
-                        self.w_all[C_i, ncell_i, slice_left_i] = w_value
-            # Broadcast to all ranks
-            self.v_all = self.comm.bcast(self.v_all, root=self.root)
-            self.w_all = self.comm.bcast(self.w_all, root=self.root)
+                # Gather results from all ranks on the root rank
+                gathered_v_all = self.comm.gather(rank_v_all, root=self.root)
+                gathered_w_all = self.comm.gather(rank_w_all, root=self.root)
+                # Combine results on the root rank
+                if self.rank == self.root:
+                    for rank_v, rank_w in zip(gathered_v_all, gathered_w_all):
+                        for (C_i, ncell_i, slice_left_i, v_value) in rank_v:
+                            self.v_all[C_i, ncell_i, slice_left_i] = v_value
+                        for (C_i, ncell_i, slice_left_i, w_value) in rank_w:
+                            self.w_all[C_i, ncell_i, slice_left_i] = w_value
+                # Broadcast to all ranks
+                self.v_all = self.comm.bcast(self.v_all, root=self.root)
+                self.w_all = self.comm.bcast(self.w_all, root=self.root)
 
         # Get bins of initial tau for phase plotting per (delta_tau, C)
         tau_range = tau_sorted[self.slice_right_max] - tau_sorted[0]

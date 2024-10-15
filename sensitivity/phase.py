@@ -42,8 +42,8 @@ constants['delta_tau_samples'] = 21
 constants['root'] = 0 #For mpi
 
 # Init a phase processor based on above constants
-#for tauc_method in ["flat", "initlinear", "initinverse"]:
-for tauc_method in ["initlinear", "initinverse"]:
+for tauc_method in ["flat", "initlinear", "initinverse"]:
+#for tauc_method in ["initlinear", "initinverse"]:
     constants.update({'tauc_method': tauc_method})
     pproc = Phase(**constants) 
     if pproc.rank == 0: print(f"on {tauc_method} tauc_method")
