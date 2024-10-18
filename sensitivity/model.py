@@ -221,9 +221,16 @@ class Model:
                     t_eval = np.arange(self.delta_t, fire_i+self.delta_t)
                     t_eval = t_eval + self.init_age[0]
                     init_i = 0
-                    N_i = self.K_adult
+                    N_i = self.N_0_1[pop_i] 
                 # Otherwise set initial conditions for a given interval
                 else:
+                    '''I think sometimes we're starting here instead of above
+                       Is it because I'm allowing fires to occur on the first timestep?
+                       Do I want to make sure that's always at N_0?
+                       .... Maybe I can just roll any effected trajectories up by one, and fill in the initial
+                       Also set Aeff in sp to 1
+                       But still need to rerun because of forgetting to include Aeff...
+                       hopefully doesn't change the shape of each trajectory though'''
                     t_eval = np.arange(self.delta_t, fire_i - fire_indices[fire_num-1] + self.delta_t, self.delta_t)
                     init_i = fire_indices[fire_num-1]
                     if num_births < 1:
@@ -267,7 +274,7 @@ class Model:
             if len(fire_indices) == 0:
                 t_eval = self.t_vec + self.init_age[0]
                 t_bounds = np.array([min(self.t_vec), max(self.t_vec)]) + self.init_age[0]
-                sol = solve_ivp(_dNdt, t_bounds, [self.N_0_1[0]], t_eval=t_eval)
+                sol = solve_ivp(_dNdt, t_bounds, [self.N_0_1[pop_i]], t_eval=t_eval)
                 self.N_tot_vec[pop_i] = sol.y[0]
             # Handle final timesteps without fire
             elif len(self.t_vec) > fire_i+1:

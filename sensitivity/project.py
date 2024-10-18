@@ -71,13 +71,29 @@ def run_sims(job):
 @FlowProject.post(lambda job: job.doc.get('fractional_change_computed'))
 @FlowProject.operation
 def compute_fractional_change(job):
-    slice_i = round(job.sp.t_final * 0.25)
-    Aeff = job.sp['Aeff'] #ha
-    N_0_1 = Aeff*mort_fixed['K_adult']
-    for b in b_vec:
-        with job.data:
+    slice_i = 200 #i.e. the end of the burn in period
+    avg_start_i = round(job.sp.t_final * 0.10)
+    #Aeff = job.sp['Aeff'] #ha
+    #N_0_1 = Aeff*mort_fixed['K_adult']
+    #num_reps = np.array(job.data[f'N_tot/{min(b_vec)}']).shape[0]
+    N_tot_mean_all = np.ones((len(b_vec), job.sp.t_final)) * np.nan
+    with job.data:
+        for b_i, b in enumerate(b_vec):
+            #'''Remove rows with bad init abundance, don't know why it's happening yet'''
+            #N_tot = np.array(job.data[f'N_tot/{b}'])
+            #check_N0 = np.nonzero(N_tot[:,0] > N_0_1)[0]
+            #N_tot = np.delete(N_tot, check_N0, axis=0)
+            #N_tot_mean = N_tot.mean(axis=0)
+            #''''''
             N_tot_mean = np.array(job.data[f'N_tot_mean/{b}'])
-        job.data[f'fractional_change/{b}'] = (np.mean(N_tot_mean[-slice_i:]) - N_0_1) / N_0_1
+            N_tot_mean_all[b_i] = N_tot_mean
+            #job.data[f'fractional_change/{b}'] = (np.mean(N_tot_mean[-slice_i:]) - N_0_1) / N_0_1
+        N_0_all = N_tot_mean_all[:, slice_i]
+        r_all = (N_tot_mean_all[:, -avg_start_i:].mean(axis=1) - N_0_all) / N_0_all
+        # If N=0 by end of the burn in, set to -1
+        r_all[np.isnan(r_all)] = -1.0
+        for b_i, b in enumerate(b_vec):
+            job.data[f'fractional_change/{b}'] = r_all[b_i]
     job.doc['fractional_change_computed'] = True
 
 @FlowProject.pre(lambda job: job.doc.get('simulated'))
@@ -116,6 +132,16 @@ def compute_mu_s(job):
     with job.data:
         census_t = np.array(job.data["census_t"])
         for b in b_vec:
+            #'''Remove rows with bad init abundance, don't know why it's happening yet'''
+            #N_tot = np.array(job.data[f'N_tot/{b}'])
+            #N_0_1 = job.sp.Aeff*mort_fixed['K_adult']
+            #check_N0 = np.nonzero(N_tot[:,0] > N_0_1)[0]
+            #if len(check_N0) == N_tot.shape[0]:
+            #    job.data[f'mu_s/{b}'] = np.nan 
+            #    continue
+            #N_tot = np.delete(N_tot, check_N0, axis=0)
+            #N_tot_mean = N_tot.mean(axis=0)
+            #''''''
             N_tot_mean = np.array(job.data[f"N_tot_mean/{b}"])
             burn_in_end_i = 200
             zero_is = np.nonzero(N_tot_mean == 0)[0]
@@ -136,9 +162,11 @@ def compute_mu_s(job):
             t = census_t[start_i:final_i]
             N_mean_t = N_tot_mean[start_i:final_i]
             if tooquick:
-                mu_s = -np.log(N_mean_t[0]) / len(t)
+                #mu_s = -np.log(N_mean_t[0]) / len(t)
+                mu_s = np.exp(-np.log(N_mean_t[0]) / len(t))
             else:
-                mu_s = np.sum(np.log(N_mean_t[1:] / np.roll(N_mean_t, 1)[1:])) / len(t)
+                #mu_s = np.sum(np.log(N_mean_t[1:] / np.roll(N_mean_t, 1)[1:])) / len(t)
+                mu_s = np.product(N_mean_t[1:] / np.roll(N_mean_t, 1)[1:]) ** (1/len(t))
             job.data[f'mu_s/{b}'] = mu_s 
     job.doc['mu_s_computed'] = True
 
@@ -150,9 +178,8 @@ def compute_lambda_s(job):
         census_t = np.array(job.data["census_t"])
         burn_in_end_i = 200
         for b in b_vec:
-            # Skip if lambda_s already computed at this b value
-            if str(b) in list(job.data['lambda_s'].keys()): continue
-            #N_tot_mean = np.array(job.data[f"N_tot_mean/{b}"])
+            ## Skip if lambda_s already computed at this b value
+            #if str(b) in list(job.data['lambda_s'].keys()): continue
             N_tot = np.array(job.data[f"N_tot/{b}"])
             nonzero_counts = np.count_nonzero(N_tot, axis=1)
             extirpated_replicas = np.nonzero(nonzero_counts < job.sp.t_final)[0]
@@ -169,13 +196,14 @@ def compute_lambda_s(job):
                 else:
                     start_i = burn_in_end_i
                     tooquick = False
+
                 t = census_t[start_i:final_i]
                 N_slice = N_t[start_i:final_i]
                 if tooquick:
-                    #lam_s_replica = -np.log(N_slice[0]) / len(t)
-                    lam_s_replica = np.exp(-np.log(N_slice[0]) / len(t))
+                    #lam_s_replica = np.exp(-np.log(N_slice[0]) / len(t))
+                    #continue
+                    lam_s_replica = np.product(N_slice[1:] / np.roll(N_slice, 1)[1:]) ** (1/len(t))
                 else:
-                    #lam_s_replica = np.sum(np.log(N_slice[1:] / np.roll(N_slice, 1)[1:])) / len(t)
                     lam_s_replica = np.product(N_slice[1:] / np.roll(N_slice, 1)[1:]) ** (1/len(t))
                 lam_s_extir.append(lam_s_replica)
 
@@ -189,7 +217,13 @@ def compute_lambda_s(job):
             lam_products = np.product(N_slice[:,1:] / np.roll(N_slice, 1, 1)[:,1:], axis=1)
             lam_s_vec = lam_products ** (1/N_slice.shape[1]) 
 
-            job.data[f'lambda_s/{b}'] = np.mean(np.concatenate((lam_s_vec, lam_s_extir))) 
+            lam_s_all = np.concatenate((lam_s_vec, lam_s_extir))
+            if len(lam_s_all) != 0:
+                job.data[f'lambda_s/{b}'] = np.mean(lam_s_all) 
+            else:
+                #N_tot_mean = np.array(job.data[f"N_tot_mean/{b}"])
+                lam_s = np.exp(-np.log(job.sp.Aeff*job.sp.params.K_adult) / len(t))
+                job.data[f'lambda_s/{b}'] = lam_s
 
     job.doc['lambda_s_computed'] = True
 
@@ -214,13 +248,15 @@ class Phase:
             # NaN here means set to max of fri_vec
             self.final_max_tau = max(self.tau_vec)
         self.delta_tau_vec = np.linspace(self.delta_tau_min, self.delta_tau_max, self.delta_tau_samples)
+        ## Reorder delta_tau_vec so zero comes first
+        #self.delta_tau_vec = np.concatenate((self.delta_tau_vec[self.delta_tau_vec==0], 
+        #                                     self.delta_tau_vec[self.delta_tau_vec!=0]))
         self.baseline_A_vec = np.linspace(self.baseline_A_min, self.baseline_A_max, self.baseline_A_samples)
 
         # Generate resource allocation values
         self.ncell_baseline_vec = np.round(self.baseline_A_vec / self.A_cell).astype(int) 
         self.C_vec = self.ncell_baseline_vec * self.tauc_baseline
 
-    # Generate scaling parameters for non-flat tauc cases
     def compute_tauc_slice(self, x, method, tau_slice):
         if method == 'initlinear':
             tauc_slice = x[0]*tau_slice + x[1]
@@ -292,60 +328,62 @@ class Phase:
             else:
                 all_tau = np.load(fn)
 
-            fn = self.data_dir + "/metric_data.pkl"
+            fn = self.data_dir + f"/metric_{self.metric}/metric_data.pkl"
+            if not os.path.isdir(self.data_dir + f"/metric_{self.metric}"):
+                os.makedirs(self.data_dir + f"/metric_{self.metric}")
             if (not os.path.isfile(fn)) or self.overwrite_metrics:
-                self.metric_data = {m: {} for m in self.metrics}
-                for metric in self.metrics:
-                    print(f"Creating {metric} histogram") 
-                    if metric == 'r': metric_label = 'fractional_change'
-                    else: metric_label = metric
-                    all_metric = np.array([])
-                    for job_i, job in enumerate(jobs):
-                        with job.data as data:
-                            metric_vec = []
-                            for b in self.b_vec:
-                                metric_vec.append(float(data[f'{metric_label}/{b}']))
-                        all_metric = np.append(all_metric, metric_vec)
-                        
-                    metric_min, metric_max = (min(all_metric), max(all_metric))
-                    if metric == 'mu_s':
-                        coarse_grained = np.arange(metric_min, -0.02, 0.02)
-                        fine_grained = np.arange(-0.02, metric_max + 0.001, 0.0001)
-                        metric_edges = np.concatenate((coarse_grained[:-1], fine_grained))
-                    elif metric == 'lambda_s':
-                        coarse_step = 0.02
-                        fine_step = coarse_step/100
-                        #fine_start = 0.6
-                        #coarse_grained = np.arange(metric_min, fine_start, coarse_step)
-                        #fine_grained = np.arange(fine_start, metric_max + fine_step, fine_step)
-                        #metric_edges = np.concatenate((coarse_grained[:-1], fine_grained))
-                        metric_edges = np.arange(metric_min, metric_max + fine_step, fine_step)
-                    else:
-                        metric_thresh = 0.98
-                        metric_min, metric_max = (np.quantile(all_metric, 1-metric_thresh), np.quantile(all_metric, metric_thresh))
-                        metric_bw = (metric_max - metric_min) / 50
-                        metric_edges = np.arange(metric_min, metric_max + metric_bw, metric_bw)
+                self.metric_data = {}
+                print(f"Creating {self.metric} histogram") 
+                if self.metric == 'r': metric_label = 'fractional_change'
+                else: metric_label = self.metric
+                all_metric = np.array([])
+                for job_i, job in enumerate(jobs):
+                    with job.data as data:
+                        metric_vec = []
+                        for b in self.b_vec:
+                            metric_vec.append(float(data[f'{metric_label}/{b}']))
+                    all_metric = np.append(all_metric, metric_vec)
                     
-                    # First plot the metric probability density
-                    fig, ax = plt.subplots(figsize=(13,8))
-                    metric_hist = ax.hist2d(all_tau, all_metric, bins=[self.tau_edges, metric_edges], 
-                                     norm=matplotlib.colors.LogNorm(vmax=int(len(all_metric)/len(self.b_vec))), 
-                                     density=False)
-                    cbar = ax.figure.colorbar(metric_hist[-1], ax=ax, location="right")
-                    cbar.ax.set_ylabel('demographic robustness', rotation=-90, fontsize=10, labelpad=20)
-                    ax.set_xlabel('<FRI>')
-                    ax.set_ylabel(metric)
-                    figs_dir = f"figs/Aeff_{self.Aeff}/tfinal_{self.t_final}/metric_{metric}/"
-                    if not os.path.isdir(figs_dir):
-                        os.makedirs(figs_dir)
-                    fig.savefig(figs_dir + f"sensitivity", bbox_inches='tight')
-                    plt.close(fig)
-                    # Now remake with density=True for calculations later
-                    metric_hist = np.histogram2d(all_tau, all_metric, bins=[self.tau_edges, metric_edges], 
-                                                 density=True)
+                metric_min, metric_max = (min(all_metric), max(all_metric))
+                #if self.metric == 'mu_s':
+                #    coarse_grained = np.arange(metric_min, -0.02, 0.02)
+                #    fine_grained = np.arange(-0.02, metric_max + 0.001, 0.0001)
+                #    metric_edges = np.concatenate((coarse_grained[:-1], fine_grained))
+                if self.metric in ['lambda_s', 'mu_s']:
+                    coarse_step = 0.02
+                    fine_step = coarse_step/100
+                    #fine_start = 0.6
+                    #coarse_grained = np.arange(metric_min, fine_start, coarse_step)
+                    #fine_grained = np.arange(fine_start, metric_max + fine_step, fine_step)
+                    #metric_edges = np.concatenate((coarse_grained[:-1], fine_grained))
+                    metric_edges = np.arange(metric_min, metric_max + fine_step, fine_step)
+                else:
+                    metric_thresh = 0.98
+                    metric_min, metric_max = (np.quantile(all_metric, 1-metric_thresh), np.quantile(all_metric, metric_thresh))
+                    metric_bw = (metric_max - metric_min) / 200
+                    metric_edges = np.arange(metric_min, metric_max + metric_bw, metric_bw)
+                
+                # First plot the metric probability density
+                fig, ax = plt.subplots(figsize=(13,8))
+                metric_hist = ax.hist2d(all_tau, all_metric, bins=[self.tau_edges, metric_edges], 
+                                 norm=matplotlib.colors.LogNorm(vmax=int(len(all_metric)/len(self.b_vec))), 
+                                 density=False)
+                cbar = ax.figure.colorbar(metric_hist[-1], ax=ax, location="right")
+                cbar.ax.set_ylabel('demographic robustness', rotation=-90, fontsize=10, labelpad=20)
+                ax.set_xlabel('<FRI>')
+                ax.set_ylabel(self.metric)
+                figs_dir = f"figs/Aeff_{self.Aeff}/tfinal_{self.t_final}/metric_{self.metric}/"
+                if not os.path.isdir(figs_dir):
+                    os.makedirs(figs_dir)
+                print("saving sensitivity figure")
+                fig.savefig(figs_dir + f"sensitivity", bbox_inches='tight')
+                plt.close(fig)
+                # Now remake with density=True for calculations later
+                metric_hist = np.histogram2d(all_tau, all_metric, bins=[self.tau_edges, metric_edges], 
+                                             density=True)
 
-                    self.metric_data[metric].update({'all_metric': all_metric})
-                    self.metric_data[metric].update({'metric_hist': metric_hist[:3]})
+                self.metric_data.update({'all_metric': all_metric})
+                self.metric_data.update({'metric_hist': metric_hist[:3]})
                 with open(fn, 'wb') as handle:
                     pickle.dump(self.metric_data, handle, protocol=pickle.HIGHEST_PROTOCOL)
             else:
@@ -422,6 +460,7 @@ class Phase:
                     self.v_all = None
                     self.w_all = None
                 else:
+                    print(f"Generating scaling parameters for {self.tauc_method}")
                     self.v_all = np.ones((len(self.C_vec), len(self.ncell_vec), len(self.slice_left_all))) * np.nan
                     self.w_all = np.ones((len(self.C_vec), len(self.ncell_vec), len(self.slice_left_all))) * np.nan
 
@@ -468,10 +507,14 @@ class Phase:
                 self.w_all = self.comm.bcast(self.w_all, root=self.root)
 
         # Get bins of initial tau for phase plotting per (delta_tau, C)
-        tau_range = tau_sorted[self.slice_right_max] - tau_sorted[0]
+        #tau_range = tau_sorted[self.slice_right_max] - tau_sorted[0]
+        #self.tau_bw = tau_range / self.tau_bw_ratio
+        #self.tau_bin_edges = np.arange(tau_sorted[0], tau_sorted[self.slice_right_max], self.tau_bw)
+        tau_range = 50 - tau_sorted[0]
         self.tau_bw = tau_range / self.tau_bw_ratio
-        self.tau_bin_edges = np.arange(tau_sorted[0], tau_sorted[self.slice_right_max], self.tau_bw)
+        self.tau_bin_edges = np.arange(tau_sorted[0], 50, self.tau_bw)
         self.tau_bin_cntrs = np.array([edge + self.tau_bw/2 for edge in self.tau_bin_edges])
+
         # Store the mean tau in each preset slice for reference later
         self.tau_means_ref = []
         for ncell in self.ncell_vec:
@@ -520,8 +563,7 @@ class Phase:
         # Initialize data for this rank's chunk of samples
         self.tau_means_rank = np.ones(self.rank_samples) * np.nan
         self.metric_expect_rank = np.ones(self.rank_samples) * np.nan
-        if metric == self.metrics[0]:
-            self.xs_means_rank = np.ones(self.rank_samples) * np.nan
+        self.xs_means_rank = np.ones(self.rank_samples) * np.nan
 
         # Add one sample for computing the no change scenario
         if (ncell==max(self.ncell_vec)) and (self.rank==self.root):
@@ -557,18 +599,17 @@ class Phase:
         replacement_tau[xs_filt==False] = (tau_slice + tauc_slice)[xs_filt==False]
         # Now replace them in the full array of tau
         self.tau_expect[slice_indices] = replacement_tau 
-        if metric == self.metrics[0]:
-            # Store the mean value of excess resources, keep at nan if no excess
-            '''try relative to C'''
-            xsresources = (tauc_slice - final_max_tauc)[xs_filt]
-            if len(xsresources) > 0:
-                #self.xs_means_rank[slice_left_i-self.rank_start] = np.mean(xsresources)
-                self.xs_means_rank[slice_left_i-self.rank_start] = np.sum(xsresources) / C
+        # Store the mean value of excess resources, keep at nan if no excess
+        '''try relative to C'''
+        xsresources = (tauc_slice - final_max_tauc)[xs_filt]
+        if len(xsresources) > 0:
+            #self.xs_means_rank[slice_left_i-self.rank_start] = np.mean(xsresources)
+            self.xs_means_rank[slice_left_i-self.rank_start] = np.sum(xsresources) / C
 
     def calculate_metric_expect(self, metric):
         # Get expected value of metric
         self.metric_expect = 0
-        metric_hist = self.metric_data[metric]['metric_hist']
+        metric_hist = self.metric_data['metric_hist']
         metric_edges = metric_hist[2]
         metric_vals = []
         diffs = np.diff(metric_edges)
@@ -637,18 +678,15 @@ class Phase:
         if self.rank == self.root:
             sampled_tau_means = np.empty(sum(sendcounts))
             sampled_metric_expect = np.empty(sum(sendcounts))        
-            if metric == self.metrics[0]:
-                sampled_xs_means = np.ones(sum(sendcounts)) * np.nan
+            sampled_xs_means = np.ones(sum(sendcounts)) * np.nan
         else:
             sampled_tau_means = None
             sampled_metric_expect = None
-            if metric == self.metrics[0]:
-                sampled_xs_means = None
+            sampled_xs_means = None
         # Now gather data
         self.comm.Gatherv(self.tau_means_rank, sampled_tau_means, root=self.root)
         self.comm.Gatherv(self.metric_expect_rank, sampled_metric_expect, root=self.root)
-        if metric == self.metrics[0]:
-            self.comm.Gatherv(self.xs_means_rank, sampled_xs_means, root=self.root)
+        self.comm.Gatherv(self.xs_means_rank, sampled_xs_means, root=self.root)
 
         if self.rank == self.root:
             # Save data to full phase matrix
@@ -656,12 +694,14 @@ class Phase:
 
             # Bin results into phase slice matricies
             for tau_i, tau_left in enumerate(self.tau_bin_edges):
-                tau_filt = (self.tau_means_ref[ncell_i] > tau_left) & (self.tau_means_ref[ncell_i] < tau_left+self.tau_bw)
+                if tau_i < len(self.tau_bin_edges) - 2:
+                    tau_filt = (self.tau_means_ref[ncell_i] >= tau_left) & (self.tau_means_ref[ncell_i] < tau_left+self.tau_bw)
+                else:
+                    tau_filt = self.tau_means_ref[ncell_i] >= tau_left
                 metric_expect_slice = sampled_metric_expect[tau_filt]
                 if len(metric_expect_slice) > 0:
                     self.phase_deltatau_C[C_i, len(self.tau_bin_edges)-1-tau_i, ncell_i] = np.mean(metric_expect_slice)
                 # Populate excess resources if on first metric
-                if metric == self.metrics[0]:
-                    xs_means_slice = sampled_xs_means[tau_filt]
-                    if not np.all(np.isnan(xs_means_slice)):
-                        self.phase_xs_deltatau_C[C_i, len(self.tau_bin_edges)-1-tau_i, ncell_i] = np.nanmean(xs_means_slice)
+                xs_means_slice = sampled_xs_means[tau_filt]
+                if not np.all(np.isnan(xs_means_slice)):
+                    self.phase_xs_deltatau_C[C_i, len(self.tau_bin_edges)-1-tau_i, ncell_i] = np.nanmean(xs_means_slice)
