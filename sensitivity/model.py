@@ -275,6 +275,7 @@ class Model:
                 t_eval = self.t_vec + self.init_age[0]
                 t_bounds = np.array([min(self.t_vec), max(self.t_vec)]) + self.init_age[0]
                 sol = solve_ivp(_dNdt, t_bounds, [self.N_0_1[pop_i]], t_eval=t_eval)
+                sol.y[0] = np.where(sol.y[0] > 1, sol.y[0], 0)
                 self.N_tot_vec[pop_i] = sol.y[0]
             # Handle final timesteps without fire
             elif len(self.t_vec) > fire_i+1:
@@ -283,6 +284,7 @@ class Model:
                     num_births = 0.
                 t_eval = np.arange(self.delta_t, len(self.t_vec) - fire_i + self.delta_t)
                 sol = solve_ivp(_dNdt, [self.delta_t,len(t_eval)], [num_births], t_eval=t_eval) 
+                sol.y[0] = np.where(sol.y[0] > 1, sol.y[0], 0)
                 if (len(sol.y)!=0) and (len(sol.y[0]) > 1):
                     self.N_tot_vec[pop_i][fire_i:len(self.t_vec)] = sol.y[0]
                 else: 
