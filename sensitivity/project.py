@@ -132,41 +132,17 @@ def compute_mu_s(job):
     with job.data:
         census_t = np.array(job.data["census_t"])
         for b in b_vec:
-            #'''Remove rows with bad init abundance, don't know why it's happening yet'''
-            #N_tot = np.array(job.data[f'N_tot/{b}'])
-            #N_0_1 = job.sp.Aeff*mort_fixed['K_adult']
-            #check_N0 = np.nonzero(N_tot[:,0] > N_0_1)[0]
-            #if len(check_N0) == N_tot.shape[0]:
-            #    job.data[f'mu_s/{b}'] = np.nan 
-            #    continue
-            #N_tot = np.delete(N_tot, check_N0, axis=0)
-            #N_tot_mean = N_tot.mean(axis=0)
-            #''''''
             N_tot_mean = np.array(job.data[f"N_tot_mean/{b}"])
-            burn_in_end_i = 200
+            burn_in_end_i = 0
             zero_is = np.nonzero(N_tot_mean == 0)[0]
             if len(zero_is) > 0:
-                if (min(zero_is) < burn_in_end_i) or ((min(zero_is) - burn_in_end_i) < 300):
-                    start_i = 0
-                    final_i = min(zero_is)
-                    tooquick = True
-                else:
-                    start_i = burn_in_end_i
-                    final_i = min(zero_is)
-                    tooquick = False
+                final_i = min(zero_is)
             else:
-                start_i = burn_in_end_i
                 final_i = len(N_tot_mean)
-                tooquick = False
+            t = census_t[burn_in_end_i:final_i]
+            N_mean_t = N_tot_mean[burn_in_end_i:final_i]
 
-            t = census_t[start_i:final_i]
-            N_mean_t = N_tot_mean[start_i:final_i]
-            if tooquick:
-                #mu_s = -np.log(N_mean_t[0]) / len(t)
-                mu_s = np.exp(-np.log(N_mean_t[0]) / len(t))
-            else:
-                #mu_s = np.sum(np.log(N_mean_t[1:] / np.roll(N_mean_t, 1)[1:])) / len(t)
-                mu_s = np.product(N_mean_t[1:] / np.roll(N_mean_t, 1)[1:]) ** (1/len(t))
+            mu_s = np.product(N_mean_t[1:] / np.roll(N_mean_t, 1)[1:]) ** (1/len(t))
             job.data[f'mu_s/{b}'] = mu_s 
     job.doc['mu_s_computed'] = True
 
@@ -176,7 +152,7 @@ def compute_mu_s(job):
 def compute_lambda_s(job):
     with job.data:
         census_t = np.array(job.data["census_t"])
-        burn_in_end_i = 200
+        burn_in_end_i = 0
         for b in b_vec:
             ## Skip if lambda_s already computed at this b value
             #if str(b) in list(job.data['lambda_s'].keys()): continue
@@ -190,21 +166,10 @@ def compute_lambda_s(job):
                 N_t = N_tot[rep_i]
                 zero_i_min = nonzero_counts[rep_i]
                 final_i = zero_i_min
-                if (zero_i_min < burn_in_end_i) or ((zero_i_min - burn_in_end_i) < 300):
-                    start_i = 0
-                    tooquick = True
-                else:
-                    start_i = burn_in_end_i
-                    tooquick = False
 
-                t = census_t[start_i:final_i]
-                N_slice = N_t[start_i:final_i]
-                if tooquick:
-                    #lam_s_replica = np.exp(-np.log(N_slice[0]) / len(t))
-                    #continue
-                    lam_s_replica = np.product(N_slice[1:] / np.roll(N_slice, 1)[1:]) ** (1/len(t))
-                else:
-                    lam_s_replica = np.product(N_slice[1:] / np.roll(N_slice, 1)[1:]) ** (1/len(t))
+                t = census_t[burn_in_end_i:final_i]
+                N_slice = N_t[burn_in_end_i:final_i]
+                lam_s_replica = np.product(N_slice[1:] / np.roll(N_slice, 1)[1:]) ** (1/len(t))
                 lam_s_extir.append(lam_s_replica)
 
             # Now handle cases with no extirpation
@@ -248,9 +213,6 @@ class Phase:
             # NaN here means set to max of fri_vec
             self.final_max_tau = max(self.tau_vec)
         self.delta_tau_vec = np.linspace(self.delta_tau_min, self.delta_tau_max, self.delta_tau_samples)
-        ## Reorder delta_tau_vec so zero comes first
-        #self.delta_tau_vec = np.concatenate((self.delta_tau_vec[self.delta_tau_vec==0], 
-        #                                     self.delta_tau_vec[self.delta_tau_vec!=0]))
         self.baseline_A_vec = np.linspace(self.baseline_A_min, self.baseline_A_max, self.baseline_A_samples)
 
         # Generate resource allocation values
@@ -328,7 +290,8 @@ class Phase:
             else:
                 all_tau = np.load(fn)
 
-            fn = self.data_dir + f"/metric_{self.metric}/metric_data.pkl"
+            self.data_dir = f"data/Aeff_{self.Aeff}/tfinal_{self.t_final}/metric_{self.metric}"
+            fn = self.data_dir + f"/metric_data.pkl"
             if not os.path.isdir(self.data_dir + f"/metric_{self.metric}"):
                 os.makedirs(self.data_dir + f"/metric_{self.metric}")
             if (not os.path.isfile(fn)) or self.overwrite_metrics:
@@ -341,14 +304,15 @@ class Phase:
                     with job.data as data:
                         metric_vec = []
                         for b in self.b_vec:
-                            metric_vec.append(float(data[f'{metric_label}/{b}']))
+                            if self.metric == 'P_s':
+                                # Just consider the cummulative extinction probability by some timestep T
+                                T = 300
+                                metric_vec.append(1.0 - float(data[f'frac_extirpated/{b}'][T-1]))
+                            else:
+                                metric_vec.append(float(data[f'{metric_label}/{b}']))
                     all_metric = np.append(all_metric, metric_vec)
                     
                 metric_min, metric_max = (min(all_metric), max(all_metric))
-                #if self.metric == 'mu_s':
-                #    coarse_grained = np.arange(metric_min, -0.02, 0.02)
-                #    fine_grained = np.arange(-0.02, metric_max + 0.001, 0.0001)
-                #    metric_edges = np.concatenate((coarse_grained[:-1], fine_grained))
                 if self.metric in ['lambda_s', 'mu_s']:
                     coarse_step = 0.02
                     fine_step = coarse_step/100
@@ -358,8 +322,9 @@ class Phase:
                     #metric_edges = np.concatenate((coarse_grained[:-1], fine_grained))
                     metric_edges = np.arange(metric_min, metric_max + fine_step, fine_step)
                 else:
-                    metric_thresh = 0.98
-                    metric_min, metric_max = (np.quantile(all_metric, 1-metric_thresh), np.quantile(all_metric, metric_thresh))
+                    #metric_thresh = 0.98
+                    #metric_min, metric_max = (np.quantile(all_metric, 1-metric_thresh), np.quantile(all_metric, metric_thresh))
+                    metric_min, metric_max = (all_metric.min(), all_metric.max())
                     metric_bw = (metric_max - metric_min) / 200
                     metric_edges = np.arange(metric_min, metric_max + metric_bw, metric_bw)
                 
@@ -600,10 +565,8 @@ class Phase:
         # Now replace them in the full array of tau
         self.tau_expect[slice_indices] = replacement_tau 
         # Store the mean value of excess resources, keep at nan if no excess
-        '''try relative to C'''
         xsresources = (tauc_slice - final_max_tauc)[xs_filt]
         if len(xsresources) > 0:
-            #self.xs_means_rank[slice_left_i-self.rank_start] = np.mean(xsresources)
             self.xs_means_rank[slice_left_i-self.rank_start] = np.sum(xsresources) / C
 
     def calculate_metric_expect(self, metric):

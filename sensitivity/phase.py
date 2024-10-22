@@ -21,37 +21,36 @@ constants['min_tau'] = 3
 constants['A_cell'] = 270**2 / 1e6 #km^2
 constants['tau_bw_ratio'] = 30 #For binning initial tau (with uncertainty)
 constants['tauc_baseline'] = 200 #years, max(tauc) possible at min(ncell) given C
-#constants['ncell_samples'] = 10
 constants['ncell_samples'] = 20
+#constants['ncell_samples'] = 20
 #constants['slice_samples'] = 30
-constants['slice_samples'] = 75
+constants['slice_samples'] = 100
 constants['baseline_A_min'] = 10 #km^2
-constants['baseline_A_max'] = 160
-#constants['baseline_A_samples'] = 10
-constants['baseline_A_samples'] = 3
-constants['delta_tau_min'] = 0.0
-constants['delta_tau_max'] = 0.0
-constants['delta_tau_samples'] = 1
-#constants['delta_tau_min'] = -10.0
-#constants['delta_tau_max'] = 10.0
-#constants['delta_tau_samples'] = 81
+constants['baseline_A_max'] = 160 * 2.0043963553530753
+constants['baseline_A_samples'] = 20
+#constants['baseline_A_samples'] = 3
+#constants['delta_tau_min'] = 0.0
+#constants['delta_tau_max'] = 0.0
+#constants['delta_tau_samples'] = 1
+constants['delta_tau_min'] = -10.0
+constants['delta_tau_max'] = 10.0
+constants['delta_tau_samples'] = 81
 constants['root'] = 0 #For mpi
 
-#metrics = ["lambda_s", "mu_s", "r"]
-metrics = ["r", "mu_s", "lambda_s"]
-#tauc_methods = ["flat", "initlinear", "initinverse"]
-tauc_methods = ["flat"]
+metrics = ["P_s", "lambda_s", "mu_s", "r"]
+#metrics = ["P_s"]
+tauc_methods = ["flat", "initlinear", "initinverse"]
+#tauc_methods = ["flat"]
 # Loop over tauc_methods and metrics 
-#for (tauc_method_i, tauc_method), metric in product(enumerate(tauc_methods), metrics):
 for metric in metrics:
     constants.update({'metric': metric})
     # Set True to overwrite metrics (only once per metric)
-    constants.update({'overwrite_metrics': False}) 
+    constants.update({'overwrite_metrics': True}) 
     if metric == metrics[0]:
         # Set True to overwrite scaling params (only once per tauc_method)
-        constants.update({'overwrite_scaleparams': False})
+        constants.update({'overwrite_scaleparams': True})
     else:
-        constants.update({'overwrite_scaleparams': False}) 
+        constants.update({'overwrite_scaleparams': True}) 
     #if metric == 'r':
     #    constants.update({'final_max_tau': 70})
     #else:
@@ -118,6 +117,6 @@ for metric in metrics:
                     plot_phase(phase_slice, metric, nochange, pproc.tau_bin_cntrs, pproc.ncell_vec, fn, C, tauc_vec)
                     fn = figs_dir + f"/phase_xs_slice_{tauc_method}.png"
                     plot_phase(phase_xs_slice, 'xs', 0, pproc.tau_bin_cntrs, pproc.ncell_vec, fn, C, tauc_vec)
-        #if pproc.rank == pproc.root:
-        #    fn = f"data/Aeff_{pproc.Aeff}/tfinal_{pproc.t_final}/metric_{metric}/phase_{pproc.tauc_method}.npy"
-        #    np.save(fn, pproc.phase)
+        if pproc.rank == pproc.root:
+            fn = f"data/Aeff_{pproc.Aeff}/tfinal_{pproc.t_final}/metric_{metric}/phase_{pproc.tauc_method}.npy"
+            np.save(fn, pproc.phase)

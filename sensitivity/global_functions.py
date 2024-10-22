@@ -19,8 +19,8 @@ def plot_phase(phase_space, metric, metric_nochange, fri_bin_cntrs, n_cell_vec, 
     fig, ax = plt.subplots(figsize=(12,12))
     ncell_tot = 87_993 #should read this in
     axfontsize = 16
-    metric_labels = ['$<r>$', '$<\mu>$', '$<\lambda>$', '$<xs>$']
-    metrics = np.array(['r', 'mu_s', 'lambda_s', 'xs'])
+    metric_labels = ['$P_s$', '$<r>$', '$<\mu>$', '$<\lambda>$', '$<xs>$']
+    metrics = np.array(['P_s', 'r', 'mu_s', 'lambda_s', 'xs'])
     metric_i = np.nonzero(metrics == metric)[0][0]
     metric_lab = metric_labels[metric_i]
     #phase_space = np.ma.masked_where(phase_space==0, phase_space)
@@ -34,7 +34,8 @@ def plot_phase(phase_space, metric, metric_nochange, fri_bin_cntrs, n_cell_vec, 
         '''doing this for now bc some runs are bad'''
         if (metric=='r') or (metric=='g'):
             phase_max = np.quantile(phase_flat[phase_flat != np.ma.masked], 0.98)
-        if metric in ['Nf', 'xs', 'mu_s', 'lambda_s']:
+        #if metric in ['Nf', 'xs', 'mu_s', 'lambda_s']:
+        else:
             phase_max = max(phase_flat[phase_flat != np.ma.masked])
     cmap.set_bad('white')
     im = ax.imshow(phase_space, norm=matplotlib.colors.Normalize(vmin=metric_nochange, vmax=phase_max), cmap=cmap)
