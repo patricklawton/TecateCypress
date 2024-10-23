@@ -37,20 +37,20 @@ constants['delta_tau_max'] = 10.0
 constants['delta_tau_samples'] = 81
 constants['root'] = 0 #For mpi
 
-metrics = ["P_s", "lambda_s", "mu_s", "r"]
-#metrics = ["P_s"]
-tauc_methods = ["flat", "initlinear", "initinverse"]
-#tauc_methods = ["flat"]
+#metrics = ["P_s", "lambda_s", "mu_s", "r"]
+metrics = ["P_s"]
+#tauc_methods = ["flat", "initlinear", "initinverse"]
+tauc_methods = ["initinverse"]
 # Loop over tauc_methods and metrics 
 for metric in metrics:
     constants.update({'metric': metric})
     # Set True to overwrite metrics (only once per metric)
-    constants.update({'overwrite_metrics': True}) 
+    constants.update({'overwrite_metrics': False}) 
     if metric == metrics[0]:
         # Set True to overwrite scaling params (only once per tauc_method)
-        constants.update({'overwrite_scaleparams': True})
+        constants.update({'overwrite_scaleparams': False})
     else:
-        constants.update({'overwrite_scaleparams': True}) 
+        constants.update({'overwrite_scaleparams': False}) 
     #if metric == 'r':
     #    constants.update({'final_max_tau': 70})
     #else:
