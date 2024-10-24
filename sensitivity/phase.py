@@ -37,10 +37,10 @@ constants['delta_tau_max'] = 10.0
 constants['delta_tau_samples'] = 81
 constants['root'] = 0 #For mpi
 
-#metrics = ["P_s", "lambda_s", "mu_s", "r"]
-metrics = ["P_s"]
-#tauc_methods = ["flat", "initlinear", "initinverse"]
-tauc_methods = ["initinverse"]
+#metrics = ["lambda_s", "mu_s", "r"]
+metrics = ["mu_s"]
+tauc_methods = ["flat", "initlinear", "initinverse"]
+#tauc_methods = ["initinverse"]
 # Loop over tauc_methods and metrics 
 for metric in metrics:
     constants.update({'metric': metric})

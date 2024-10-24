@@ -28,5 +28,5 @@ FDE_current.txt
 *map_ncell*
 data
 optimal_fire
-figs
+sensitivity/figs/*/*/*/deltatau*
 nint_data
