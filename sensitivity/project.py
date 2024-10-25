@@ -5,7 +5,6 @@ import signac as sg
 from flow import FlowProject
 import pickle
 from scipy.optimize import curve_fit
-from global_functions import line
 # Additional imports for phase analysis
 from matplotlib import pyplot as plt
 import matplotlib
@@ -18,7 +17,6 @@ from mpi4py import MPI
 import timeit
 import copy
 import sys
-from global_functions import adjustmaps
 import itertools
 from itertools import product
 MPI.COMM_WORLD.Set_errhandler(MPI.ERRORS_RETURN)
@@ -519,7 +517,7 @@ class Phase:
                                   len(self.ncell_vec), len(self.slice_left_all)
                                   )) * np.nan
 
-    def prep_rank_samples(self, metric, ncell): 
+    def prep_rank_samples(self, ncell): 
         self.slice_left_max = self.slice_right_max - ncell #slice needs to fit
         num_samples = len(self.slice_left_all)
 
@@ -543,7 +541,7 @@ class Phase:
         if (ncell==max(self.ncell_vec)) and (self.rank==self.root):
             self.rank_samples += 1
 
-    def change_tau_expect(self, metric, delta_tau, C_i, ncell_i, slice_left_i):
+    def change_tau_expect(self, C_i, ncell_i, slice_left_i):
         C = self.C_vec[C_i]
         ncell = self.ncell_vec[ncell_i]
         slice_left = self.slice_left_all[slice_left_i]
@@ -564,6 +562,9 @@ class Phase:
             tau_slice_ref = tau_slice_ref - min(tau_slice_ref)
             '''might be worth generating these slices outside loops'''
             tauc_slice = self.compute_tauc_slice([v,w], self.tauc_method, tau_slice_ref)
+        
+        # Add uncertainty to tau
+        ...
 
         # Find where tauc will push tau beyond max
         xs_filt = (tauc_slice > final_max_tauc) 
@@ -576,7 +577,7 @@ class Phase:
         if len(xsresources) > 0:
             self.xs_means_rank[slice_left_i-self.rank_start] = np.sum(xsresources) / C
 
-    def calculate_metric_expect(self, metric):
+    def calculate_metric_expect(self):
         # Get expected value of metric
         self.metric_expect = 0
         metric_hist = self.metric_data['metric_hist']
@@ -612,7 +613,7 @@ class Phase:
             metric_expect_tau = np.trapz(y=P_metric_tau.pdf(m)*m, x=m)
             self.metric_expect += metric_expect_tau * P_dtau
 
-    def process_samples(self, metric, delta_tau, C, ncell):
+    def process_samples(self, delta_tau, C, ncell):
         '''is relocating these indicies significantly slowing things down?'''
         C_i = np.nonzero(self.C_vec == C)[0][0]
         ncell_i = np.nonzero(self.ncell_vec == ncell)[0][0]
@@ -628,19 +629,19 @@ class Phase:
                 # Also, check that slice is within allowed range
                 if slice_left > self.slice_left_max: continue
                 # Now, adjust the tau distribution at cells in slice
-                self.change_tau_expect(metric, delta_tau, C_i, ncell_i, slice_left_i)
-            self.calculate_metric_expect(metric)
+                self.change_tau_expect(C_i, ncell_i, slice_left_i)
+            self.calculate_metric_expect()
             # Store sample if not computing no change scenario
             if rank_sample_i < len(self.metric_expect_rank): 
                 self.metric_expect_rank[slice_left_i-self.rank_start] = self.metric_expect
             # Otherwise save nochange to file
             elif self.rank == self.root:
-                self.data_dir = f"data/Aeff_{self.Aeff}/tfinal_{self.t_final}/metric_{metric}/deltatau_{delta_tau}/"
+                self.data_dir = f"data/Aeff_{self.Aeff}/tfinal_{self.t_final}/metric_{self.metric}/deltatau_{delta_tau}/"
                 if not os.path.isdir(self.data_dir):
                     os.makedirs(self.data_dir)
                 fn = self.data_dir + f"nochange_{self.tauc_method}.json"
                 with open(fn, "w") as handle:
-                    json.dump({f'{metric}_expect_nochange': self.metric_expect}, handle)
+                    json.dump({f'{self.metric}_expect_nochange': self.metric_expect}, handle)
 
         # Collect data across ranks
         # Initialize data to store sample means across all ranks
