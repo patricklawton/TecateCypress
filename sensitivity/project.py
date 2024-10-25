@@ -18,7 +18,7 @@ from mpi4py import MPI
 import timeit
 import copy
 import sys
-from global_functions import adjustmaps, plot_phase
+from global_functions import adjustmaps
 import itertools
 from itertools import product
 MPI.COMM_WORLD.Set_errhandler(MPI.ERRORS_RETURN)
@@ -472,13 +472,10 @@ class Phase:
                 self.w_all = self.comm.bcast(self.w_all, root=self.root)
 
         # Get bins of initial tau for phase plotting per (delta_tau, C)
-        #tau_range = tau_sorted[self.slice_right_max] - tau_sorted[0]
-        #self.tau_bw = tau_range / self.tau_bw_ratio
-        #self.tau_bin_edges = np.arange(tau_sorted[0], tau_sorted[self.slice_right_max], self.tau_bw)
         tau_range = 50 - tau_sorted[0]
-        self.tau_bw = tau_range / self.tau_bw_ratio
-        self.tau_bin_edges = np.arange(tau_sorted[0], 50, self.tau_bw)
-        self.tau_bin_cntrs = np.array([edge + self.tau_bw/2 for edge in self.tau_bin_edges])
+        self.plotting_tau_bw = tau_range / self.plotting_tau_bw_ratio
+        self.plotting_tau_bin_edges = np.arange(tau_sorted[0], 50, self.plotting_tau_bw)
+        self.plotting_tau_bin_cntrs = np.array([edge + self.plotting_tau_bw/2 for edge in self.plotting_tau_bin_edges])
 
         # Store the mean tau in each preset slice for reference later
         self.tau_means_ref = []
@@ -500,11 +497,12 @@ class Phase:
                 np.save(self.data_dir + f"/v_all_{self.tauc_method}.npy", self.v_all)
                 np.save(self.data_dir + f"/w_all_{self.tauc_method}.npy", self.w_all)
 
-            # Save tau bin centers for plotting
-            np.save(self.data_dir + "/tau_bin_cntrs.npy", self.tau_bin_cntrs)
-
             # Initialize data for <metric> across (delta_tau, C, ncell, slice_left) space
             self.phase = np.ones((
+                                  len(self.delta_tau_vec), len(self.C_vec),
+                                  len(self.ncell_vec), len(self.slice_left_all)
+                                  )) * np.nan
+            self.phase_xs = np.ones((
                                   len(self.delta_tau_vec), len(self.C_vec),
                                   len(self.ncell_vec), len(self.slice_left_all)
                                   )) * np.nan
@@ -526,7 +524,6 @@ class Phase:
             self.rank_samples = 0
 
         # Initialize data for this rank's chunk of samples
-        self.tau_means_rank = np.ones(self.rank_samples) * np.nan
         self.metric_expect_rank = np.ones(self.rank_samples) * np.nan
         self.xs_means_rank = np.ones(self.rank_samples) * np.nan
 
@@ -540,8 +537,6 @@ class Phase:
         slice_left = self.slice_left_all[slice_left_i]
         slice_indices = self.tau_argsort_ref[slice_left:slice_left + ncell]
         tau_slice = self.tau_expect[slice_indices]
-        # Store mean value of slice
-        self.tau_means_rank[slice_left_i-self.rank_start] = np.mean(tau_slice)
         # Set max tauc per cell
         final_max_tauc = self.final_max_tau - tau_slice
         # First create array of replacement tau
@@ -616,7 +611,7 @@ class Phase:
             # First, reset tau with uncertainty
             self.tau_expect = self.tau_flat + delta_tau
             # Check that we are not on the no change scenario
-            if rank_sample_i < len(self.tau_means_rank): 
+            if rank_sample_i < len(self.metric_expect_rank): 
                 slice_left = self.slice_left_all[slice_left_i]
                 # Also, check that slice is within allowed range
                 if slice_left > self.slice_left_max: continue
@@ -624,7 +619,7 @@ class Phase:
                 self.change_tau_expect(metric, delta_tau, C_i, ncell_i, slice_left_i)
             self.calculate_metric_expect(metric)
             # Store sample if not computing no change scenario
-            if rank_sample_i < len(self.tau_means_rank): 
+            if rank_sample_i < len(self.metric_expect_rank): 
                 self.metric_expect_rank[slice_left_i-self.rank_start] = self.metric_expect
             # Otherwise save nochange to file
             elif self.rank == self.root:
@@ -637,34 +632,92 @@ class Phase:
 
         # Collect data across ranks
         # Initialize data to store sample means across all ranks
-        sendcounts = np.array(self.comm.gather(len(self.tau_means_rank), root=self.root))
+        sendcounts = np.array(self.comm.gather(len(self.metric_expect_rank), root=self.root))
         if self.rank == self.root:
-            sampled_tau_means = np.empty(sum(sendcounts))
             sampled_metric_expect = np.empty(sum(sendcounts))        
             sampled_xs_means = np.ones(sum(sendcounts)) * np.nan
         else:
-            sampled_tau_means = None
             sampled_metric_expect = None
             sampled_xs_means = None
         # Now gather data
-        self.comm.Gatherv(self.tau_means_rank, sampled_tau_means, root=self.root)
         self.comm.Gatherv(self.metric_expect_rank, sampled_metric_expect, root=self.root)
         self.comm.Gatherv(self.xs_means_rank, sampled_xs_means, root=self.root)
 
         if self.rank == self.root:
             # Save data to full phase matrix
             self.phase[delta_tau_i, C_i, ncell_i, :] = sampled_metric_expect
+            self.phase_xs[delta_tau_i, C_i, ncell_i, :] = sampled_xs_means
+    
+    def plot_phase_slice(self, delta_tau, C, xs=False):
+        C_i = np.nonzero(self.C_vec == C)[0][0]
+        delta_tau_i = np.nonzero(self.delta_tau_vec == delta_tau)[0][0]
+        phase_slice = self.phase[delta_tau_i, C_i, :, :]
+        if xs:
+            phase_slice = self.phase_xs[delta_tau_i, C_i, :, :]
 
-            # Bin results into phase slice matricies
-            for tau_i, tau_left in enumerate(self.tau_bin_edges):
-                if tau_i < len(self.tau_bin_edges) - 2:
-                    tau_filt = (self.tau_means_ref[ncell_i] >= tau_left) & (self.tau_means_ref[ncell_i] < tau_left+self.tau_bw)
+        # Read in no change value
+        self.data_dir = f"data/Aeff_{self.Aeff}/tfinal_{self.t_final}/metric_{self.metric}/deltatau_{delta_tau}/"
+        fn = self.data_dir + f"nochange_{self.tauc_method}.json"
+        with open(fn, "r") as handle:
+            metric_nochange = json.load(handle)[f'{self.metric}_expect_nochange']
+
+        # Coarse grain data into plotting matrix
+        plotting_matrix = np.ones((len(self.plotting_tau_bin_edges), len(self.ncell_vec))) * np.nan
+        for ncell_i in range(len(self.ncell_vec)):
+            for tau_i, tau_left in enumerate(self.plotting_tau_bin_edges):
+                if tau_i < len(self.plotting_tau_bin_edges) - 2:
+                    tau_filt = (self.tau_means_ref[ncell_i] >= tau_left) & (self.tau_means_ref[ncell_i] < tau_left+self.plotting_tau_bw)
                 else:
                     tau_filt = self.tau_means_ref[ncell_i] >= tau_left
-                metric_expect_slice = sampled_metric_expect[tau_filt]
-                if len(metric_expect_slice) > 0:
-                    self.phase_deltatau_C[C_i, len(self.tau_bin_edges)-1-tau_i, ncell_i] = np.mean(metric_expect_slice)
-                # Populate excess resources if on first metric
-                xs_means_slice = sampled_xs_means[tau_filt]
-                if not np.all(np.isnan(xs_means_slice)):
-                    self.phase_xs_deltatau_C[C_i, len(self.tau_bin_edges)-1-tau_i, ncell_i] = np.nanmean(xs_means_slice)
+                metric_expect_slice = phase_slice[ncell_i, tau_filt]
+                if (len(metric_expect_slice) > 0) and (np.all(np.isnan(metric_expect_slice)) == False):
+                    plotting_matrix[len(self.plotting_tau_bin_edges)-1-tau_i, ncell_i] = np.mean(metric_expect_slice)
+
+        # Now actually make the plot
+        fig, ax = plt.subplots(figsize=(12,12))
+        axfontsize = 16
+        if xs:
+            metric_lab = '$<xs>$' 
+        else:
+            metric_labels = ['$<P_s>$', '$<r>$', '$<\mu>$', '$<\lambda>$']
+            metrics = np.array(['P_s', 'r', 'mu_s', 'lambda_s'])
+            metric_i = np.nonzero(metrics == self.metric)[0][0]
+            metric_lab = metric_labels[metric_i]
+        cmap = copy.copy(matplotlib.cm.plasma)
+        plotting_matrix = np.ma.masked_where(np.isnan(plotting_matrix),  plotting_matrix)
+        plotting_matrix_flat = plotting_matrix.flatten()
+        if len(plotting_matrix_flat[plotting_matrix_flat != np.ma.masked]) == 0:
+            phase_max = 0
+        else:
+            phase_max = max(plotting_matrix_flat[plotting_matrix_flat != np.ma.masked])
+        cmap.set_bad('white')
+        im = ax.imshow(plotting_matrix, norm=matplotlib.colors.Normalize(vmin=metric_nochange, vmax=phase_max), cmap=cmap)
+        cbar = ax.figure.colorbar(im, ax=ax, location="right", shrink=0.6)
+        cbar.ax.set_ylabel(fr'{metric_lab}', rotation=-90, fontsize=axfontsize, labelpad=20)
+        ytick_spacing = 2
+        ytick_labels = np.flip(self.plotting_tau_bin_cntrs)[::ytick_spacing]
+        yticks = np.arange(0,len(self.plotting_tau_bin_cntrs),ytick_spacing)
+        ax.set_yticks(yticks, labels=np.round(ytick_labels, decimals=3));
+        ax.set_ylabel(fr'Average initial $\tau$ in area where $\tau$ is changed', fontsize=axfontsize)
+        xtick_spacing = 3
+        xticks = np.arange(0,len(self.ncell_vec),xtick_spacing)
+        xtick_labels = np.round(self.ncell_vec/self.ncell_tot, 3)
+        ax.set_xticks(xticks, labels=xtick_labels[::xtick_spacing]);
+        ax.set_xlabel(r'Fraction of species range where $\tau$ is altered ($A/A_{\text{range}}$)', fontsize=axfontsize)
+        if self.tauc_method == "flat":
+            tauc_vec = C / self.ncell_vec
+        else:
+            tauc_vec = None
+        if hasattr(tauc_vec, "__len__"):
+            secax = ax.secondary_xaxis('top')
+            secax.set_xticks(xticks, labels=np.round(tauc_vec[::xtick_spacing], decimals=3));
+            secax.set_xlabel(r'Change in $\tau$ per unit area ($\hat{\tau}$)', fontsize=axfontsize)
+        figs_dir = f"figs/Aeff_{self.Aeff}/tfinal_{self.t_final}/metric_{self.metric}/deltatau_{delta_tau}/C_{C}/"
+        if not os.path.isdir(figs_dir):
+            os.makedirs(figs_dir)
+        if xs:
+            fn = figs_dir + f"/phase_xs_slice_{self.tauc_method}.png"
+        else:
+            fn = figs_dir + f"/phase_slice_{self.tauc_method}.png"
+        fig.savefig(fn, bbox_inches='tight')
+        plt.close(fig)

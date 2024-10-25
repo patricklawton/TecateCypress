@@ -1,0 +1,6 @@
+phase.h5
+    delta_1
+        delta_2
+            ...
+                <metric> data cube over (C, ncell, tau_i)
+                <metric> no change value
