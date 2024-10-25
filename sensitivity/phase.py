@@ -26,21 +26,21 @@ constants['ncell_samples'] = 20
 constants['slice_samples'] = 100
 constants['baseline_A_min'] = 10 #km^2
 constants['baseline_A_max'] = 160 * 2.0043963553530753
-#constants['baseline_A_samples'] = 20
-constants['baseline_A_samples'] = 3
-constants['delta_tau_min'] = 0.0
-constants['delta_tau_max'] = 0.0
-constants['delta_tau_samples'] = 1
-#constants['delta_tau_min'] = -10.0
-#constants['delta_tau_max'] = 10.0
-#constants['delta_tau_samples'] = 81
+constants['baseline_A_samples'] = 20
+#constants['baseline_A_samples'] = 3
+#constants['delta_tau_min'] = 0.0
+#constants['delta_tau_max'] = 0.0
+#constants['delta_tau_samples'] = 1
+constants['delta_tau_min'] = -10.0
+constants['delta_tau_max'] = 10.0
+constants['delta_tau_samples'] = 81
 constants['root'] = 0 #For mpi
 constants.update({'final_max_tau': np.nan})
 
 #metrics = ["lambda_s", "mu_s", "r"]
-metrics = ["P_s"]
-#tauc_methods = ["flat", "initlinear", "initinverse"]
-tauc_methods = ["flat"]
+metrics = ["mu_s"]
+tauc_methods = ["flat", "initlinear", "initinverse"]
+#tauc_methods = ["flat"]
 # Loop over tauc_methods and metrics 
 for metric in metrics:
     constants.update({'metric': metric})

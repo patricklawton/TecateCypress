@@ -33,6 +33,15 @@ with sg.H5Store(sd_fn).open(mode='r') as sd:
 with open('../model_fitting/mortality/fixed.pkl', 'rb') as handle:
     mort_fixed = pickle.load(handle)
 
+def adjustmaps(maps):
+    '''For making SDM and FDM the same shape'''
+    dim_len = []
+    for dim in range(2):
+        dim_len.append(min([m.shape[dim] for m in maps]))
+    for mi, m in enumerate(maps):
+        maps[mi] = m[0:dim_len[0], 0:dim_len[1]]
+    return maps
+
 @FlowProject.post(lambda job: job.doc.get('simulated'))
 @FlowProject.operation
 def run_sims(job):
@@ -111,6 +120,9 @@ def compute_Nf(job):
 @FlowProject.post(lambda job: job.doc.get('decay_rate_computed'))
 @FlowProject.operation
 def compute_decay_rate(job):
+    def line(x, m, b):
+        return m*x + b
+
     with job.data:
         census_t = np.array(job.data["census_t"])
         for b in b_vec:
