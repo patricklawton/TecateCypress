@@ -19,6 +19,7 @@ import copy
 import sys
 import itertools
 from itertools import product
+import h5py
 MPI.COMM_WORLD.Set_errhandler(MPI.ERRORS_RETURN)
 
 # Open up signac project
@@ -222,12 +223,24 @@ class Phase:
         if np.isnan(self.final_max_tau): 
             # NaN here means set to max of fri_vec
             self.final_max_tau = max(self.tau_vec)
-        self.delta_tau_vec = np.linspace(self.delta_tau_min, self.delta_tau_max, self.delta_tau_samples)
         self.baseline_A_vec = np.linspace(self.baseline_A_min, self.baseline_A_max, self.baseline_A_samples)
 
         # Generate resource allocation values
         self.ncell_baseline_vec = np.round(self.baseline_A_vec / self.A_cell).astype(int) 
         self.C_vec = self.ncell_baseline_vec * self.tauc_baseline
+
+        # Set generator for random uncertainties
+        self.rng = np.random.default_rng()
+        
+        # Create empty file for final results (if overwriting)
+        if self.rank == self.root:
+            self.data_dir = f"data/Aeff_{self.Aeff}/tfinal_{self.t_final}/metric_{self.metric}"
+            if not os.path.isdir(self.data_dir):
+                os.makedirs(self.data_dir)
+            fn = self.data_dir + f"/phase_{self.tauc_method}.h5"
+            if (not os.path.isfile(fn)) or self.overwrite_results:
+                with h5py.File(fn, 'w') as handle:
+                    pass #Just create file and leave empty for now
 
     def compute_tauc_slice(self, x, method, tau_slice):
         if method == 'initlinear':
@@ -291,8 +304,6 @@ class Phase:
             jobs = project.find_jobs({'doc.simulated': True, 'Aeff': self.Aeff, 
                                       't_final': self.t_final, 'method': self.sim_method})
             self.data_dir = f"data/Aeff_{self.Aeff}/tfinal_{self.t_final}"
-            if not os.path.isdir(self.data_dir):
-                os.makedirs(self.data_dir)
             fn = self.data_dir + "/all_tau.npy"
             if (not os.path.isfile(fn)) or self.overwrite_metrics:
                 all_tau = np.tile(self.tau_vec, len(jobs))
@@ -302,8 +313,6 @@ class Phase:
 
             self.data_dir = f"data/Aeff_{self.Aeff}/tfinal_{self.t_final}/metric_{self.metric}"
             fn = self.data_dir + f"/metric_data.pkl"
-            if not os.path.isdir(self.data_dir + f"/metric_{self.metric}"):
-                os.makedirs(self.data_dir + f"/metric_{self.metric}")
             if (not os.path.isfile(fn)) or self.overwrite_metrics:
                 self.metric_data = {}
                 print(f"Creating {self.metric} histogram") 
@@ -481,7 +490,7 @@ class Phase:
                 self.v_all = self.comm.bcast(self.v_all, root=self.root)
                 self.w_all = self.comm.bcast(self.w_all, root=self.root)
 
-        # Get bins of initial tau for phase plotting per (delta_tau, C)
+        # Get bins of initial tau for phase plotting per (eps_tau, C)
         tau_range = 50 - tau_sorted[0]
         self.plotting_tau_bw = tau_range / self.plotting_tau_bw_ratio
         self.plotting_tau_bin_edges = np.arange(tau_sorted[0], 50, self.plotting_tau_bw)
@@ -499,7 +508,6 @@ class Phase:
 
         if self.rank == self.root:
             # Save all state variables
-            np.save(self.data_dir + "/delta_tau_vec.npy", self.delta_tau_vec)
             np.save(self.data_dir + "/C_vec.npy", self.C_vec)
             np.save(self.data_dir + "/ncell_vec.npy", self.ncell_vec)
             np.save(self.data_dir + "/slice_left_all.npy", self.slice_left_all)
@@ -507,15 +515,13 @@ class Phase:
                 np.save(self.data_dir + f"/v_all_{self.tauc_method}.npy", self.v_all)
                 np.save(self.data_dir + f"/w_all_{self.tauc_method}.npy", self.w_all)
 
-            # Initialize data for <metric> across (delta_tau, C, ncell, slice_left) space
+            # Initialize data for <metric> across (C, ncell, slice_left) space
             self.phase = np.ones((
-                                  len(self.delta_tau_vec), len(self.C_vec),
-                                  len(self.ncell_vec), len(self.slice_left_all)
-                                  )) * np.nan
+                                  len(self.C_vec), len(self.ncell_vec), len(self.slice_left_all)
+                                )) * np.nan
             self.phase_xs = np.ones((
-                                  len(self.delta_tau_vec), len(self.C_vec),
-                                  len(self.ncell_vec), len(self.slice_left_all)
-                                  )) * np.nan
+                                    len(self.C_vec), len(self.ncell_vec), len(self.slice_left_all)
+                                   )) * np.nan
 
     def prep_rank_samples(self, ncell): 
         self.slice_left_max = self.slice_right_max - ncell #slice needs to fit
@@ -589,7 +595,7 @@ class Phase:
         metric_vals = np.array(metric_vals)
         for tau_i in range(len(self.tau_edges) - 1):
             '''For final bin, include all cells gte left bin edge, this will inflate the probability of the 
-               final bin for cases where delta_tau and/or tauc push tau values past final_max_tau, but 
+               final bin for cases where eps_tau and/or tauc push tau values past final_max_tau, but 
                hopefully that's a fine approximation for now.'''
             # Get the expected values in this tau bin
             if tau_i < len(self.tau_edges) - 2:
@@ -613,16 +619,20 @@ class Phase:
             metric_expect_tau = np.trapz(y=P_metric_tau.pdf(m)*m, x=m)
             self.metric_expect += metric_expect_tau * P_dtau
 
-    def process_samples(self, delta_tau, C, ncell):
+    def generate_eps_tau(self, mu_tau, sigm_tau):
+        self.mu_tau = mu_tau
+        self.sigm_tau = sigm_tau
+        self.eps_tau = self.rng.normal(loc=self.mu_tau, scale=self.sigm_tau, size=len(self.tau_flat)) 
+
+    def process_samples(self, C, ncell):
         '''is relocating these indicies significantly slowing things down?'''
         C_i = np.nonzero(self.C_vec == C)[0][0]
         ncell_i = np.nonzero(self.ncell_vec == ncell)[0][0]
-        delta_tau_i = np.nonzero(self.delta_tau_vec == delta_tau)[0][0]
         self.slice_left_max = self.slice_right_max - ncell
         # Loop over sampled realizations of this fire alteration strategy
         for rank_sample_i, slice_left_i in enumerate(range(self.rank_start, self.rank_start + self.rank_samples)):
             # First, reset tau with uncertainty
-            self.tau_expect = self.tau_flat + delta_tau
+            self.tau_expect = self.tau_flat + self.eps_tau
             # Check that we are not on the no change scenario
             if rank_sample_i < len(self.metric_expect_rank): 
                 slice_left = self.slice_left_all[slice_left_i]
@@ -630,18 +640,21 @@ class Phase:
                 if slice_left > self.slice_left_max: continue
                 # Now, adjust the tau distribution at cells in slice
                 self.change_tau_expect(C_i, ncell_i, slice_left_i)
+            # Calculate <metric>
             self.calculate_metric_expect()
             # Store sample if not computing no change scenario
             if rank_sample_i < len(self.metric_expect_rank): 
                 self.metric_expect_rank[slice_left_i-self.rank_start] = self.metric_expect
-            # Otherwise save nochange to file
+            # Otherwise save <metric> under no change
             elif self.rank == self.root:
-                self.data_dir = f"data/Aeff_{self.Aeff}/tfinal_{self.t_final}/metric_{self.metric}/deltatau_{delta_tau}/"
-                if not os.path.isdir(self.data_dir):
-                    os.makedirs(self.data_dir)
-                fn = self.data_dir + f"nochange_{self.tauc_method}.json"
-                with open(fn, "w") as handle:
-                    json.dump({f'{self.metric}_expect_nochange': self.metric_expect}, handle)
+                self.data_dir = f"data/Aeff_{self.Aeff}/tfinal_{self.t_final}/metric_{self.metric}"
+                fn = self.data_dir + f"/phase_{self.tauc_method}.h5"
+                with h5py.File(fn, "a") as handle:
+                    data_key = f"{np.round(self.mu_tau, 3)}/{np.round(self.sigm_tau, 3)}/nochange"
+                    if data_key in handle:
+                        handle[data_key][...] = self.metric_expect 
+                    else:
+                        handle[data_key] = self.metric_expect
 
         # Collect data across ranks
         # Initialize data to store sample means across all ranks
@@ -658,21 +671,35 @@ class Phase:
 
         if self.rank == self.root:
             # Save data to full phase matrix
-            self.phase[delta_tau_i, C_i, ncell_i, :] = sampled_metric_expect
-            self.phase_xs[delta_tau_i, C_i, ncell_i, :] = sampled_xs_means
+            self.phase[C_i, ncell_i, :] = sampled_metric_expect
+            self.phase_xs[C_i, ncell_i, :] = sampled_xs_means
+
+    def store_phase(self, xs=False): 
+        if self.rank == self.root:
+            fn = self.data_dir + f"/phase_{self.tauc_method}.h5"
+            with h5py.File(fn, "a") as handle:
+                data_key = f"{np.round(self.mu_tau, 3)}/{np.round(self.sigm_tau, 3)}/phase"
+                if xs:
+                    data_key += "_xs"
+                    data = self.phase_xs
+                else:
+                    data = self.phase
+                if data_key in handle:
+                    handle[data_key][...] = self.phase 
+                else:
+                    handle[data_key] = self.phase
     
-    def plot_phase_slice(self, delta_tau, C, xs=False):
+    def plot_phase_slice(self, C, xs=False):
         C_i = np.nonzero(self.C_vec == C)[0][0]
-        delta_tau_i = np.nonzero(self.delta_tau_vec == delta_tau)[0][0]
-        phase_slice = self.phase[delta_tau_i, C_i, :, :]
+        phase_slice = self.phase[C_i, :, :]
         if xs:
-            phase_slice = self.phase_xs[delta_tau_i, C_i, :, :]
+            phase_slice = self.phase_xs[C_i, :, :]
 
         # Read in no change value
-        self.data_dir = f"data/Aeff_{self.Aeff}/tfinal_{self.t_final}/metric_{self.metric}/deltatau_{delta_tau}/"
-        fn = self.data_dir + f"nochange_{self.tauc_method}.json"
-        with open(fn, "r") as handle:
-            metric_nochange = json.load(handle)[f'{self.metric}_expect_nochange']
+        fn = self.data_dir + f"/phase_{self.tauc_method}.h5"
+        with h5py.File(fn, "r") as handle:
+            data_key = f"{np.round(self.mu_tau, 3)}/{np.round(self.sigm_tau, 3)}/nochange"
+            metric_nochange = handle[data_key][()]
 
         # Coarse grain data into plotting matrix
         plotting_matrix = np.ones((len(self.plotting_tau_bin_edges), len(self.ncell_vec))) * np.nan
@@ -725,7 +752,9 @@ class Phase:
             secax = ax.secondary_xaxis('top')
             secax.set_xticks(xticks, labels=np.round(tauc_vec[::xtick_spacing], decimals=3));
             secax.set_xlabel(r'Change in $\tau$ per unit area ($\hat{\tau}$)', fontsize=axfontsize)
-        figs_dir = f"figs/Aeff_{self.Aeff}/tfinal_{self.t_final}/metric_{self.metric}/deltatau_{delta_tau}/C_{C}/"
+        # Save to file
+        figs_dir = f"figs/Aeff_{self.Aeff}/tfinal_{self.t_final}/metric_{self.metric}/"
+        figs_dir += f"mutau_{np.round(self.mu_tau,3)}/sigmtau_{np.round(self.sigm_tau, 3)}/C_{C}"
         if not os.path.isdir(figs_dir):
             os.makedirs(figs_dir)
         if xs:

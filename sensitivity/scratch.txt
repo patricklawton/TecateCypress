@@ -1,9 +1,10 @@
 phase.h5
-    delta_1
-        delta_2
-            ...
-                <metric> data cube over (C, ncell, tau_i)
-                <metric> no change value
+    mu_tau
+        sigm_tau
+            <metric> no change value
+            mu_tauc
+                sigm_tauc
+                    <metric> data cube over (C, ncell, tau_i)
 
 We don't need delta_tau_i for reference to phase data anymore, so maybe just remove creation of delta_tau_vec from init and add attribute for a given uncertainty value under product uncertainty loop in phase.py
 Or maybe make a separate method for setting tau uncertainty, called before process_samples, within which the attributes are set. 

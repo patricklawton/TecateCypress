@@ -29,4 +29,5 @@ FDE_current.txt
 data
 optimal_fire
 sensitivity/figs/*/*/*/deltatau*
+sensitivity/figs/*/*/*/mutau*
 nint_data
