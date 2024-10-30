@@ -242,47 +242,6 @@ class Phase:
                 with h5py.File(fn, 'w') as handle:
                     pass #Just create file and leave empty for now
 
-    def compute_tauc_slice(self, x, method, tau_slice):
-        if method == 'initlinear':
-            tauc_slice = x[0]*tau_slice + x[1]
-        elif method == 'initinverse':
-            tauc_slice = x[0] / ((tau_slice/x[1]) + 1)
-        return tauc_slice    
-
-    def maximize_preflat(self, method, C, ncell, tau_slice, x0=None, penalty_weight=0.05):
-        # Our objective function, the expected value of all tauc > (C/ncell)
-        def tauc_expect_preflat(x):
-            tauc_slice = self.compute_tauc_slice(x, method, tau_slice)
-            tau_mid = (max(tau_slice) - min(tau_slice)) / 2
-            # Multiply by -1 bc we want max, not min
-            return -1 * np.mean(tauc_slice[tau_slice < tau_mid])
-
-        constraints = []
-        # Sum of all tauc must be eq to C
-        def tauc_total_con(x):
-            tauc_slice = self.compute_tauc_slice(x, method, tau_slice)
-            return np.sum(tauc_slice) - C
-        constraints.append({'type': 'eq', 'fun': tauc_total_con})
-        if method == 'initlinear':
-            # Need additional constraint that all tauc > 0
-            def tauc_positive(x):
-                tauc_slice = self.compute_tauc_slice(x, method, tau_slice)
-                return np.min(tauc_slice)
-            constraints.append({'type': 'ineq', 'fun': tauc_positive})
-            bounds = [(None,0), (0,None)]
-            result = scipy.optimize.minimize(tauc_expect_preflat, x0, constraints=constraints, bounds=bounds)
-        elif method == 'initinverse':
-            # Use a global optimization algorithm for this scaling method
-            def penalized_objective(x, penalty_weight=penalty_weight):
-                obj_value = tauc_expect_preflat(x)
-                constraint_violation = tauc_total_con(x)
-                # Add penalty for violating the equality constraint
-                penalty = penalty_weight * constraint_violation**2
-                return obj_value + penalty
-            bounds = [(0,1e4), (0,1e1)]
-            result = scipy.optimize.differential_evolution(penalized_objective, bounds=bounds)
-        return result
-
     def initialize(self):
         '''
         Read in and/or organize data used for subsequent analysis
@@ -523,6 +482,94 @@ class Phase:
                                     len(self.C_vec), len(self.ncell_vec), len(self.slice_left_all)
                                    )) * np.nan
 
+    def compute_tauc_slice(self, x, method, tau_slice):
+        if method == 'initlinear':
+            tauc_slice = x[0]*tau_slice + x[1]
+        elif method == 'initinverse':
+            tauc_slice = x[0] / ((tau_slice/x[1]) + 1)
+        return tauc_slice    
+
+    def maximize_preflat(self, method, C, ncell, tau_slice, x0=None, penalty_weight=0.05):
+        # Our objective function, the expected value of all tauc > (C/ncell)
+        def tauc_expect_preflat(x):
+            tauc_slice = self.compute_tauc_slice(x, method, tau_slice)
+            tau_mid = (max(tau_slice) - min(tau_slice)) / 2
+            # Multiply by -1 bc we want max, not min
+            return -1 * np.mean(tauc_slice[tau_slice < tau_mid])
+
+        constraints = []
+        # Sum of all tauc must be eq to C
+        def tauc_total_con(x):
+            tauc_slice = self.compute_tauc_slice(x, method, tau_slice)
+            return np.sum(tauc_slice) - C
+        constraints.append({'type': 'eq', 'fun': tauc_total_con})
+        if method == 'initlinear':
+            # Need additional constraint that all tauc > 0
+            def tauc_positive(x):
+                tauc_slice = self.compute_tauc_slice(x, method, tau_slice)
+                return np.min(tauc_slice)
+            constraints.append({'type': 'ineq', 'fun': tauc_positive})
+            bounds = [(None,0), (0,None)]
+            result = scipy.optimize.minimize(tauc_expect_preflat, x0, constraints=constraints, bounds=bounds)
+        elif method == 'initinverse':
+            # Use a global optimization algorithm for this scaling method
+            def penalized_objective(x, penalty_weight=penalty_weight):
+                obj_value = tauc_expect_preflat(x)
+                constraint_violation = tauc_total_con(x)
+                # Add penalty for violating the equality constraint
+                penalty = penalty_weight * constraint_violation**2
+                return obj_value + penalty
+            bounds = [(0,1e4), (0,1e1)]
+            result = scipy.optimize.differential_evolution(penalized_objective, bounds=bounds)
+        return result
+
+    def change_tau_expect(self, C_i, ncell_i, slice_left_i):
+        C = self.C_vec[C_i]
+        ncell = self.ncell_vec[ncell_i]
+        slice_left = self.slice_left_all[slice_left_i]
+        slice_indices = self.tau_argsort_ref[slice_left:slice_left + ncell]
+        tau_slice = self.tau_expect[slice_indices]
+        # Set max tauc per cell
+        final_max_tauc = self.final_max_tau - tau_slice
+        # First create array of replacement tau
+        replacement_tau = np.ones(ncell) #Initialize
+        '''could pre-generate tauc slices to speed up'''
+        if self.tauc_method == "flat":
+            tauc = C / ncell
+            tauc_slice = np.repeat(tauc, ncell)
+        else:
+            v = self.v_all[C_i, ncell_i, slice_left_i]
+            w = self.w_all[C_i, ncell_i, slice_left_i]
+            tau_slice_ref = self.tau_flat[slice_indices]
+            tau_slice_ref = tau_slice_ref - min(tau_slice_ref)
+            tauc_slice = self.compute_tauc_slice([v,w], self.tauc_method, tau_slice_ref)
+        
+        # Add uncertainty to tauc slice
+        random_indices = self.rng.integers(0, len(self.tau_flat), ncell)
+        eps_tauc_slice = self.eps_tauc[random_indices]
+        tauc_slice = tauc_slice + eps_tauc_slice
+
+        # Find where tauc will push tau beyond max
+        xs_filt = (tauc_slice > final_max_tauc) 
+        replacement_tau[xs_filt] = self.final_max_tau
+        replacement_tau[xs_filt==False] = (tau_slice + tauc_slice)[xs_filt==False]
+        # Now replace them in the full array of tau
+        self.tau_expect[slice_indices] = replacement_tau 
+        # Store the mean value of excess resources, keep at nan if no excess
+        xsresources = (tauc_slice - final_max_tauc)[xs_filt]
+        if len(xsresources) > 0:
+            self.xs_means_rank[slice_left_i-self.rank_start] = np.sum(xsresources) / C
+
+    def generate_eps_tau(self, mu_tau, sigm_tau):
+        self.mu_tau = mu_tau
+        self.sigm_tau = sigm_tau
+        self.eps_tau = self.rng.normal(loc=self.mu_tau, scale=self.sigm_tau, size=len(self.tau_flat)) 
+
+    def generate_eps_tauc(self, mu_tauc, sigm_tauc):
+        self.mu_tauc = mu_tauc
+        self.sigm_tauc = sigm_tauc
+        self.eps_tauc = self.rng.normal(loc=self.mu_tauc, scale=self.sigm_tauc, size=len(self.tau_flat)) 
+
     def prep_rank_samples(self, ncell): 
         self.slice_left_max = self.slice_right_max - ncell #slice needs to fit
         num_samples = len(self.slice_left_all)
@@ -546,42 +593,6 @@ class Phase:
         # Add one sample for computing the no change scenario
         if (ncell==max(self.ncell_vec)) and (self.rank==self.root):
             self.rank_samples += 1
-
-    def change_tau_expect(self, C_i, ncell_i, slice_left_i):
-        C = self.C_vec[C_i]
-        ncell = self.ncell_vec[ncell_i]
-        slice_left = self.slice_left_all[slice_left_i]
-        slice_indices = self.tau_argsort_ref[slice_left:slice_left + ncell]
-        tau_slice = self.tau_expect[slice_indices]
-        # Set max tauc per cell
-        final_max_tauc = self.final_max_tau - tau_slice
-        # First create array of replacement tau
-        replacement_tau = np.ones(ncell) #Initialize
-        if self.tauc_method == "flat":
-            '''generate these outside loop to speed up'''
-            tauc = C / ncell
-            tauc_slice = np.repeat(tauc, ncell)
-        else:
-            v = self.v_all[C_i, ncell_i, slice_left_i]
-            w = self.w_all[C_i, ncell_i, slice_left_i]
-            tau_slice_ref = self.tau_flat[slice_indices]
-            tau_slice_ref = tau_slice_ref - min(tau_slice_ref)
-            '''might be worth generating these slices outside loops'''
-            tauc_slice = self.compute_tauc_slice([v,w], self.tauc_method, tau_slice_ref)
-        
-        # Add uncertainty to tau
-        ...
-
-        # Find where tauc will push tau beyond max
-        xs_filt = (tauc_slice > final_max_tauc) 
-        replacement_tau[xs_filt] = self.final_max_tau
-        replacement_tau[xs_filt==False] = (tau_slice + tauc_slice)[xs_filt==False]
-        # Now replace them in the full array of tau
-        self.tau_expect[slice_indices] = replacement_tau 
-        # Store the mean value of excess resources, keep at nan if no excess
-        xsresources = (tauc_slice - final_max_tauc)[xs_filt]
-        if len(xsresources) > 0:
-            self.xs_means_rank[slice_left_i-self.rank_start] = np.sum(xsresources) / C
 
     def calculate_metric_expect(self):
         # Get expected value of metric
@@ -619,11 +630,6 @@ class Phase:
             metric_expect_tau = np.trapz(y=P_metric_tau.pdf(m)*m, x=m)
             self.metric_expect += metric_expect_tau * P_dtau
 
-    def generate_eps_tau(self, mu_tau, sigm_tau):
-        self.mu_tau = mu_tau
-        self.sigm_tau = sigm_tau
-        self.eps_tau = self.rng.normal(loc=self.mu_tau, scale=self.sigm_tau, size=len(self.tau_flat)) 
-
     def process_samples(self, C, ncell):
         '''is relocating these indicies significantly slowing things down?'''
         C_i = np.nonzero(self.C_vec == C)[0][0]
@@ -650,7 +656,8 @@ class Phase:
                 self.data_dir = f"data/Aeff_{self.Aeff}/tfinal_{self.t_final}/metric_{self.metric}"
                 fn = self.data_dir + f"/phase_{self.tauc_method}.h5"
                 with h5py.File(fn, "a") as handle:
-                    data_key = f"{np.round(self.mu_tau, 3)}/{np.round(self.sigm_tau, 3)}/nochange"
+                    data_key = f"{np.round(self.mu_tau, 3)}/{np.round(self.sigm_tau, 3)}/"
+                    data_key += f"{np.round(self.mu_tauc, 3)}/{np.round(self.sigm_tauc, 3)}/metric_nochange"
                     if data_key in handle:
                         handle[data_key][...] = self.metric_expect 
                     else:
@@ -678,7 +685,8 @@ class Phase:
         if self.rank == self.root:
             fn = self.data_dir + f"/phase_{self.tauc_method}.h5"
             with h5py.File(fn, "a") as handle:
-                data_key = f"{np.round(self.mu_tau, 3)}/{np.round(self.sigm_tau, 3)}/phase"
+                data_key = f"{np.round(self.mu_tau, 3)}/{np.round(self.sigm_tau, 3)}/"
+                data_key += f"{np.round(self.mu_tauc, 3)}/{np.round(self.sigm_tauc, 3)}/phase"
                 if xs:
                     data_key += "_xs"
                     data = self.phase_xs
@@ -690,76 +698,79 @@ class Phase:
                     handle[data_key] = self.phase
     
     def plot_phase_slice(self, C, xs=False):
-        C_i = np.nonzero(self.C_vec == C)[0][0]
-        phase_slice = self.phase[C_i, :, :]
-        if xs:
-            phase_slice = self.phase_xs[C_i, :, :]
+        if self.rank == self.root:
+            C_i = np.nonzero(self.C_vec == C)[0][0]
+            phase_slice = self.phase[C_i, :, :]
+            if xs:
+                phase_slice = self.phase_xs[C_i, :, :]
 
-        # Read in no change value
-        fn = self.data_dir + f"/phase_{self.tauc_method}.h5"
-        with h5py.File(fn, "r") as handle:
-            data_key = f"{np.round(self.mu_tau, 3)}/{np.round(self.sigm_tau, 3)}/nochange"
-            metric_nochange = handle[data_key][()]
+            # Read in no change value
+            fn = self.data_dir + f"/phase_{self.tauc_method}.h5"
+            with h5py.File(fn, "r") as handle:
+                data_key = f"{np.round(self.mu_tau, 3)}/{np.round(self.sigm_tau, 3)}/"
+                data_key += f"{np.round(self.mu_tauc, 3)}/{np.round(self.sigm_tauc, 3)}/metric_nochange"
+                metric_nochange = handle[data_key][()]
 
-        # Coarse grain data into plotting matrix
-        plotting_matrix = np.ones((len(self.plotting_tau_bin_edges), len(self.ncell_vec))) * np.nan
-        for ncell_i in range(len(self.ncell_vec)):
-            for tau_i, tau_left in enumerate(self.plotting_tau_bin_edges):
-                if tau_i < len(self.plotting_tau_bin_edges) - 2:
-                    tau_filt = (self.tau_means_ref[ncell_i] >= tau_left) & (self.tau_means_ref[ncell_i] < tau_left+self.plotting_tau_bw)
-                else:
-                    tau_filt = self.tau_means_ref[ncell_i] >= tau_left
-                metric_expect_slice = phase_slice[ncell_i, tau_filt]
-                if (len(metric_expect_slice) > 0) and (np.all(np.isnan(metric_expect_slice)) == False):
-                    plotting_matrix[len(self.plotting_tau_bin_edges)-1-tau_i, ncell_i] = np.mean(metric_expect_slice)
+            # Coarse grain data into plotting matrix
+            plotting_matrix = np.ones((len(self.plotting_tau_bin_edges), len(self.ncell_vec))) * np.nan
+            for ncell_i in range(len(self.ncell_vec)):
+                for tau_i, tau_left in enumerate(self.plotting_tau_bin_edges):
+                    if tau_i < len(self.plotting_tau_bin_edges) - 2:
+                        tau_filt = (self.tau_means_ref[ncell_i] >= tau_left) & (self.tau_means_ref[ncell_i] < tau_left+self.plotting_tau_bw)
+                    else:
+                        tau_filt = self.tau_means_ref[ncell_i] >= tau_left
+                    metric_expect_slice = phase_slice[ncell_i, tau_filt]
+                    if (len(metric_expect_slice) > 0) and (np.all(np.isnan(metric_expect_slice)) == False):
+                        plotting_matrix[len(self.plotting_tau_bin_edges)-1-tau_i, ncell_i] = np.mean(metric_expect_slice)
 
-        # Now actually make the plot
-        fig, ax = plt.subplots(figsize=(12,12))
-        axfontsize = 16
-        if xs:
-            metric_lab = '$<xs>$' 
-        else:
-            metric_labels = ['$<P_s>$', '$<r>$', '$<\mu>$', '$<\lambda>$']
-            metrics = np.array(['P_s', 'r', 'mu_s', 'lambda_s'])
-            metric_i = np.nonzero(metrics == self.metric)[0][0]
-            metric_lab = metric_labels[metric_i]
-        cmap = copy.copy(matplotlib.cm.plasma)
-        plotting_matrix = np.ma.masked_where(np.isnan(plotting_matrix),  plotting_matrix)
-        plotting_matrix_flat = plotting_matrix.flatten()
-        if len(plotting_matrix_flat[plotting_matrix_flat != np.ma.masked]) == 0:
-            phase_max = 0
-        else:
-            phase_max = max(plotting_matrix_flat[plotting_matrix_flat != np.ma.masked])
-        cmap.set_bad('white')
-        im = ax.imshow(plotting_matrix, norm=matplotlib.colors.Normalize(vmin=metric_nochange, vmax=phase_max), cmap=cmap)
-        cbar = ax.figure.colorbar(im, ax=ax, location="right", shrink=0.6)
-        cbar.ax.set_ylabel(fr'{metric_lab}', rotation=-90, fontsize=axfontsize, labelpad=20)
-        ytick_spacing = 2
-        ytick_labels = np.flip(self.plotting_tau_bin_cntrs)[::ytick_spacing]
-        yticks = np.arange(0,len(self.plotting_tau_bin_cntrs),ytick_spacing)
-        ax.set_yticks(yticks, labels=np.round(ytick_labels, decimals=3));
-        ax.set_ylabel(fr'Average initial $\tau$ in area where $\tau$ is changed', fontsize=axfontsize)
-        xtick_spacing = 3
-        xticks = np.arange(0,len(self.ncell_vec),xtick_spacing)
-        xtick_labels = np.round(self.ncell_vec/self.ncell_tot, 3)
-        ax.set_xticks(xticks, labels=xtick_labels[::xtick_spacing]);
-        ax.set_xlabel(r'Fraction of species range where $\tau$ is altered ($A/A_{\text{range}}$)', fontsize=axfontsize)
-        if self.tauc_method == "flat":
-            tauc_vec = C / self.ncell_vec
-        else:
-            tauc_vec = None
-        if hasattr(tauc_vec, "__len__"):
-            secax = ax.secondary_xaxis('top')
-            secax.set_xticks(xticks, labels=np.round(tauc_vec[::xtick_spacing], decimals=3));
-            secax.set_xlabel(r'Change in $\tau$ per unit area ($\hat{\tau}$)', fontsize=axfontsize)
-        # Save to file
-        figs_dir = f"figs/Aeff_{self.Aeff}/tfinal_{self.t_final}/metric_{self.metric}/"
-        figs_dir += f"mutau_{np.round(self.mu_tau,3)}/sigmtau_{np.round(self.sigm_tau, 3)}/C_{C}"
-        if not os.path.isdir(figs_dir):
-            os.makedirs(figs_dir)
-        if xs:
-            fn = figs_dir + f"/phase_xs_slice_{self.tauc_method}.png"
-        else:
-            fn = figs_dir + f"/phase_slice_{self.tauc_method}.png"
-        fig.savefig(fn, bbox_inches='tight')
-        plt.close(fig)
+            # Now actually make the plot
+            fig, ax = plt.subplots(figsize=(12,12))
+            axfontsize = 16
+            if xs:
+                metric_lab = '$<xs>$' 
+            else:
+                metric_labels = ['$<P_s>$', '$<r>$', '$<\mu>$', '$<\lambda>$']
+                metrics = np.array(['P_s', 'r', 'mu_s', 'lambda_s'])
+                metric_i = np.nonzero(metrics == self.metric)[0][0]
+                metric_lab = metric_labels[metric_i]
+            cmap = copy.copy(matplotlib.cm.plasma)
+            plotting_matrix = np.ma.masked_where(np.isnan(plotting_matrix),  plotting_matrix)
+            plotting_matrix_flat = plotting_matrix.flatten()
+            if len(plotting_matrix_flat[plotting_matrix_flat != np.ma.masked]) == 0:
+                phase_max = 0
+            else:
+                phase_max = max(plotting_matrix_flat[plotting_matrix_flat != np.ma.masked])
+            cmap.set_bad('white')
+            im = ax.imshow(plotting_matrix, norm=matplotlib.colors.Normalize(vmin=metric_nochange, vmax=phase_max), cmap=cmap)
+            cbar = ax.figure.colorbar(im, ax=ax, location="right", shrink=0.6)
+            cbar.ax.set_ylabel(fr'{metric_lab}', rotation=-90, fontsize=axfontsize, labelpad=20)
+            ytick_spacing = 2
+            ytick_labels = np.flip(self.plotting_tau_bin_cntrs)[::ytick_spacing]
+            yticks = np.arange(0,len(self.plotting_tau_bin_cntrs),ytick_spacing)
+            ax.set_yticks(yticks, labels=np.round(ytick_labels, decimals=3));
+            ax.set_ylabel(fr'Average initial $\tau$ in area where $\tau$ is changed', fontsize=axfontsize)
+            xtick_spacing = 3
+            xticks = np.arange(0,len(self.ncell_vec),xtick_spacing)
+            xtick_labels = np.round(self.ncell_vec/self.ncell_tot, 3)
+            ax.set_xticks(xticks, labels=xtick_labels[::xtick_spacing]);
+            ax.set_xlabel(r'Fraction of species range where $\tau$ is altered ($A/A_{\text{range}}$)', fontsize=axfontsize)
+            if self.tauc_method == "flat":
+                tauc_vec = C / self.ncell_vec
+            else:
+                tauc_vec = None
+            if hasattr(tauc_vec, "__len__"):
+                secax = ax.secondary_xaxis('top')
+                secax.set_xticks(xticks, labels=np.round(tauc_vec[::xtick_spacing], decimals=3));
+                secax.set_xlabel(r'Change in $\tau$ per unit area ($\hat{\tau}$)', fontsize=axfontsize)
+            # Save to file
+            figs_dir = f"figs/Aeff_{self.Aeff}/tfinal_{self.t_final}/metric_{self.metric}/"
+            figs_dir += f"mutau_{np.round(self.mu_tau,3)}/sigmtau_{np.round(self.sigm_tau, 3)}/"
+            figs_dir += f"mutauc_{np.round(self.mu_tauc,3)}/sigmtauc_{np.round(self.sigm_tauc, 3)}/C_{C}"
+            if not os.path.isdir(figs_dir):
+                os.makedirs(figs_dir)
+            if xs:
+                fn = figs_dir + f"/phase_xs_slice_{self.tauc_method}.png"
+            else:
+                fn = figs_dir + f"/phase_slice_{self.tauc_method}.png"
+            fig.savefig(fn, bbox_inches='tight', dpi=50)
+            plt.close(fig)

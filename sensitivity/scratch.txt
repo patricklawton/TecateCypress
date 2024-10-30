@@ -15,6 +15,7 @@ save to file(s)
 for (mu_tau, sigm_tau) in product(...):
     pproc.generate_tau_eps(mu_tau, sigm_tau)
     for (mu_tauc, sigm_tauc) in product(...):
+        '''Just generate vec of len tau_flat with tauc_eps and (randomly?) select ncell values each iteration below'''
+        pproc.generate_tauc_eps(mu_tauc, sigm_tauc)
         for (C, ncell) in product(...):
-            pproc.generate_tauc_eps(mu_tauc, sigm_tauc)
             pproc.process_samples(C, ncell)
