@@ -1,3 +1,16 @@
+for sample in eps space:
+    store <Ps> in a collective array across (C,ncell,tau_i) 
+    OR
+    just keep the max(<Ps>) across (ncell, tau_i) given C
+    in separate array, store omega values per eps sample
+
+for C in C_vec
+    for omega samples
+        filter for lte omega in omega_eps array
+        slice collective <Ps> array
+        find and store max(<Ps>) for plotting
+--------------------------------------------------------------
+
 phase.h5
     mu_tau
         sigm_tau
