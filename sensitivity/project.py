@@ -8,8 +8,9 @@ from scipy.optimize import curve_fit
 # Additional imports for phase analysis
 from matplotlib import pyplot as plt
 import matplotlib
-from scipy.special import gamma
 import scipy
+from scipy.special import gamma
+from scipy.interpolate import make_lsq_spline
 import os
 import json
 from tqdm.auto import tqdm
@@ -253,6 +254,7 @@ class Phase:
             self.tau_edges = None
             self.tau_flat = None
             self.data_dir = None
+            self.metric_exp_spl = None
         else:
             # Handle data reading on root alone
             project = sg.get_project()
@@ -294,14 +296,8 @@ class Phase:
                 if self.metric in ['lambda_s', 'mu_s']:
                     coarse_step = 0.02
                     fine_step = coarse_step/100
-                    #fine_start = 0.6
-                    #coarse_grained = np.arange(metric_min, fine_start, coarse_step)
-                    #fine_grained = np.arange(fine_start, metric_max + fine_step, fine_step)
-                    #metric_edges = np.concatenate((coarse_grained[:-1], fine_grained))
                     metric_edges = np.arange(metric_min, metric_max + fine_step, fine_step)
                 else:
-                    #metric_thresh = 0.98
-                    #metric_min, metric_max = (np.quantile(all_metric, 1-metric_thresh), np.quantile(all_metric, metric_thresh))
                     metric_min, metric_max = (all_metric.min(), all_metric.max())
                     metric_bw = (metric_max - metric_min) / 200
                     metric_edges = np.arange(metric_min, metric_max + metric_bw, metric_bw)
@@ -332,6 +328,19 @@ class Phase:
             else:
                 with open(fn, 'rb') as handle:
                     self.metric_data = pickle.load(handle)
+
+            # Create interpolating function for <metric>(tauc)
+            metric_expect_vec = np.ones(self.tau_vec.size) * np.nan
+            for tau_i, tau in enumerate(self.tau_vec):
+                tau_filt = (all_tau == tau)
+                metric_slice = self.metric_data["all_metric"][tau_filt]
+                metric_expect_vec[tau_i] = np.mean(metric_slice)
+            t = self.tau_vec[2:-2:1] 
+            k = 3
+            t = np.r_[(self.tau_vec[1],)*(k+1),
+                      t,
+                      (self.tau_vec[-1],)*(k+1)]
+            self.metric_exp_spl = make_lsq_spline(self.tau_vec[1:], metric_expect_vec[1:], t, k)
 
             # Read in FDM
             usecols = np.arange(self.ul_coord[0], self.lr_coord[0])
@@ -366,6 +375,7 @@ class Phase:
         self.tau_edges = self.comm.bcast(self.tau_edges, root=self.root)
         self.tau_flat = self.comm.bcast(self.tau_flat, root=self.root)
         self.data_dir = self.comm.bcast(self.data_dir, root=self.root)
+        self.metric_exp_spl = self.comm.bcast(self.metric_exp_spl, root=self.root)
 
         # Generate samples of remaining state variables
         self.ncell_tot = len(self.tau_flat)
@@ -555,6 +565,8 @@ class Phase:
         replacement_tau[xs_filt==False] = (tau_slice + tauc_slice)[xs_filt==False]
         # Now replace them in the full array of tau
         self.tau_expect[slice_indices] = replacement_tau 
+        # Replace any tau lt min with min
+        self.tau_expect = np.where(self.tau_expect < self.min_tau, self.min_tau, self.tau_expect)
         # Store the mean value of excess resources, keep at nan if no excess
         xsresources = (tauc_slice - final_max_tauc)[xs_filt]
         if len(xsresources) > 0:
@@ -596,39 +608,47 @@ class Phase:
 
     def calculate_metric_expect(self):
         # Get expected value of metric
-        self.metric_expect = 0
-        metric_hist = self.metric_data['metric_hist']
-        metric_edges = metric_hist[2]
-        metric_vals = []
-        diffs = np.diff(metric_edges)
-        for edge_i, edge in enumerate(metric_edges[:-1]):
-            metric_vals.append(edge + diffs[edge_i]/2) 
-        metric_vals = np.array(metric_vals)
-        for tau_i in range(len(self.tau_edges) - 1):
-            '''For final bin, include all cells gte left bin edge, this will inflate the probability of the 
-               final bin for cases where eps_tau and/or tauc push tau values past final_max_tau, but 
-               hopefully that's a fine approximation for now.'''
-            # Get the expected values in this tau bin
-            if tau_i < len(self.tau_edges) - 2:
-                ncell_within_slice = np.count_nonzero((self.tau_expect >= self.tau_edges[tau_i]) & 
-                                                      (self.tau_expect < self.tau_edges[tau_i+1]))
-            else:
-                ncell_within_slice = np.count_nonzero(self.tau_expect >= self.tau_edges[tau_i])
-            # Can skip if zero fire probability in bin
-            if ncell_within_slice == 0: continue
+        '''Replace any tau > max simulated with max tau, similar approximation as before'''
+        tau_with_cutoff = np.where(self.tau_expect > self.tau_vec.max(), self.tau_vec.max(), self.tau_expect)
+        metric_exp_dist = self.metric_exp_spl(tau_with_cutoff)
+        if self.metric == 'P_s':
+            # Metric value is bounded by zero, anything lt zero is an interpolation error
+            metric_exp_dist[metric_exp_dist < 0] = 0.0
+        self.metric_expect = np.mean(metric_exp_dist)
+        if self.metric_expect < 0: sys.exit(f"metric_expect is negative ({self.metric_expect}), exiting!")
+        #self.metric_expect = 0
+        #metric_hist = self.metric_data['metric_hist']
+        #metric_edges = metric_hist[2]
+        #metric_vals = []
+        #diffs = np.diff(metric_edges)
+        #for edge_i, edge in enumerate(metric_edges[:-1]):
+        #    metric_vals.append(edge + diffs[edge_i]/2) 
+        #metric_vals = np.array(metric_vals)
+        #for tau_i in range(len(self.tau_edges) - 1):
+        #    '''For final bin, include all cells gte left bin edge, this will inflate the probability of the 
+        #       final bin for cases where eps_tau and/or tauc push tau values past final_max_tau, but 
+        #       hopefully that's a fine approximation for now.'''
+        #    # Get the expected values in this tau bin
+        #    if tau_i < len(self.tau_edges) - 2:
+        #        ncell_within_slice = np.count_nonzero((self.tau_expect >= self.tau_edges[tau_i]) & 
+        #                                              (self.tau_expect < self.tau_edges[tau_i+1]))
+        #    else:
+        #        ncell_within_slice = np.count_nonzero(self.tau_expect >= self.tau_edges[tau_i])
+        #    # Can skip if zero fire probability in bin
+        #    if ncell_within_slice == 0: continue
 
-            # First get the probability of being in the tau bin
-            P_dtau = ncell_within_slice / self.ncell_tot
+        #    # First get the probability of being in the tau bin
+        #    P_dtau = ncell_within_slice / self.ncell_tot
 
-            # Now get <metric>
-            metric_tau = metric_hist[0][tau_i]
-            P_metric_tau = scipy.stats.rv_histogram((metric_tau, metric_hist[2]), density=True)
-            m_min = metric_hist[2][min(np.nonzero(metric_tau)[0])]
-            m_max = metric_hist[2][max(np.nonzero(metric_tau)[0])]
-            metric_filt = (metric_vals >= m_min) & (metric_vals <= m_max)
-            m = metric_vals[metric_filt]
-            metric_expect_tau = np.trapz(y=P_metric_tau.pdf(m)*m, x=m)
-            self.metric_expect += metric_expect_tau * P_dtau
+        #    # Now get <metric>
+        #    metric_tau = metric_hist[0][tau_i]
+        #    P_metric_tau = scipy.stats.rv_histogram((metric_tau, metric_hist[2]), density=True)
+        #    m_min = metric_hist[2][min(np.nonzero(metric_tau)[0])]
+        #    m_max = metric_hist[2][max(np.nonzero(metric_tau)[0])]
+        #    metric_filt = (metric_vals >= m_min) & (metric_vals <= m_max)
+        #    m = metric_vals[metric_filt]
+        #    metric_expect_tau = np.trapz(y=P_metric_tau.pdf(m)*m, x=m)
+        #    self.metric_expect += metric_expect_tau * P_dtau
 
     def process_samples(self, C, ncell):
         '''is relocating these indicies significantly slowing things down?'''

@@ -16,6 +16,7 @@ constants['t_final'] = 600
 constants['sim_method'] = 'nint'
 constants['ul_coord'] = [1500, 2800]
 constants['lr_coord'] = [2723, 3905]
+'''Should just set this to min tau_vec I think, which it basically already is'''
 constants['min_tau'] = 2
 constants['A_cell'] = 270**2 / 1e6 #km^2
 constants['plotting_tau_bw_ratio'] = 30 #For binning initial tau (with uncertainty) in phase slice plots
@@ -29,7 +30,7 @@ constants['baseline_A_max'] = 160 * 2.0043963553530753
 constants['baseline_A_samples'] = 10
 constants['root'] = 0 #For mpi
 constants.update({'final_max_tau': np.nan})
-constants['overwrite_results'] = False
+constants['overwrite_results'] = True
 
 # Define metrics and tauc methods to run analysis on
 #metrics = ["lambda_s", "mu_s", "r"]
@@ -38,10 +39,14 @@ metrics = ["P_s"]
 tauc_methods = ["flat"]
 
 # Define uncertainty axes (and save under metric folder later)
-mu_tau_vec = np.linspace(-10, 0, 10)
-sigm_tau_vec = np.linspace(0, 10, 5)
-mu_tauc_vec = np.linspace(-10, 0, 10)
-sigm_tauc_vec = np.linspace(0, 10, 5)
+mu_tau_vec = np.linspace(-10, 0, 3)
+sigm_tau_vec = np.linspace(0, 10, 3)
+mu_tauc_vec = np.linspace(-10, 0, 3)
+sigm_tauc_vec = np.linspace(0, 10, 3)
+#mu_tau_vec = np.linspace(0, 0, 1)
+#sigm_tau_vec = np.linspace(0, 0, 1)
+#mu_tauc_vec = np.linspace(0, 0, 1)
+#sigm_tauc_vec = np.linspace(0, 0, 1)
 
 total_computations = len(metrics) * len(tauc_methods) * len(mu_tau_vec) * len(sigm_tau_vec)
 total_computations = total_computations * len(mu_tauc_vec) * len(sigm_tauc_vec)
@@ -62,16 +67,13 @@ with tqdm(total=total_computations) as pbar:
             pproc.initialize()
 
             # Save uncertainty axes to file
-            if pproc.rank == pproc.root:
-                print(pproc.data_dir)
-                print(pproc.ncell_tot)
+            if (pproc.rank == pproc.root) and pproc.overwrite_results:
                 fn = pproc.data_dir + "/eps_axes.h5"
                 with h5py.File(fn, "w") as handle:
                     handle['mu_tau'] = mu_tau_vec
                     handle['sigm_tau'] = sigm_tau_vec
                     handle['mu_tauc'] = mu_tauc_vec
                     handle['sigm_tauc'] = sigm_tauc_vec
-            sys.exit()
 
             # Process data over uncertainty space samples
             for mu_tau, sigm_tau in product(mu_tau_vec, sigm_tau_vec):
