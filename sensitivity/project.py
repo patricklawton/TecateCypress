@@ -614,41 +614,21 @@ class Phase:
         if self.metric == 'P_s':
             # Metric value is bounded by zero, anything lt zero is an interpolation error
             metric_exp_dist[metric_exp_dist < 0] = 0.0
+            if np.any(metric_exp_dist < 0): sys.exit(f"metric_expect is negative ({self.metric_expect}), exiting!")
         self.metric_expect = np.mean(metric_exp_dist)
-        if self.metric_expect < 0: sys.exit(f"metric_expect is negative ({self.metric_expect}), exiting!")
-        #self.metric_expect = 0
-        #metric_hist = self.metric_data['metric_hist']
-        #metric_edges = metric_hist[2]
-        #metric_vals = []
-        #diffs = np.diff(metric_edges)
-        #for edge_i, edge in enumerate(metric_edges[:-1]):
-        #    metric_vals.append(edge + diffs[edge_i]/2) 
-        #metric_vals = np.array(metric_vals)
-        #for tau_i in range(len(self.tau_edges) - 1):
-        #    '''For final bin, include all cells gte left bin edge, this will inflate the probability of the 
-        #       final bin for cases where eps_tau and/or tauc push tau values past final_max_tau, but 
-        #       hopefully that's a fine approximation for now.'''
-        #    # Get the expected values in this tau bin
-        #    if tau_i < len(self.tau_edges) - 2:
-        #        ncell_within_slice = np.count_nonzero((self.tau_expect >= self.tau_edges[tau_i]) & 
-        #                                              (self.tau_expect < self.tau_edges[tau_i+1]))
-        #    else:
-        #        ncell_within_slice = np.count_nonzero(self.tau_expect >= self.tau_edges[tau_i])
-        #    # Can skip if zero fire probability in bin
-        #    if ncell_within_slice == 0: continue
 
-        #    # First get the probability of being in the tau bin
-        #    P_dtau = ncell_within_slice / self.ncell_tot
-
-        #    # Now get <metric>
-        #    metric_tau = metric_hist[0][tau_i]
-        #    P_metric_tau = scipy.stats.rv_histogram((metric_tau, metric_hist[2]), density=True)
-        #    m_min = metric_hist[2][min(np.nonzero(metric_tau)[0])]
-        #    m_max = metric_hist[2][max(np.nonzero(metric_tau)[0])]
-        #    metric_filt = (metric_vals >= m_min) & (metric_vals <= m_max)
-        #    m = metric_vals[metric_filt]
-        #    metric_expect_tau = np.trapz(y=P_metric_tau.pdf(m)*m, x=m)
-        #    self.metric_expect += metric_expect_tau * P_dtau
+    def calculate_metric_gte(self):
+        # Get density of metric_k values above some threshold
+        '''Replace any tau > max simulated with max tau, similar approximation as before'''
+        tau_with_cutoff = np.where(self.tau_expect > self.tau_vec.max(), self.tau_vec.max(), self.tau_expect)
+        metric_exp_dist = self.metric_exp_spl(tau_with_cutoff)
+        if self.metric == 'P_s':
+            # Metric value is bounded by zero, anything lt zero is an interpolation error
+            metric_exp_dist[metric_exp_dist < 0] = 0.0
+            if np.any(metric_exp_dist < 0): sys.exit(f"metric_expect is negative ({self.metric_expect}), exiting!")
+            gte_threshold = 0.5
+        '''Still calling this metric_expect for now but should change this to metric_quantity or something'''
+        self.metric_expect = np.count_nonzero(metric_exp_dist >= gte_threshold) / self.ncell_tot
 
     def process_samples(self, C, ncell):
         '''is relocating these indicies significantly slowing things down?'''
@@ -666,8 +646,10 @@ class Phase:
                 if slice_left > self.slice_left_max: continue
                 # Now, adjust the tau distribution at cells in slice
                 self.change_tau_expect(C_i, ncell_i, slice_left_i)
-            # Calculate <metric>
-            self.calculate_metric_expect()
+            ## Calculate <metric>
+            #self.calculate_metric_expect()
+            # Calculate <metric>_k density above some threshold
+            self.calculate_metric_gte()
             # Store sample if not computing no change scenario
             if rank_sample_i < len(self.metric_expect_rank): 
                 self.metric_expect_rank[slice_left_i-self.rank_start] = self.metric_expect

@@ -21,9 +21,9 @@ constants['min_tau'] = 2
 constants['A_cell'] = 270**2 / 1e6 #km^2
 constants['plotting_tau_bw_ratio'] = 30 #For binning initial tau (with uncertainty) in phase slice plots
 constants['tauc_baseline'] = 200 #years, max(tauc) possible at min(ncell) given C
-constants['ncell_samples'] = 10
+constants['ncell_samples'] = 20
 #constants['slice_samples'] = 30
-constants['slice_samples'] = 25
+constants['slice_samples'] = 40
 constants['baseline_A_min'] = 10 #km^2
 constants['baseline_A_max'] = 160 * 2.0043963553530753
 #constants['baseline_A_samples'] = 20
@@ -39,10 +39,10 @@ metrics = ["P_s"]
 tauc_methods = ["flat"]
 
 # Define uncertainty axes (and save under metric folder later)
-mu_tau_vec = np.linspace(-10, 0, 3)
-sigm_tau_vec = np.linspace(0, 10, 3)
-mu_tauc_vec = np.linspace(-10, 0, 3)
-sigm_tauc_vec = np.linspace(0, 10, 3)
+mu_tau_vec = np.linspace(-10, 0, 10)
+sigm_tau_vec = np.linspace(0, 10, 8)
+mu_tauc_vec = np.linspace(-10, 0, 10)
+sigm_tauc_vec = np.linspace(0, 10, 8)
 #mu_tau_vec = np.linspace(0, 0, 1)
 #sigm_tau_vec = np.linspace(0, 0, 1)
 #mu_tauc_vec = np.linspace(0, 0, 1)
