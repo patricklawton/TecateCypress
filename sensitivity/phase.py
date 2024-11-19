@@ -30,7 +30,7 @@ constants['baseline_A_max'] = 160 * 2.0043963553530753
 constants['baseline_A_samples'] = 10
 constants['root'] = 0 #For mpi
 constants.update({'final_max_tau': np.nan})
-constants['overwrite_results'] = True
+constants['overwrite_results'] = False
 
 # Define metrics and tauc methods to run analysis on
 #metrics = ["lambda_s", "mu_s", "r"]
@@ -40,9 +40,9 @@ tauc_methods = ["flat"]
 
 # Define uncertainty axes (and save under metric folder later)
 mu_tau_vec = np.linspace(-10, 0, 10)
-sigm_tau_vec = np.linspace(0, 10, 8)
+sigm_tau_vec = np.linspace(0, 10, 10)
 mu_tauc_vec = np.linspace(-10, 0, 10)
-sigm_tauc_vec = np.linspace(0, 10, 8)
+sigm_tauc_vec = np.linspace(0, 10, 10)
 #mu_tau_vec = np.linspace(0, 0, 1)
 #sigm_tau_vec = np.linspace(0, 0, 1)
 #mu_tauc_vec = np.linspace(0, 0, 1)
@@ -67,13 +67,14 @@ with tqdm(total=total_computations) as pbar:
             pproc.initialize()
 
             # Save uncertainty axes to file
-            if (pproc.rank == pproc.root) and pproc.overwrite_results:
+            if (pproc.rank == pproc.root):
                 fn = pproc.data_dir + "/eps_axes.h5"
-                with h5py.File(fn, "w") as handle:
-                    handle['mu_tau'] = mu_tau_vec
-                    handle['sigm_tau'] = sigm_tau_vec
-                    handle['mu_tauc'] = mu_tauc_vec
-                    handle['sigm_tauc'] = sigm_tauc_vec
+                if (not os.path.isfile(fn)) or pproc.overwrite_results:
+                    with h5py.File(fn, "w") as handle:
+                        handle['mu_tau'] = mu_tau_vec
+                        handle['sigm_tau'] = sigm_tau_vec
+                        handle['mu_tauc'] = mu_tauc_vec
+                        handle['sigm_tauc'] = sigm_tauc_vec
 
             # Process data over uncertainty space samples
             for mu_tau, sigm_tau in product(mu_tau_vec, sigm_tau_vec):
@@ -94,7 +95,7 @@ with tqdm(total=total_computations) as pbar:
                         pbar.update(1)
                     # Save phase matrix at this uncertainty parameterization
                     pproc.store_phase()
-                    # Plot slices of phase matricies
-                    for C in pproc.C_vec:
-                        pproc.plot_phase_slice(C)
-                        pproc.plot_phase_slice(C, xs=True)
+                    ## Plot slices of phase matricies
+                    #for C in pproc.C_vec:
+                    #    pproc.plot_phase_slice(C)
+                    #    pproc.plot_phase_slice(C, xs=True)

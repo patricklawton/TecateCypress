@@ -646,10 +646,10 @@ class Phase:
                 if slice_left > self.slice_left_max: continue
                 # Now, adjust the tau distribution at cells in slice
                 self.change_tau_expect(C_i, ncell_i, slice_left_i)
-            ## Calculate <metric>
-            #self.calculate_metric_expect()
-            # Calculate <metric>_k density above some threshold
-            self.calculate_metric_gte()
+            # Calculate <metric>
+            self.calculate_metric_expect()
+            ## Calculate <metric>_k density above some threshold
+            #self.calculate_metric_gte()
             # Store sample if not computing no change scenario
             if rank_sample_i < len(self.metric_expect_rank): 
                 self.metric_expect_rank[slice_left_i-self.rank_start] = self.metric_expect
