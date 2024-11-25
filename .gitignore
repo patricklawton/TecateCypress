@@ -33,3 +33,4 @@ sensitivity/figs/*/*/*/mutau*
 nint_data
 gte_thresh_results
 *old.ipynb
+meta_mean_results

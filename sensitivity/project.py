@@ -21,6 +21,7 @@ import sys
 import itertools
 from itertools import product
 import h5py
+from global_functions import adjustmaps
 MPI.COMM_WORLD.Set_errhandler(MPI.ERRORS_RETURN)
 
 # Open up signac project
@@ -32,15 +33,6 @@ with sg.H5Store(sd_fn).open(mode='r') as sd:
 
 with open('../model_fitting/mortality/fixed.pkl', 'rb') as handle:
     mort_fixed = pickle.load(handle)
-
-def adjustmaps(maps):
-    '''For making SDM and FDM the same shape'''
-    dim_len = []
-    for dim in range(2):
-        dim_len.append(min([m.shape[dim] for m in maps]))
-    for mi, m in enumerate(maps):
-        maps[mi] = m[0:dim_len[0], 0:dim_len[1]]
-    return maps
 
 @FlowProject.post(lambda job: job.doc.get('simulated'))
 @FlowProject.operation
