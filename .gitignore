@@ -32,3 +32,4 @@ sensitivity/figs/*/*/*/deltatau*
 sensitivity/figs/*/*/*/mutau*
 nint_data
 gte_thresh_results
+*old.ipynb
