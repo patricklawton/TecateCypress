@@ -21,16 +21,18 @@ constants['min_tau'] = 2
 constants['A_cell'] = 270**2 / 1e6 #km^2
 constants['plotting_tau_bw_ratio'] = 30 #For binning initial tau (with uncertainty) in phase slice plots
 constants['tauc_baseline'] = 200 #years, max(tauc) possible at min(ncell) given C
-constants['ncell_samples'] = 20
+constants['ncell_samples'] = 30
 #constants['slice_samples'] = 30
-constants['slice_samples'] = 40
+constants['slice_samples'] = 60
 constants['baseline_A_min'] = 10 #km^2
 constants['baseline_A_max'] = 160 * 2.0043963553530753
 #constants['baseline_A_samples'] = 20
 constants['baseline_A_samples'] = 10
 constants['root'] = 0 #For mpi
 constants.update({'final_max_tau': np.nan})
-constants['overwrite_results'] = False
+constants['overwrite_results'] = True
+#constants['meta_metric'] = 'distribution_avg'
+constants['meta_metric'] = 'gte_threshold'
 
 # Define metrics and tauc methods to run analysis on
 #metrics = ["lambda_s", "mu_s", "r"]
