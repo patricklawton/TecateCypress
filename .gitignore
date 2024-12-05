@@ -31,6 +31,9 @@ optimal_fire
 sensitivity/figs/*/*/*/deltatau*
 sensitivity/figs/*/*/*/mutau*
 nint_data
-gte_thresh_results
 *old.ipynb
-meta_mean_results
+sensitivity/meta_mean_results/figs/*/*/*/deltatau*
+sensitivity/meta_mean_results/figs/*/*/*/mutau*
+sensitivity/gte_thresh_results/figs/*/*/*/deltatau*
+sensitivity/gte_thresh_results/figs/*/*/*/mutau*
+*figs*
