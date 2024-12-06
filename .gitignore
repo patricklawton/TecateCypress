@@ -36,4 +36,5 @@ sensitivity/meta_mean_results/figs/*/*/*/deltatau*
 sensitivity/meta_mean_results/figs/*/*/*/mutau*
 sensitivity/gte_thresh_results/figs/*/*/*/deltatau*
 sensitivity/gte_thresh_results/figs/*/*/*/mutau*
+*old*
 *figs*
