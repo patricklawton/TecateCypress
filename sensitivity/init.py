@@ -14,7 +14,7 @@ project = sg.init_project()
 
 sd_fn = project.fn('shared_data.h5')
 if not os.path.isfile(sd_fn):
-    b_vec = np.arange(0, 92, 2)
+    b_vec = np.arange(0, 140, 4)
     with sg.H5Store(sd_fn).open(mode='w') as sd:
         sd['b_vec'] = b_vec
 
@@ -23,8 +23,9 @@ sdm_min = 0.32649827003479004
 sdm_mean = 0.51
 #Aeff_vec = np.array([np.round(A_cell*sdm_min, 2)])
 #Aeff_vec = np.array([np.round(A_cell, 2)])
-Aeff_vec = np.array([np.round((4*A_cell)*sdm_mean, 2)])
-t_final_vec = np.array([600])
+#Aeff_vec = np.array([np.round((4*A_cell)*sdm_mean, 2)])
+Aeff_vec = np.array([1.0])
+t_final_vec = np.array([300])
 demographic_samples_vec = np.array([500])
 method_vec = ["nint"]
 #for Aeff, t_final, demographic_samples in zip(Aeff_vec, t_final_vec, demographic_samples_vec):

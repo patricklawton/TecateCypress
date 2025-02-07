@@ -18,8 +18,8 @@ dependencies:
   - brotli-bin=1.0.9=h80987f9_8
   - brotli-python=1.0.9=py311h313beb8_7
   - bzip2=1.0.8=h620ffc9_4
-  - ca-certificates=2024.7.2=hca03da5_0
-  - certifi=2024.8.30=py311hca03da5_0
+  - ca-certificates=2024.9.24=hca03da5_0
+  - certifi=2024.8.30=pyhd8ed1ab_0
   - cffi=1.16.0=py311h80987f9_0
   - cloudpickle=3.0.0=pyhd8ed1ab_0
   - colorama=0.4.6=pyhd8ed1ab_0
@@ -51,6 +51,7 @@ dependencies:
   - jsonschema=4.19.2=py311hca03da5_0
   - jsonschema-specifications=2023.7.1=py311hca03da5_0
   - jupyter-lsp=2.2.0=py311hca03da5_0
+  - jupyter-resource-usage=1.1.0=pyhd8ed1ab_0
   - jupyter_client=8.6.0=py311hca03da5_0
   - jupyter_console=6.6.3=py311hca03da5_0
   - jupyter_core=5.5.0=py311hca03da5_0
@@ -100,7 +101,7 @@ dependencies:
   - numpy=1.24.3=py311hb57d4eb_0
   - numpy-base=1.24.3=py311h1d85a46_0
   - openjpeg=2.5.2=h54b8e55_0
-  - openssl=3.2.1=h0d3ecfb_1
+  - openssl=3.3.2=h8359307_0
   - overrides=7.4.0=py311hca03da5_0
   - packaging=23.2=py311hca03da5_0
   - pandocfilters=1.5.0=pyhd3eb1b0_0
@@ -188,7 +189,6 @@ dependencies:
       - idna==3.6
       - isoduration==20.11.0
       - jsonpointer==3.0.0
-      - jupyter-resource-usage==1.1.0
       - kiwisolver==1.4.5
       - markdown==3.5.2
       - markupsafe==2.1.5
