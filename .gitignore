@@ -38,3 +38,4 @@ sensitivity/gte_thresh_results/figs/*/*/*/deltatau*
 sensitivity/gte_thresh_results/figs/*/*/*/mutau*
 *old*
 *figs*
+model_fitting/*/lc2st_data/*.pkl
