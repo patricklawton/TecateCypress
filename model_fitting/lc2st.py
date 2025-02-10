@@ -16,13 +16,13 @@ for pr in processes:
     if pr == 'mortality':
         from mortality.simulator import simulator, fixed
         labels = ['alph_m', 'beta_m', 'sigm_m', 'gamm_nu', 'kappa']#, 'gamm_m']
-        NUM_CAL = 15_000
+        NUM_CAL = 10_000
     elif pr == 'fecundity':
         from fecundity.simulator import simulator
         fixed = {}
         labels = ['rho_max', 'eta_rho', 'a_mature', 'sigm_max', 'eta_sigm']
         NUM_CAL = 2_000
-    with open(pr+"/prior.pkl", "rb") as handle:
+    with open(pr+"/restricted_prior.pkl", "rb") as handle:
         prior = pickle.load(handle)
     simulator = utils.user_input_checks.process_simulator(simulator, prior, is_numpy_simulator=True)
 
@@ -30,6 +30,7 @@ for pr in processes:
         posterior = pickle.load(handle)
 
     NUM_EVAL = 15_000
+    num_ref_obs = 9
 
     if overwrite:
         # get reference observations
@@ -39,7 +40,6 @@ for pr in processes:
         thetas_star = thetas_star[~torch.any(xs_star.isnan(),dim=1)]
         xs_star = xs_star[~torch.any(xs_star.isnan(),dim=1)]
         # take the first few valid
-        num_ref_obs = 6
         thetas_star = thetas_star[:num_ref_obs]
         xs_star = xs_star[:num_ref_obs]
 
@@ -106,7 +106,7 @@ for pr in processes:
     # Define significance level for diagnostics
     conf_alpha = 0.05
 
-    fig, axes = plt.subplots(1,len(thetas_star), figsize=(12*2,3))
+    fig, axes = plt.subplots(1,len(thetas_star), figsize=(12*(num_ref_obs/3),3))
     for i in range(len(thetas_star)):
         probs, scores = lc2st.get_scores(
             theta_o=post_samples_star[i],
@@ -143,7 +143,7 @@ for pr in processes:
 
     # P-P plots
 
-    fig, axes = plt.subplots(1,len(thetas_star), figsize=(12*2,3))
+    fig, axes = plt.subplots(1,len(thetas_star), figsize=(12*(num_ref_obs/3),3))
     for i in range(len(thetas_star)):
         probs_data, _ = lc2st.get_scores(
             theta_o=post_samples_star[i],
@@ -173,7 +173,7 @@ for pr in processes:
     label = "Probabilities (class 0)"
     # label = r"$\hat{p}(\Theta\sim q_{\phi}(\theta \mid x_0) \mid x_0)$"
 
-    fig, axes = plt.subplots(len(thetas_star), 6, figsize=(9*2,6*2), constrained_layout=True)
+    fig, axes = plt.subplots(len(thetas_star), 6, figsize=(9*2,6*(num_ref_obs/3)), constrained_layout=True)
     for i in range(len(thetas_star)):
         probs_data, _ = lc2st.get_scores(
             theta_o=post_samples_star[i][:1000],
