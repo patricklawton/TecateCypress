@@ -37,5 +37,6 @@ sensitivity/meta_mean_results/figs/*/*/*/mutau*
 sensitivity/gte_thresh_results/figs/*/*/*/deltatau*
 sensitivity/gte_thresh_results/figs/*/*/*/mutau*
 *old*
-*figs*
+figs*
+shared_figs
 model_fitting/*/lc2st_data/*.pkl
