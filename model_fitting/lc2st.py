@@ -11,7 +11,7 @@ from sbi.utils.analysis_utils import get_probs_per_marginal
 import os
 
 overwrite = True
-processes = ['mortality', 'fecundity']
+processes = ['mortality']
 for pr in processes:
     if pr == 'mortality':
         from mortality.simulator import simulator, fixed

@@ -46,7 +46,7 @@ for pr in processes:
                            #[8000,30000]
         ])
         restrictor_sims = 20_000
-        training_sims = 100_000
+        training_sims = 250_000
         num_samples = 1_000_000 
     elif pr == 'fecundity':
         from fecundity.simulator import simulator, save_observations
