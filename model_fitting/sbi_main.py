@@ -13,7 +13,7 @@ import pandas as pd
 import os
 from scipy.stats import moment
 
-overwrite_observations = True
+overwrite_observations = False
 overwrite_simulations = True
 overwrite_posterior = True
 add_simulations = False

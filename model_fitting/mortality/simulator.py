@@ -12,7 +12,7 @@ otay = np.loadtxt("../shared_maps/otayraster.asc", skiprows=6)
 sdm_otay = sdm[otay==1] #index "1" indicates the specific part where study was done
 h_o = np.mean(sdm_otay[sdm_otay!=0]) #excluding zero, would be better to use SDM w/o threshold
 
-fixed = {'gamm_m': 0.01, 'tau_m': 0.01, 'mu_m': 0.0, 
+fixed = {'gamm_m': 0.01, 'tau_m': 0.0, 'mu_m': 0.0, 
          'alph_nu': 0.0, 'beta_nu': 0.25,
          'K_seedling': 60_000/h_o, 'K_adult': 10_000/h_o}
 with open('mortality/fixed.pkl', 'wb') as handle:
