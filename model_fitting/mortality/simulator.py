@@ -13,8 +13,8 @@ sdm_otay = sdm[otay==1] #index "1" indicates the specific part where study was d
 h_o = np.mean(sdm_otay[sdm_otay!=0]) #excluding zero, would be better to use SDM w/o threshold
 
 fixed = {'gamm_m': 0.01, 'tau_m': 0.0, 'mu_m': 0.0, 
-         'alph_nu': 0.0, 'beta_nu': 0.25,
-         'K_seedling': 60_000/h_o, 'K_adult': 10_000/h_o}
+         'alph_nu': 0.0, 'beta_nu': 0.0}
+         #'K_seedling': 60_000/h_o, 'K_adult': 10_000/h_o}
 with open('mortality/fixed.pkl', 'wb') as handle:
     pickle.dump(fixed, handle)
 
@@ -23,7 +23,7 @@ def simulator(params):
     alph_m = params[0]; beta_m = params[1]; gamm_m = fixed['gamm_m']
     sigm_m = params[2]; tau_m = fixed['tau_m']; mu_m = fixed['mu_m']
     alph_nu = fixed['alph_nu']; beta_nu = fixed['beta_nu']; gamm_nu = params[3]
-    K_seedling = fixed['K_seedling']; kappa = params[4]; K_adult = fixed['K_adult']; 
+    K_seedling = 6*params[5]; kappa = params[4]; K_adult = params[5]; 
 
     # For generating env stochasticity multipliers
     rng = np.random.default_rng()

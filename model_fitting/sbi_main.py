@@ -21,8 +21,8 @@ add_simulations = False
 processes = ['mortality']
 for pr in processes:
     if pr == 'mortality':
-        from mortality.simulator import simulator
-        labels = ['alph_m', 'beta_m', 'sigm_m', 'gamm_nu', 'kappa'] 
+        from mortality.simulator import simulator, h_o
+        labels = ['alph_m', 'beta_m', 'sigm_m', 'gamm_nu', 'kappa', 'K_adult'] 
         #labels = ['sigm_m', 'gamm_nu', 'kappa'] 
         #labels = ['gamm_nu', 'kappa'] 
         ranges = np.array([
@@ -41,9 +41,9 @@ for pr in processes:
                            ## K_seedling
                            #[10_000, 120_000],
                            # kappa
-                           [0.01, 2.5]
-                           ## K_adult
-                           #[8000,30000]
+                           [0.01, 2.5],
+                           # K_adult
+                           [(0.1/h_o)*10_000, (3/h_o)*10_000]
         ])
         restrictor_sims = 50_000
         training_sims = 70_000

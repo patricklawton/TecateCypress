@@ -15,7 +15,7 @@ processes = ['mortality']
 for pr in processes:
     if pr == 'mortality':
         from mortality.simulator import simulator, fixed
-        labels = ['alph_m', 'beta_m', 'sigm_m', 'gamm_nu', 'kappa']#, 'gamm_m']
+        labels = ['alph_m', 'beta_m', 'sigm_m', 'gamm_nu', 'kappa', 'K_adult']
         NUM_CAL = 10_000
     elif pr == 'fecundity':
         from fecundity.simulator import simulator
@@ -173,7 +173,7 @@ for pr in processes:
     label = "Probabilities (class 0)"
     # label = r"$\hat{p}(\Theta\sim q_{\phi}(\theta \mid x_0) \mid x_0)$"
 
-    fig, axes = plt.subplots(len(thetas_star), 6, figsize=(9*2,6*(num_ref_obs/3)), constrained_layout=True)
+    fig, axes = plt.subplots(len(thetas_star), 7, figsize=(9.5*2,6*(num_ref_obs/3)), constrained_layout=True)
     for i in range(len(thetas_star)):
         probs_data, _ = lc2st.get_scores(
             theta_o=post_samples_star[i][:1000],
@@ -232,6 +232,14 @@ for pr in processes:
             dict_probs_marginals['4'],
             marginal_dim=1,
             ax=axes[i][5],
+            n_bins=50,
+            label=label,
+        )
+
+        marginal_plot_with_probs_intensity(
+            dict_probs_marginals['5'],
+            marginal_dim=1,
+            ax=axes[i][6],
             n_bins=50,
             label=label,
         )
