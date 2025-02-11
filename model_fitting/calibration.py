@@ -96,9 +96,9 @@ for pr in processes:
     limits = torch.tensor([[mins[i], maxes[i]] for i in range(x_pp.shape[1])])
     if pr == 'mortality':
         limits[9][0] = -0.0005; limits[9][1] = 0.001
-        limits[12][0] = -0.0005; limits[12][1] = 0.0008
-        limits[13][0] = -0.00005; limits[13][1] = 0.00015
-        limits[14][0] = -0.00005; limits[14][1] = 0.0001
+        #limits[12][0] = -0.0005; limits[12][1] = 0.0008
+        #limits[13][0] = -0.00005; limits[13][1] = 0.00015
+        #limits[14][0] = -0.00005; limits[14][1] = 0.0001
     elif pr == 'fecundity':
         limits[0][0] = -0.0005; limits[0][1] = 10
         limits[1][0] = -0.0005; limits[1][1] = 250
