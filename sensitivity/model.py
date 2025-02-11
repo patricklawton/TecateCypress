@@ -95,8 +95,7 @@ class Model:
         nu_a = self.alph_nu * np.exp(-self.beta_nu*self.t_vec) + self.gamm_nu
         # Use linear approx to set eta s.t. shape of dens. dep. curve is 
         # the same for arbitrary effective patch size
-        delta, theta = (1.05, 0.050000000000000044) #just hardcoding these in
-        eta_a = (theta*2)/((nu_a*(1-m_a)) * (A_o*h_o*self.K_adult) * (delta-1))
+        eta_a = 2 / ((nu_a*(1-m_a)) * self.A_eff * self.K_adult)
         sigm_m_a = self.sigm_m*np.exp(-self.tau_m*self.t_vec)
         epsilon_m_vec = rng.lognormal(np.zeros_like(N_vec)+self.mu_m, np.tile(sigm_m_a, (len(self.N_0_1),1)))
         # Make it deterministic
@@ -194,8 +193,7 @@ class Model:
                 m_t = self.alph_m * np.exp(-self.beta_m*t) + self.gamm_m
                 K_t = self.K_seedling * np.exp(-self.kappa*t) + self.K_adult
                 nu_t = self.alph_nu * np.exp(-self.beta_nu*t) + self.gamm_nu
-                delta, theta = (1.05, 0.050000000000000044) #just hardcoding these in
-                eta_t = (theta*2)/((nu_t*(1-m_t)) * (A_o*h_o*self.K_adult) * (delta-1))
+                eta_t = 2 / ((nu_t*(1-m_t)) * self.A_eff * self.K_adult)
                 dens_dep = ((nu_t)*(1-m_t)) / (1 + np.exp(-eta_t*self.K_adult*(N/K_t - self.Aeff)))
                 m_t_N = m_t + dens_dep
                 sigm_m_t = self.sigm_m*np.exp(-self.tau_m*t)
