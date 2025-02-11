@@ -13,7 +13,7 @@ import pandas as pd
 import os
 from scipy.stats import moment
 
-overwrite_observations = False
+overwrite_observations = True
 overwrite_simulations = True
 overwrite_posterior = True
 add_simulations = False
@@ -45,8 +45,8 @@ for pr in processes:
                            ## K_adult
                            #[8000,30000]
         ])
-        restrictor_sims = 20_000
-        training_sims = 250_000
+        restrictor_sims = 50_000
+        training_sims = 70_000
         num_samples = 1_000_000 
     elif pr == 'fecundity':
         from fecundity.simulator import simulator, save_observations
@@ -77,7 +77,7 @@ for pr in processes:
             m1.append(est_mean)
             m2.append(moment(mort_sub, moment=2))
             m3.append(moment(mort_sub, moment=3))
-        observations = np.concatenate((m1,m2,m3))
+        observations = np.concatenate((m1,m2))
         np.save(fn, observations)
     elif ((not os.path.isfile(fn)) or overwrite_observations) and (pr=='fecundity'):
         save_observations()

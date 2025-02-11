@@ -31,7 +31,7 @@ def simulator(params):
     # Initialize empty results array
     census_yrs = np.array([1,2,6,8,11,14])
     res_len = len(census_yrs) - 1
-    results = np.empty(res_len * 3)
+    results = np.empty(res_len * 2)
     res_i = 0
 
     t_vec = np.arange(1,15)
@@ -104,7 +104,7 @@ def simulator(params):
         if (np.ma.is_masked(N_vec)) and (sum(np.ma.getmask(N_vec)[:,0]) > 3):
             results[0:res_len] = np.ones(len(census_yrs)-1)*np.nan
             results[res_len:res_len*2] = np.ones(len(census_yrs)-1)*np.nan
-            results[res_len*2:res_len*3] = np.ones(len(census_yrs)-1)*np.nan
+            #results[res_len*2:res_len*3] = np.ones(len(census_yrs)-1)*np.nan
             break
         elif t+1 in census_yrs:
             # Calculate and store mortality stats
@@ -114,7 +114,7 @@ def simulator(params):
             # Use the first three moments
             results[res_i] = np.mean(mortality)
             results[res_len + res_i] = moment(mortality, moment=2)
-            results[res_len*2 + res_i] = moment(mortality, moment=3)
+            #results[res_len*2 + res_i] = moment(mortality, moment=3)
             # Reset for next census
             res_i += 1
             census_init = census_final
