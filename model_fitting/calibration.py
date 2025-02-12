@@ -16,15 +16,17 @@ processes = ['mortality']
 for pr in processes:
     if pr == 'mortality':
         from mortality.simulator import simulator, fixed
-        labels = ['alph_m', 'beta_m', 'sigm_m', 'gamm_nu', 'kappa', 'K_adult']
+        #labels = ['alph_m', 'beta_m', 'sigm_m', 'gamm_nu', 'kappa', 'K_adult']
     elif pr == 'fecundity':
-        from fecundity.simulator import simulator
-        fixed = {}
-        labels = ['rho_max', 'eta_rho', 'a_mature', 'sigm_max', 'eta_sigm']
+        from fecundity.simulator import simulator, fixed
+        #fixed = {}
+        #labels = ['rho_max', 'eta_rho', 'a_mature', 'sigm_max', 'eta_sigm']
     with open(pr+"/prior.pkl", "rb") as handle:
         prior = pickle.load(handle)
     simulator = utils.user_input_checks.process_simulator(simulator, prior, is_numpy_simulator=True)
 
+    with open(pr+"/param_labels.pkl", 'rb') as handle:
+        labels = pickle.load(handle)
     with open(pr+"/posterior.pkl", "rb") as handle:
         posterior = pickle.load(handle)
 
