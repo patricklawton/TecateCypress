@@ -13,7 +13,8 @@ sdm_otay = sdm[otay==1] #index "1" indicates the specific part where study was d
 h_o = np.mean(sdm_otay[sdm_otay!=0]) #excluding zero, would be better to use SDM w/o threshold
 
 fixed = {'gamm_m': 0.01, 'tau_m': 0.0, 'mu_m': 0.0, 
-         'alph_nu': 0.0, 'beta_nu': 0.0}
+         'alph_nu': 0.0, 'beta_nu': 0.0, 'gamm_nu': 0.0, 
+         'kappa': 0.0, 'K_adult': 1.0, 'K_seedling': 0.0}
          #'K_seedling': 60_000/h_o, 'K_adult': 10_000/h_o}
 with open('mortality/fixed.pkl', 'wb') as handle:
     pickle.dump(fixed, handle)
@@ -22,8 +23,8 @@ def simulator(params):
     # Assign parameter labels
     alph_m = params[0]; beta_m = params[1]; gamm_m = fixed['gamm_m']
     sigm_m = params[2]; tau_m = fixed['tau_m']; mu_m = fixed['mu_m']
-    alph_nu = fixed['alph_nu']; beta_nu = fixed['beta_nu']; gamm_nu = params[3]
-    K_seedling = 6*params[5]; kappa = params[4]; K_adult = params[5]; 
+    alph_nu = fixed['alph_nu']; beta_nu = fixed['beta_nu']; gamm_nu = fixed['gamm_nu']
+    K_seedling = fixed['K_seedling']; kappa = fixed['kappa']; K_adult = fixed['K_adult']; 
 
     # For generating env stochasticity multipliers
     rng = np.random.default_rng()
@@ -52,8 +53,8 @@ def simulator(params):
     nu_a = alph_nu * np.exp(-beta_nu*t_vec) + gamm_nu
     # Use linear approx to set eta s.t. shape of dens. dep. curve is 
     # the same for arbitrary effective patch size
-    delta, theta = (1.05, 0.050000000000000044) #just hardcoding these in
-    eta_a = (theta*2)/((nu_a*(1-m_a)) * (A_o*h_o*K_adult) * (delta-1))
+    #eta_a = 2 / ((nu_a*(1-m_a)) * (A_o*h_o) * K_adult)
+    eta_a = np.repeat(1, len(m_a))
     sigm_m_a = sigm_m*np.exp(-tau_m*t_vec)
     epsilon_m_vec = rng.lognormal(np.zeros_like(N_vec)+mu_m, np.tile(sigm_m_a, (len(N_0_1),1)))
 

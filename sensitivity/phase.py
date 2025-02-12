@@ -11,8 +11,10 @@ from tqdm import tqdm
 constants = {}
 constants['progress'] = False
 constants['c'] = 1.42
-constants['Aeff'] = 1.0
-constants['t_final'] = 600
+#constants['Aeff'] = 1.0
+constants['Aeff'] = 7.29
+#constants['t_final'] = 600
+constants['t_final'] = 300
 constants['sim_method'] = 'nint'
 constants['ul_coord'] = [1500, 2800]
 constants['lr_coord'] = [2723, 3905]
@@ -31,8 +33,8 @@ constants['baseline_A_samples'] = 10
 constants['root'] = 0 #For mpi
 constants.update({'final_max_tau': np.nan})
 constants['overwrite_results'] = True
-constants['meta_metric'] = 'distribution_avg'
-#constants['meta_metric'] = 'gte_threshold'
+#constants['meta_metric'] = 'distribution_avg'
+constants['meta_metric'] = 'gte_threshold'
 
 # Define metrics and tauc methods to run analysis on
 #metrics = ["lambda_s", "mu_s", "r"]
@@ -56,7 +58,7 @@ num_computations_finished = 0
 with tqdm(total=total_computations) as pbar:
     for metric in metrics:
         constants.update({'metric': metric})
-        constants.update({'overwrite_metrics': False}) #Set True to overwrite metrics (only once per metric)
+        constants.update({'overwrite_metrics': True}) #Set True to overwrite metrics (only once per metric)
         constants.update({'overwrite_scaleparams': False}) 
         for (tauc_method_i, tauc_method) in enumerate(tauc_methods):
             if tauc_method_i > 0:

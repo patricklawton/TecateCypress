@@ -24,7 +24,8 @@ class Model:
         self.alph_m = kwargs['alph_m']; self.beta_m = kwargs['beta_m']; self.gamm_m = kwargs['gamm_m']
         self.sigm_m = kwargs['sigm_m']; self.tau_m = kwargs['tau_m']; self.mu_m = kwargs['mu_m']
         self.alph_nu = kwargs['alph_nu']; self.beta_nu = kwargs['beta_nu']; self.gamm_nu = kwargs['gamm_nu']
-        self.K_seedling = kwargs['K_seedling']; self.kappa = kwargs['kappa']; self.K_adult = kwargs['K_adult']
+        self.K_seedling = kwargs['K_adult']*6 #NEED TO UDPATE FIXED PKL 
+        self.kappa = kwargs['kappa']; self.K_adult = kwargs['K_adult']
         # Fecundity parameters
         self.rho_max = kwargs['rho_max']; self.eta_rho = kwargs['eta_rho']; self.a_mature = kwargs['a_mature']
         self.sigm_max = kwargs['sigm_max']; self.eta_sigm = kwargs['eta_sigm']; 
@@ -95,7 +96,7 @@ class Model:
         nu_a = self.alph_nu * np.exp(-self.beta_nu*self.t_vec) + self.gamm_nu
         # Use linear approx to set eta s.t. shape of dens. dep. curve is 
         # the same for arbitrary effective patch size
-        eta_a = 2 / ((nu_a*(1-m_a)) * self.A_eff * self.K_adult)
+        eta_a = 2 / ((nu_a*(1-m_a)) * self.Aeff * self.K_adult)
         sigm_m_a = self.sigm_m*np.exp(-self.tau_m*self.t_vec)
         epsilon_m_vec = rng.lognormal(np.zeros_like(N_vec)+self.mu_m, np.tile(sigm_m_a, (len(self.N_0_1),1)))
         # Make it deterministic
@@ -193,7 +194,7 @@ class Model:
                 m_t = self.alph_m * np.exp(-self.beta_m*t) + self.gamm_m
                 K_t = self.K_seedling * np.exp(-self.kappa*t) + self.K_adult
                 nu_t = self.alph_nu * np.exp(-self.beta_nu*t) + self.gamm_nu
-                eta_t = 2 / ((nu_t*(1-m_t)) * self.A_eff * self.K_adult)
+                eta_t = 2 / ((nu_t*(1-m_t)) * self.Aeff * self.K_adult)
                 dens_dep = ((nu_t)*(1-m_t)) / (1 + np.exp(-eta_t*self.K_adult*(N/K_t - self.Aeff)))
                 m_t_N = m_t + dens_dep
                 sigm_m_t = self.sigm_m*np.exp(-self.tau_m*t)

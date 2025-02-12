@@ -50,7 +50,9 @@ def run_sims(job):
 
     for b in b_vec:
         # Skip if simulations already run at this b value
-        if str(b) in list(job.data['N_tot'].keys()): continue
+        if 'frac_extirpated' in list(job.data.keys()):
+            if str(b) in list(job.data['frac_extirpated'].keys()): 
+                continue
         model = Model(**params)
         model.set_effective_area(Aeff)
         model.init_N(N_0_1_vec, init_age)
@@ -256,6 +258,7 @@ class Phase:
 
             jobs = project.find_jobs({'doc.simulated': True, 'Aeff': self.Aeff, 
                                       't_final': self.t_final, 'method': self.sim_method})
+            print(len(jobs))
             self.data_dir = f"data/Aeff_{self.Aeff}/tfinal_{self.t_final}"
             fn = self.data_dir + "/all_tau.npy"
             if (not os.path.isfile(fn)) or self.overwrite_metrics:
@@ -304,6 +307,7 @@ class Phase:
                 ax.set_xlabel('<FRI>')
                 ax.set_ylabel(self.metric)
                 figs_dir = f"figs/Aeff_{self.Aeff}/tfinal_{self.t_final}/metric_{self.metric}/"
+                print(figs_dir)
                 if not os.path.isdir(figs_dir):
                     os.makedirs(figs_dir)
                 print("saving sensitivity figure")

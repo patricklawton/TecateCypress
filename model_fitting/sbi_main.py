@@ -13,21 +13,19 @@ import pandas as pd
 import os
 from scipy.stats import moment
 
-overwrite_observations = False
+overwrite_observations = True
 overwrite_simulations = True
 overwrite_posterior = True
 add_simulations = False
 
-processes = ['mortality']
+processes = ['fecundity']
 for pr in processes:
     if pr == 'mortality':
         from mortality.simulator import simulator, h_o
-        labels = ['alph_m', 'beta_m', 'sigm_m', 'gamm_nu', 'kappa', 'K_adult'] 
-        #labels = ['sigm_m', 'gamm_nu', 'kappa'] 
-        #labels = ['gamm_nu', 'kappa'] 
+        labels = ['alph_m', 'beta_m', 'sigm_m'] 
         ranges = np.array([
                            # alph_m
-                           [0.01, 0.6], 
+                           [0.01, 0.7], 
                            # beta_m
                            [0.01, 0.9], 
                            # sigm_m
@@ -36,31 +34,36 @@ for pr in processes:
                            #[0.01,2.]#,
                            ## beta_nu
                            #[0.01,0.9]
-                           # gamm_nu
-                           [0.001, 0.8],
+                           ## gamm_nu
+                           #[0.001, 0.8],
                            ## K_seedling
                            #[10_000, 120_000],
-                           # kappa
-                           [0.01, 2.5],
-                           # K_adult
-                           [(0.1/h_o)*10_000, (3/h_o)*10_000]
+                           ## kappa
+                           #[0.01, 2.5],
+                           ## K_adult
+                           #[(0.1/h_o)*10_000, (3/h_o)*10_000]
         ])
-        restrictor_sims = 50_000
-        training_sims = 70_000
-        num_samples = 1_000_000 
-    elif pr == 'fecundity':
-        from fecundity.simulator import simulator, save_observations
-        labels = ['rho_max', 'eta_rho', 'a_mature', 'sigm_max', 'eta_sigm']#, 'a_sigm_star']
-        ranges = np.array([
-                           [100, 600],
-                           [0.01, 0.8],
-                           [15, 80],
-                           [0.01, 5],
-                           [0.01, 0.8]
-        ])
-        restrictor_sims = 20_000
+        restrictor_sims = 10_000
         training_sims = 20_000
         num_samples = 1_000_000 
+        allowed_false_negatives = 0.0
+    elif pr == 'fecundity':
+        from fecundity.simulator import simulator, save_observations
+        labels = ['rho_max', 'eta_rho', 'a_mature', 'sigm_max']#, 'eta_sigm']#, 'a_sigm_star']
+        ranges = np.array([
+                           [10, 700],
+                           [0.01, 0.8],
+                           [15, 60],
+                           [0.01, 9]
+                           #[0.01, 0.8]
+        ])
+        restrictor_sims = 10_000
+        training_sims = 20_000
+        num_samples = 1_000_000 
+        allowed_false_negatives = 0.15
+
+    with open(pr+"/param_labels.pkl", "wb") as handle:
+        pickle.dump(labels, handle)
 
     # First, compute and store summary statistics of observed data
     fn = pr + '/observations/observations.npy'
@@ -100,7 +103,7 @@ for pr in processes:
         restriction_estimator = RestrictionEstimator(prior=prior)
         restriction_estimator.append_simulations(theta, x)
         classifier = restriction_estimator.train()
-        restricted_prior = restriction_estimator.restrict_prior()
+        restricted_prior = restriction_estimator.restrict_prior(allowed_false_negatives=allowed_false_negatives)
         with open(pr+"/restricted_prior.pkl", "wb") as handle:
             pickle.dump(restricted_prior, handle)
         new_theta, new_x = simulate_for_sbi(simulator, restricted_prior, training_sims, num_workers=8)

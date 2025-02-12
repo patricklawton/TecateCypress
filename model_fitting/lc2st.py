@@ -11,20 +11,23 @@ from sbi.utils.analysis_utils import get_probs_per_marginal
 import os
 
 overwrite = True
-processes = ['mortality']
+processes = ['fecundity']
 for pr in processes:
     if pr == 'mortality':
         from mortality.simulator import simulator, fixed
-        labels = ['alph_m', 'beta_m', 'sigm_m', 'gamm_nu', 'kappa', 'K_adult']
-        NUM_CAL = 10_000
+        #labels = ['alph_m', 'beta_m', 'sigm_m', 'gamm_nu', 'kappa', 'K_adult']
+        NUM_CAL = 3_000
     elif pr == 'fecundity':
-        from fecundity.simulator import simulator
-        fixed = {}
-        labels = ['rho_max', 'eta_rho', 'a_mature', 'sigm_max', 'eta_sigm']
+        from fecundity.simulator import simulator, fixed
+        #fixed = {}
+        #labels = ['rho_max', 'eta_rho', 'a_mature', 'sigm_max', 'eta_sigm']
         NUM_CAL = 2_000
     with open(pr+"/restricted_prior.pkl", "rb") as handle:
         prior = pickle.load(handle)
     simulator = utils.user_input_checks.process_simulator(simulator, prior, is_numpy_simulator=True)
+
+    with open(pr+"/param_labels.pkl", 'rb') as handle:
+        labels = pickle.load(handle)
 
     with open(pr+"/posterior.pkl", "rb") as handle:
         posterior = pickle.load(handle)
@@ -194,55 +197,74 @@ for pr in processes:
             label=label
         )
 
-        # marginal 1
-        marginal_plot_with_probs_intensity(
-            dict_probs_marginals['0'],
-            marginal_dim=1,
-            ax=axes[i][1],
-            n_bins=50,
-            label=label,
-        )
+        for j in range(len(labels)):
+            # marginal 1
+            marginal_plot_with_probs_intensity(
+                dict_probs_marginals[f'{j}'],
+                marginal_dim=1,
+                ax=axes[i][j+1],
+                n_bins=50,
+                label=label,
+            )
 
-        # marginal 2
-        marginal_plot_with_probs_intensity(
-            dict_probs_marginals['1'],
-            marginal_dim=1,
-            ax=axes[i][2],
-            n_bins=50,
-            label=label,
-        )
+        ## marginal 1
+        #marginal_plot_with_probs_intensity(
+        #    dict_probs_marginals['0'],
+        #    marginal_dim=1,
+        #    ax=axes[i][1],
+        #    n_bins=50,
+        #    label=label,
+        #)
 
-        marginal_plot_with_probs_intensity(
-            dict_probs_marginals['2'],
-            marginal_dim=1,
-            ax=axes[i][3],
-            n_bins=50,
-            label=label,
-        )
+        ## marginal 1
+        #marginal_plot_with_probs_intensity(
+        #    dict_probs_marginals['0'],
+        #    marginal_dim=1,
+        #    ax=axes[i][1],
+        #    n_bins=50,
+        #    label=label,
+        #)
 
-        marginal_plot_with_probs_intensity(
-            dict_probs_marginals['3'],
-            marginal_dim=1,
-            ax=axes[i][4],
-            n_bins=50,
-            label=label,
-        )
+        ## marginal 2
+        #marginal_plot_with_probs_intensity(
+        #    dict_probs_marginals['1'],
+        #    marginal_dim=1,
+        #    ax=axes[i][2],
+        #    n_bins=50,
+        #    label=label,
+        #)
 
-        marginal_plot_with_probs_intensity(
-            dict_probs_marginals['4'],
-            marginal_dim=1,
-            ax=axes[i][5],
-            n_bins=50,
-            label=label,
-        )
+        #marginal_plot_with_probs_intensity(
+        #    dict_probs_marginals['2'],
+        #    marginal_dim=1,
+        #    ax=axes[i][3],
+        #    n_bins=50,
+        #    label=label,
+        #)
 
-        marginal_plot_with_probs_intensity(
-            dict_probs_marginals['5'],
-            marginal_dim=1,
-            ax=axes[i][6],
-            n_bins=50,
-            label=label,
-        )
+        #marginal_plot_with_probs_intensity(
+        #    dict_probs_marginals['3'],
+        #    marginal_dim=1,
+        #    ax=axes[i][4],
+        #    n_bins=50,
+        #    label=label,
+        #)
+
+        #marginal_plot_with_probs_intensity(
+        #    dict_probs_marginals['4'],
+        #    marginal_dim=1,
+        #    ax=axes[i][5],
+        #    n_bins=50,
+        #    label=label,
+        #)
+
+        #marginal_plot_with_probs_intensity(
+        #    dict_probs_marginals['5'],
+        #    marginal_dim=1,
+        #    ax=axes[i][6],
+        #    n_bins=50,
+        #    label=label,
+        #)
 
     axes[0][1].set_title("marginal 1")
     axes[0][2].set_title("marginal 2")
