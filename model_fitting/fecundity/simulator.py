@@ -1,4 +1,5 @@
 import numpy as np
+import pickle
 
 # Brennan 2019
 num_sites = np.array([2,4,4,4,2])
@@ -42,17 +43,22 @@ for i in range(numbins):
     mean_fecundities.append(avg)
     age_cntr = binwidth*i + binwidth/2
     age_cntrs[i] = age_cntr
-    err = (1/sum(weights[filt]))*np.sqrt(sum((fecundity_err_all[filt]*weights[filt])**2))
+    #err = (1/sum(weights[filt]))*np.sqrt(sum((fecundity_err_all[filt]*weights[filt])**2))
+    '''Just use std from averages in bin'''
+    err = np.std(fecundity_all[filt])
     bin_errors.append(err)
-#observations = np.concatenate((mean_fecundities, bin_errors))
-observations = np.concatenate((mean_fecundities, bin_errors, [0.0]))
+observations = np.concatenate((mean_fecundities, bin_errors))
+#observations = np.concatenate((mean_fecundities, bin_errors, [0.0]))
 
 def save_observations():
     np.save('fecundity/observations/observations.npy', observations)
 
+fixed = {'eta_sigm': -1e50}
+with open('fecundity/fixed.pkl', 'wb') as handle:
+    pickle.dump(fixed, handle)
 def simulator(params):
     rho_max = params[0]; eta_rho = params[1]; a_mature = params[2]
-    sigm_max = params[3]; eta_sigm = params[4]; 
+    sigm_max = params[3]; eta_sigm = fixed['eta_sigm']; 
     a_sigm_star = a_mature #a_sigm_star = params[5]
 
     # Read this in from file(s) in the actual script
@@ -65,13 +71,16 @@ def simulator(params):
 
     rho_a = rho_max / (1+np.exp(-eta_rho*(a_vec-a_mature)))
     rng = np.random.default_rng()
-    sigm_a = sigm_max / (1+np.exp(-eta_sigm*(a_vec-a_sigm_star)))
+    #sigm_a = sigm_max / (1+np.exp(-eta_sigm*(a_vec-a_sigm_star)))
+    sigm_a = np.repeat(sigm_max, len(a_vec))
+    a_star = a_mature - (np.log((1/0.99)-1) / eta_rho) # Age where we want env stoch to kick in
+    sigm_a[a_vec < a_star] = 0.0
     epsilon_rho = rng.lognormal(np.zeros_like(a_vec), sigm_a)
     fecundities = rng.poisson(rho_a*epsilon_rho)
 
     mean_fecundities = np.zeros(numbins)
     bin_stdevs = np.zeros(numbins)
-    results = np.empty(numbins*2 + 1)
+    results = np.empty(numbins*2)
     for i in range(numbins):
         filt = ((a_vec > binwidth*i) & (a_vec <= binwidth*(i+1)))
         fecundities_bin = fecundities[filt]
@@ -87,14 +96,14 @@ def simulator(params):
         checks[i-1] = check
     if np.any(checks):
         results[:] = np.nan
-    else:
-        # Fecundity should level out by end of last bin;
-        # check using mean epsilon value
-        mean_diff = rho_a[-1]*np.exp(sigm_a[-1]**2 / 2) - rho_a[-2]*np.exp(sigm_a[-2]**2 / 2)
-        # If fecundity increases too much, mark invalid
-        if mean_diff > 100:
-            results[:] = np.nan
-        else:
-            results[-1] = mean_diff
+    #else:
+    #    # Fecundity should level out by end of last bin;
+    #    # check using mean epsilon value
+    #    mean_diff = rho_a[-1]*np.exp(sigm_a[-1]**2 / 2) - rho_a[-2]*np.exp(sigm_a[-2]**2 / 2)
+    #    # If fecundity increases too much, mark invalid
+    #    if mean_diff > 100:
+    #        results[:] = np.nan
+    #    else:
+    #        results[-1] = mean_diff
 
     return results
