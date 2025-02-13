@@ -47,7 +47,7 @@ fecundity_all = np.concatenate((fecundity_bren, fecundity_dunn, fecundity_rb, fe
 weights = np.concatenate((num_sites, np.ones(len(stand_age_dunn)), np.ones(len(stand_age_rb)), np.ones(len(stand_age_dg))))[sort]
 binwidth = 22
 numbins = max(stand_age_all) // binwidth + (max(stand_age_all) % binwidth > 0)
-custom_bin_edges = [0, 30, 40, 50, 65]
+custom_bin_edges = [0, 20, 30, 45, 65]
 numbins = len(custom_bin_edges) - 1
 age_cntrs = np.zeros(numbins)
 mean_fecundities = []
@@ -70,12 +70,12 @@ observations = np.concatenate((mean_fecundities, bin_errors))
 def save_observations():
     np.save('fecundity/observations/observations.npy', observations)
 
-fixed = {'eta_sigm': -1e50}
+fixed = {'eta_sigm': 1}
 with open('fecundity/fixed.pkl', 'wb') as handle:
     pickle.dump(fixed, handle)
 def simulator(params):
     rho_max = params[0]; eta_rho = params[1]; a_mature = params[2]
-    sigm_max = params[3]; eta_sigm = fixed['eta_sigm']; 
+    sigm_max = params[3]; eta_sigm = params[1]; 
     a_sigm_star = a_mature #a_sigm_star = params[5]
 
     # Read this in from file(s) in the actual script
@@ -90,10 +90,10 @@ def simulator(params):
 
     rho_a = rho_max / (1+np.exp(-eta_rho*(a_vec-a_mature)))
     rng = np.random.default_rng()
-    #sigm_a = sigm_max / (1+np.exp(-eta_sigm*(a_vec-a_sigm_star)))
-    sigm_a = np.repeat(sigm_max, len(a_vec))
-    a_star = a_mature - (np.log((1/0.90)-1) / eta_rho) # Age where we want env stoch to kick in
-    sigm_a[a_vec < a_star] = 0.0
+    sigm_a = sigm_max / (1+np.exp(-eta_sigm*(a_vec-a_sigm_star)))
+    #sigm_a = np.repeat(sigm_max, len(a_vec))
+    #a_star = a_mature - (np.log((1/0.90)-1) / eta_rho) # Age where we want env stoch to kick in
+    #sigm_a[a_vec < a_star] = 0.0
     epsilon_rho = rng.lognormal(np.zeros_like(a_vec), sigm_a)
     fecundities = rng.poisson(rho_a*epsilon_rho)
 

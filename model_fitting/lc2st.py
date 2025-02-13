@@ -21,7 +21,7 @@ for pr in processes:
         from fecundity.simulator import simulator, fixed
         #fixed = {}
         #labels = ['rho_max', 'eta_rho', 'a_mature', 'sigm_max', 'eta_sigm']
-        NUM_CAL = 2_000
+        NUM_CAL = 1_000
     with open(pr+"/restricted_prior.pkl", "rb") as handle:
         prior = pickle.load(handle)
     simulator = utils.user_input_checks.process_simulator(simulator, prior, is_numpy_simulator=True)
