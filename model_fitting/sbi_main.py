@@ -52,16 +52,16 @@ for pr in processes:
         labels = ['rho_max', 'eta_rho', 'a_mature', 'sigm_max']#, 'eta_sigm']#, 'a_sigm_star']
         #labels = ['eta_rho', 'a_mature', 'sigm_max']
         ranges = np.array([
-                           [1, 150],
+                           [10, 600],
                            [0.01, 0.8],
-                           [15, 60],
-                           [0.01, 4]
+                           [15, 80],
+                           [0.01, 6]
                            #[0.01, 0.8]
         ])
-        restrictor_sims = 10_000
+        restrictor_sims = 20_000
         training_sims = 20_000
         num_samples = 1_000_000 
-        allowed_false_negatives = 0.15
+        allowed_false_negatives = 0.1
 
     with open(pr+"/param_labels.pkl", "wb") as handle:
         pickle.dump(labels, handle)

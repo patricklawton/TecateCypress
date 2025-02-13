@@ -18,7 +18,7 @@ for i in range(len(fecundity_err_bren)):
     else:
         fecundity_err = fecundity_bren[i] * np.sqrt((prefire_density_sd[i]/prefire_density[i])**2 + (rec_density_sd[i]/rec_density[i])**2)
     fecundity_err_bren[i] = fecundity_err
-delete_indices = [1,3,4]
+delete_indices = []
 stand_age_bren = np.delete(stand_age_bren, delete_indices)
 fecundity_bren = np.delete(fecundity_bren, delete_indices)
 num_sites = np.delete(num_sites, delete_indices)
@@ -48,7 +48,8 @@ fecundity_all = np.concatenate((fecundity_bren, fecundity_dunn, fecundity_rb, fe
 weights = np.concatenate((num_sites, np.ones(len(stand_age_dunn)), np.ones(len(stand_age_rb)), np.ones(len(stand_age_dg))))[sort]
 binwidth = 22
 numbins = max(stand_age_all) // binwidth + (max(stand_age_all) % binwidth > 0)
-custom_bin_edges = [0, 20, 30, 45, 65]
+#custom_bin_edges = [0, 20, 30, 45, 65]
+custom_bin_edges = [0, 22, 44, 66]
 numbins = len(custom_bin_edges) - 1
 age_cntrs = np.zeros(numbins)
 mean_fecundities = []
@@ -76,7 +77,7 @@ with open('fecundity/fixed.pkl', 'wb') as handle:
     pickle.dump(fixed, handle)
 def simulator(params):
     rho_max = params[0]; eta_rho = params[1]; a_mature = params[2]
-    sigm_max = params[3]; eta_sigm = fixed['eta_sigm']; 
+    sigm_max = params[3]; eta_sigm = fixed['eta_sigm']
     a_sigm_star = a_mature #a_sigm_star = params[5]
 
     # Read this in from file(s) in the actual script
