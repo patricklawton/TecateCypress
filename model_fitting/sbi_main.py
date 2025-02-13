@@ -52,10 +52,10 @@ for pr in processes:
         labels = ['rho_max', 'eta_rho', 'a_mature', 'sigm_max']#, 'eta_sigm']#, 'a_sigm_star']
         #labels = ['eta_rho', 'a_mature', 'sigm_max']
         ranges = np.array([
-                           [10, 700],
+                           [1, 150],
                            [0.01, 0.8],
                            [15, 60],
-                           [0.01, 6]
+                           [0.01, 4]
                            #[0.01, 0.8]
         ])
         restrictor_sims = 10_000

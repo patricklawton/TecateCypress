@@ -18,9 +18,10 @@ for i in range(len(fecundity_err_bren)):
     else:
         fecundity_err = fecundity_bren[i] * np.sqrt((prefire_density_sd[i]/prefire_density[i])**2 + (rec_density_sd[i]/rec_density[i])**2)
     fecundity_err_bren[i] = fecundity_err
-stand_age_bren = np.delete(stand_age_bren, 1)
-fecundity_bren = np.delete(fecundity_bren, 1)
-num_sites = np.delete(num_sites, 1)
+delete_indices = [1,3,4]
+stand_age_bren = np.delete(stand_age_bren, delete_indices)
+fecundity_bren = np.delete(fecundity_bren, delete_indices)
+num_sites = np.delete(num_sites, delete_indices)
 
 # Dunn 1986
 stand_age_dunn = np.array([10,19,20,20,30,36,39,63])
@@ -75,7 +76,7 @@ with open('fecundity/fixed.pkl', 'wb') as handle:
     pickle.dump(fixed, handle)
 def simulator(params):
     rho_max = params[0]; eta_rho = params[1]; a_mature = params[2]
-    sigm_max = params[3]; eta_sigm = params[1]; 
+    sigm_max = params[3]; eta_sigm = fixed['eta_sigm']; 
     a_sigm_star = a_mature #a_sigm_star = params[5]
 
     # Read this in from file(s) in the actual script
@@ -90,8 +91,8 @@ def simulator(params):
 
     rho_a = rho_max / (1+np.exp(-eta_rho*(a_vec-a_mature)))
     rng = np.random.default_rng()
-    sigm_a = sigm_max / (1+np.exp(-eta_sigm*(a_vec-a_sigm_star)))
-    #sigm_a = np.repeat(sigm_max, len(a_vec))
+    #sigm_a = sigm_max / (1+np.exp(-eta_sigm*(a_vec-a_sigm_star)))
+    sigm_a = np.repeat(sigm_max, len(a_vec))
     #a_star = a_mature - (np.log((1/0.90)-1) / eta_rho) # Age where we want env stoch to kick in
     #sigm_a[a_vec < a_star] = 0.0
     epsilon_rho = rng.lognormal(np.zeros_like(a_vec), sigm_a)
