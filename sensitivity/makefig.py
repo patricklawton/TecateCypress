@@ -31,8 +31,8 @@ cbar_lpad = 30
 
 # Define/load things non-specific to a given set of results
 metric = "P_s"
-Aeff = 1.0
-t_final = 600
+Aeff = 7.29
+t_final = 300
 ncell_tot = 87_993
 c = 1.42
 with sg.H5Store('shared_data.h5').open(mode='r') as sd:
@@ -100,7 +100,7 @@ axes = np.array([[ax1,ax2],
 gs.update(hspace=0.4)
 
 #### VIZ OF METAPOP METRIC ####
-results_pre = 'meta_mean_results' 
+results_pre = 'gte_threshold' 
 set_globals(results_pre)
 # Make interpolation function for <metric> wrt tau
 metric_expect_vec = np.ones(tau_vec.size) * np.nan
@@ -137,7 +137,6 @@ axes[0,0].set_xlabel(rf"average survival probabiltiy {mlab}")
 ########
 
 #### FIRE REGIME SHIFT EXAMPLES ####
-results_pre = 'meta_mean_results' #Just doing this to initialize C vector
 set_globals(results_pre)
 tau_step = np.diff(tau_vec)[0] / 2
 tau_centers = 0.5 * (tau_edges[:-1] + tau_edges[1:])
@@ -198,7 +197,7 @@ axes[0,1].set_xlim(15, 81);
 
 #### RESULTS UNDER ZERO UNCERTAINTY ####
 width = 0.875
-set_globals('gte_thresh_results')
+set_globals(results_pre)
 with h5py.File(fn_prefix + "/phase_flat.h5", "r") as phase_handle:
     data_key = "0.0/0.0/0.0/0.0/phase"
     phase_slice_zeroeps = phase_handle[data_key][:]
@@ -240,7 +239,8 @@ vmax = 1; vmin = 0
 normalize = colors.Normalize(vmin=vmin, vmax=vmax)
 all_markers = ['o','^','D','s','H']
 all_linestyles = ['dotted', 'dashdot', 'dashed', 'solid']
-C_i_samples = [1,5,9]
+#C_i_samples = [1,5,9]
+C_i_samples = [1,3,5,7]
 for line_i, C_i in enumerate(C_i_samples):
     plot_vec = np.ones(len(rob_thresh_vec)) * np.nan
     c_vec = np.ones(len(rob_thresh_vec)) * np.nan
@@ -314,7 +314,6 @@ ax1.set_yticks([])
 ########
 
 #### P(S) vs tau ####
-results_pre = 'meta_mean_results'
 set_globals(results_pre)
 metric_edges = np.linspace(0, 1, 50)
 metric_hist = np.histogram2d(all_tau, all_metric, bins=[tau_edges[::2], metric_edges], density=False)

@@ -33,12 +33,15 @@ with sg.H5Store(sd_fn).open(mode='r') as sd:
 
 with open('../model_fitting/mortality/fixed.pkl', 'rb') as handle:
     mort_fixed = pickle.load(handle)
+with open('../model_fitting/fecundity/fixed.pkl', 'rb') as handle:
+    fec_fixed = pickle.load(handle)
 
 @FlowProject.post(lambda job: job.doc.get('simulated'))
 @FlowProject.operation
 def run_sims(job):
     params = job.sp['params']
     params.update(mort_fixed)
+    params.update(fec_fixed)
     Aeff = job.sp['Aeff'] #ha
     delta_t = 1
     num_reps = 1_250
@@ -229,7 +232,7 @@ class Phase:
         
         # Create empty file for final results (if overwriting)
         if self.rank == self.root:
-            self.data_dir = f"data/Aeff_{self.Aeff}/tfinal_{self.t_final}/metric_{self.metric}"
+            self.data_dir = f"{self.meta_metric}/data/Aeff_{self.Aeff}/tfinal_{self.t_final}/metric_{self.metric}"
             if not os.path.isdir(self.data_dir):
                 os.makedirs(self.data_dir)
             fn = self.data_dir + f"/phase_{self.tauc_method}.h5"
@@ -259,7 +262,7 @@ class Phase:
             jobs = project.find_jobs({'doc.simulated': True, 'Aeff': self.Aeff, 
                                       't_final': self.t_final, 'method': self.sim_method})
             print(len(jobs))
-            self.data_dir = f"data/Aeff_{self.Aeff}/tfinal_{self.t_final}"
+            self.data_dir = f"{self.meta_metric}/data/Aeff_{self.Aeff}/tfinal_{self.t_final}"
             fn = self.data_dir + "/all_tau.npy"
             if (not os.path.isfile(fn)) or self.overwrite_metrics:
                 all_tau = np.tile(self.tau_vec, len(jobs))
@@ -267,7 +270,7 @@ class Phase:
             else:
                 all_tau = np.load(fn)
 
-            self.data_dir = f"data/Aeff_{self.Aeff}/tfinal_{self.t_final}/metric_{self.metric}"
+            self.data_dir = f"{self.meta_metric}/data/Aeff_{self.Aeff}/tfinal_{self.t_final}/metric_{self.metric}"
             fn = self.data_dir + f"/metric_data.pkl"
             if (not os.path.isfile(fn)) or self.overwrite_metrics:
                 self.metric_data = {}
@@ -306,7 +309,7 @@ class Phase:
                 cbar.ax.set_ylabel('demographic robustness', rotation=-90, fontsize=10, labelpad=20)
                 ax.set_xlabel('<FRI>')
                 ax.set_ylabel(self.metric)
-                figs_dir = f"figs/Aeff_{self.Aeff}/tfinal_{self.t_final}/metric_{self.metric}/"
+                figs_dir = f"{self.meta_metric}/figs/Aeff_{self.Aeff}/tfinal_{self.t_final}/metric_{self.metric}/"
                 print(figs_dir)
                 if not os.path.isdir(figs_dir):
                     os.makedirs(figs_dir)
@@ -653,7 +656,7 @@ class Phase:
                 self.metric_expect_rank[slice_left_i-self.rank_start] = self.metric_expect
             # Otherwise save <metric> under no change
             elif self.rank == self.root:
-                self.data_dir = f"data/Aeff_{self.Aeff}/tfinal_{self.t_final}/metric_{self.metric}"
+                self.data_dir = f"{self.meta_metric}/data/Aeff_{self.Aeff}/tfinal_{self.t_final}/metric_{self.metric}"
                 fn = self.data_dir + f"/phase_{self.tauc_method}.h5"
                 with h5py.File(fn, "a") as handle:
                     data_key = f"{np.round(self.mu_tau, 3)}/{np.round(self.sigm_tau, 3)}/"
@@ -763,7 +766,7 @@ class Phase:
                 secax.set_xticks(xticks, labels=np.round(tauc_vec[::xtick_spacing], decimals=3));
                 secax.set_xlabel(r'Change in $\tau$ per unit area ($\hat{\tau}$)', fontsize=axfontsize)
             # Save to file
-            figs_dir = f"figs/Aeff_{self.Aeff}/tfinal_{self.t_final}/metric_{self.metric}/"
+            figs_dir = f"{self.meta_metric}/figs/Aeff_{self.Aeff}/tfinal_{self.t_final}/metric_{self.metric}/"
             figs_dir += f"mutau_{np.round(self.mu_tau,3)}/sigmtau_{np.round(self.sigm_tau, 3)}/"
             figs_dir += f"mutauc_{np.round(self.mu_tauc,3)}/sigmtauc_{np.round(self.sigm_tauc, 3)}/C_{C}"
             if not os.path.isdir(figs_dir):

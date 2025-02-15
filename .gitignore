@@ -41,3 +41,5 @@ figs*
 shared_figs
 model_fitting/*/lc2st_data/*.pkl
 model_fitting/*/*.pkl
+*.svg
+final_figs

@@ -194,7 +194,9 @@ class Model:
                 m_t = self.alph_m * np.exp(-self.beta_m*t) + self.gamm_m
                 K_t = self.K_seedling * np.exp(-self.kappa*t) + self.K_adult
                 nu_t = self.alph_nu * np.exp(-self.beta_nu*t) + self.gamm_nu
-                eta_t = 2 / ((nu_t*(1-m_t)) * self.Aeff * self.K_adult)
+                #eta_t = 2 / ((nu_t*(1-m_t)) * self.Aeff * self.K_adult)
+                ''' Turing off dens dep so set eta_t to 1 or it will blow up'''
+                eta_t = 1
                 dens_dep = ((nu_t)*(1-m_t)) / (1 + np.exp(-eta_t*self.K_adult*(N/K_t - self.Aeff)))
                 m_t_N = m_t + dens_dep
                 sigm_m_t = self.sigm_m*np.exp(-self.tau_m*t)
@@ -205,7 +207,8 @@ class Model:
         def _get_num_births(t, N):
             # Age-dependent fecundity functions
             rho_t = self.rho_max / (1+np.exp(-self.eta_rho*(t-self.a_mature)))
-            sigm_t = self.sigm_max / (1+np.exp(-self.eta_sigm*(t-self.a_sigm_star)))
+            #sigm_t = self.sigm_max / (1+np.exp(-self.eta_sigm*(t-self.a_sigm_star)))
+            sigm_t = self.sigm_max
             # Approximate number of births
             epsilon_rho_mean = np.exp(0 + (sigm_t**2 / 2))
             num_births = rho_t*epsilon_rho_mean*N
