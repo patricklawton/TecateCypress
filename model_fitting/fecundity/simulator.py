@@ -70,6 +70,7 @@ observations = np.concatenate((mean_fecundities, bin_errors))
 #observations = np.concatenate((mean_fecundities, bin_errors, [0.0]))
 
 def save_observations():
+    np.save('fecundity/observations/custom_bin_edges.npy', custom_bin_edges)
     np.save('fecundity/observations/observations.npy', observations)
 
 fixed = {'eta_sigm': 1}
