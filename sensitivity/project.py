@@ -52,10 +52,10 @@ def run_sims(job):
     t_vec = np.arange(delta_t, job.sp.t_final+delta_t, delta_t)
 
     for b in b_vec:
-        # Skip if simulations already run at this b value
-        if 'frac_extirpated' in list(job.data.keys()):
-            if str(b) in list(job.data['frac_extirpated'].keys()): 
-                continue
+        ## Skip if simulations already run at this b value
+        #if 'frac_extirpated' in list(job.data.keys()):
+        #    if str(b) in list(job.data['frac_extirpated'].keys()): 
+        #        continue
         model = Model(**params)
         model.set_effective_area(Aeff)
         model.init_N(N_0_1_vec, init_age)
@@ -284,7 +284,7 @@ class Phase:
                         for b in self.b_vec:
                             if self.metric == 'P_s':
                                 # Just consider the cummulative extinction probability by some timestep T
-                                T = 300
+                                T = 200
                                 metric_vec.append(1.0 - float(data[f'frac_extirpated/{b}'][T-1]))
                             else:
                                 metric_vec.append(float(data[f'{metric_label}/{b}']))
@@ -625,7 +625,7 @@ class Phase:
             # Metric value is bounded by zero, anything lt zero is an interpolation error
             metric_exp_dist[metric_exp_dist < 0] = 0.0
             if np.any(metric_exp_dist < 0): sys.exit(f"metric_expect is negative ({self.metric_expect}), exiting!")
-            gte_threshold = 0.5
+            gte_threshold = 0.25
         '''Still calling this metric_expect for now but should change this to metric_quantity or something'''
         self.metric_expect = np.count_nonzero(metric_exp_dist >= gte_threshold) / self.ncell_tot
 

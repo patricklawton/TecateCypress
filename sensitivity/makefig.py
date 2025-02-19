@@ -41,6 +41,8 @@ tau_vec = b_vec * gamma(1+1/c)
 tau_step = np.diff(tau_vec)[0] / 2
 tau_edges = np.concatenate(([0], np.arange(tau_step/2, tau_vec[-1]+tau_step, tau_step)))
 tauc_methods = ["flat"]
+results_pre = 'gte_threshold' 
+#results_pre = 'distribution_avg' 
 
 # Function to read in things specific to given results as global variables
 def set_globals(results_pre):
@@ -100,7 +102,6 @@ axes = np.array([[ax1,ax2],
 gs.update(hspace=0.4)
 
 #### VIZ OF METAPOP METRIC ####
-results_pre = 'gte_threshold' 
 set_globals(results_pre)
 # Make interpolation function for <metric> wrt tau
 metric_expect_vec = np.ones(tau_vec.size) * np.nan
@@ -120,13 +121,19 @@ bin_edges = np.concatenate(([0], np.arange(bin_step/2, 1+bin_step, bin_step)))
 color = 'limegreen'
 mlab = "$<S>$"
 metric_interp = spl(tau_flat[tau_flat < tau_max])
-axes[0,0].hist(metric_interp, bins=bin_edges, color=color, histtype='step', lw=histlw);
-# Fill in area gte 0.5
-thresh = 0.5
+counts, bin_edges, hist = axes[0,0].hist(metric_interp, bins=bin_edges, color=color, histtype='step', lw=histlw);
+if np.any(counts[1:] == 0):
+    xmax_i = np.min(np.nonzero(counts[1:] == 0)[0]) + 1
+    xmax = bin_edges[xmax_i + 1] 
+else:
+    xmax = 1
+# Fill in area gte thresh
+thresh = 0.25
 bin_i = np.argmin(np.abs(bin_edges - thresh))
 axes[0,0].hist(metric_interp[metric_interp >= bin_edges[bin_i]], bins=bin_edges, color=color, 
                histtype='bar', alpha=0.6);
-axes[0,0].axvline(0.5, ls='--', color='darkgreen', )
+closest_bin_i = np.argmin(np.abs(thresh - bin_edges))
+axes[0,0].axvline(bin_edges[closest_bin_i], ls='--', color='darkgreen', lw=6.5)
 # Labels
 axes[0,0].set_yticks([])
 #axes[0,0].set_ylabel(rf"{mlab} frequency within range")
@@ -134,6 +141,7 @@ axes[0,0].set_ylabel(rf"{mlab} frequency")
 xticks = [0, 0.25, 0.5, 0.75, 1]
 axes[0,0].set_xticks(xticks, labels=xticks)
 axes[0,0].set_xlabel(rf"average survival probabiltiy {mlab}")
+axes[0,0].set_xlim(-0.01, xmax)
 ########
 
 #### FIRE REGIME SHIFT EXAMPLES ####
@@ -237,10 +245,11 @@ rob_thresh_vec = np.load(fn_prefix + "rob_thresh_vec.npy")
 colormap = copy.copy(cm.RdPu_r)
 vmax = 1; vmin = 0
 normalize = colors.Normalize(vmin=vmin, vmax=vmax)
-all_markers = ['o','^','D','s','H']
+all_markers = ['o','^','D','s','H','*']
 all_linestyles = ['dotted', 'dashdot', 'dashed', 'solid']
 #C_i_samples = [1,5,9]
-C_i_samples = [1,3,5,7]
+#C_i_samples = [1,3,6,9,11]
+C_i_samples = [0,1,2,3,4,5]
 for line_i, C_i in enumerate(C_i_samples):
     plot_vec = np.ones(len(rob_thresh_vec)) * np.nan
     c_vec = np.ones(len(rob_thresh_vec)) * np.nan
@@ -268,8 +277,8 @@ cbar_ax = fig.add_axes([0.2, 0.009, 0.6, 0.025])  # [left, bottom, width, height
 fig.colorbar(scatter, cax=cbar_ax, orientation='horizontal', 
     label=r"optimal range fraction for intervention $n~/~n_{tot}$")
 
-fig.savefig('final_figs/fig2_pre.png', bbox_inches='tight')
-fig.savefig('final_figs/fig2_pre.svg', bbox_inches='tight')
+fig.savefig(f'{results_pre}/figs/fig2_pre.png', bbox_inches='tight')
+fig.savefig(f'{results_pre}/figs/fig2_pre.svg', bbox_inches='tight')
 
 ################################################################
 
@@ -380,5 +389,5 @@ gs.update(hspace=-0.21)  # Adjust vertical spacing
 gs.update(wspace=0.3)
 ########
 
-fig.savefig('final_figs/fig1_pre.png', bbox_inches='tight')
-fig.savefig('final_figs/fig1_pre.svg', bbox_inches='tight')
+fig.savefig(f'{results_pre}/figs/fig1_pre.png', bbox_inches='tight')
+fig.savefig(f'{results_pre}/figs/fig1_pre.svg', bbox_inches='tight')

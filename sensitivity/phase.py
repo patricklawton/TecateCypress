@@ -28,10 +28,10 @@ constants['ncell_samples'] = 25
 #constants['slice_samples'] = 30
 constants['slice_samples'] = 60
 constants['baseline_A_min'] = 10 #km^2
-constants['baseline_A_max'] = 160 * 2.0043963553530753
-#constants['baseline_A_max'] = (160 * 2.0043963553530753) * 1.5
+#constants['baseline_A_max'] = 160 * 2.0043963553530753
+constants['baseline_A_max'] = (160 * 2.0043963553530753) * 2
 #constants['baseline_A_samples'] = 20
-constants['baseline_A_samples'] = 8
+constants['baseline_A_samples'] = 6
 constants['root'] = 0 #For mpi
 constants.update({'final_max_tau': np.nan})
 constants['overwrite_results'] = True
@@ -46,9 +46,9 @@ tauc_methods = ["flat"]
 
 # Define uncertainty axes (and save under metric folder later)
 mu_tau_vec = np.linspace(-10, 0, 7)
-sigm_tau_vec = np.linspace(0, 10, 7)
+sigm_tau_vec = np.linspace(0, 10, 6)
 mu_tauc_vec = np.linspace(-10, 0, 7)
-sigm_tauc_vec = np.linspace(0, 10, 7)
+sigm_tauc_vec = np.linspace(0, 10, 6)
 #mu_tau_vec = np.linspace(0, 0, 1)
 #sigm_tau_vec = np.linspace(0, 0, 1)
 #mu_tauc_vec = np.linspace(0, 0, 1)
