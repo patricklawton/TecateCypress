@@ -12,7 +12,7 @@ from sbi.utils import MultipleIndependent
 from torch import tensor
 import json
 
-processes = ['fecundity']
+processes = ['mortality']
 for pr in processes:
     if pr == 'mortality':
         from mortality.simulator import simulator, fixed
@@ -21,7 +21,7 @@ for pr in processes:
         from fecundity.simulator import simulator, fixed
         #fixed = {}
         #labels = ['rho_max', 'eta_rho', 'a_mature', 'sigm_max', 'eta_sigm']
-    with open(pr+"/prior.pkl", "rb") as handle:
+    with open(pr+"/restricted_prior.pkl", "rb") as handle:
         prior = pickle.load(handle)
     simulator = utils.user_input_checks.process_simulator(simulator, prior, is_numpy_simulator=True)
 
@@ -102,13 +102,13 @@ for pr in processes:
         #limits[13][0] = -0.00005; limits[13][1] = 0.00015
         #limits[14][0] = -0.00005; limits[14][1] = 0.0001
     elif pr == 'fecundity':
-        limits[0][0] = -0.0005; limits[0][1] = 10
+        limits[0][0] = -0.0005; limits[0][1] = 1.5
         limits[1][0] = -0.0005; limits[1][1] = 250
-        limits[2][0] = -0.0005; limits[2][1] = 2500
-        limits[3][0] = -0.0005; limits[3][1] = 10
+        limits[2][0] = -0.0005; limits[2][1] = 900
+        limits[3][0] = -0.0005; limits[3][1] = 2
         limits[4][0] = -0.0005; limits[4][1] = 250
-        limits[5][0] = -0.0005; limits[5][1] = 2500
-        limits[6][0] = -0.0005; limits[6][1] = 1
+        limits[5][0] = -0.0005; limits[5][1] = 900
+        #limits[6][0] = -0.0005; limits[6][1] = 1
     ppc = analysis.pairplot(
         samples=x_pp,
         points=x_o, 

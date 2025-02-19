@@ -100,33 +100,41 @@ def simulator(params):
     epsilon_rho = rng.lognormal(np.zeros_like(a_vec), sigm_a)
     fecundities = rng.poisson(rho_a*epsilon_rho)
 
+
     mean_fecundities = np.zeros(numbins)
     bin_stdevs = np.zeros(numbins)
     results = np.empty(numbins*2)
-    for i in range(numbins):
-        #filt = ((a_vec > binwidth*i) & (a_vec <= binwidth*(i+1)))
-        filt = (a_vec > custom_bin_edges[i]) & (a_vec <= custom_bin_edges[i+1])
-        fecundities_bin = fecundities[filt]
-        mean_fecundities[i] = fecundities_bin.mean()
-        bin_stdevs[i] = np.std(fecundities_bin, ddof=1)
-    results[0:numbins] = mean_fecundities
-    results[numbins:numbins*2] = bin_stdevs
 
-    # If mean fecundities gt 10 std away from observed means, mark invalid
-    checks = np.repeat(False, 2)
-    for i in [1,2]:
-        check = results[numbins-i] > observations[numbins-i] + (10*observations[numbins*2-i])
-        checks[i-1] = check
-    if np.any(checks):
-        results[:] = np.nan
-    #else:
-    #    # Fecundity should level out by end of last bin;
-    #    # check using mean epsilon value
-    #    mean_diff = rho_a[-1]*np.exp(sigm_a[-1]**2 / 2) - rho_a[-2]*np.exp(sigm_a[-2]**2 / 2)
-    #    # If fecundity increases too much, mark invalid
-    #    if mean_diff > 100:
-    #        results[:] = np.nan
-    #    else:
-    #        results[-1] = mean_diff
+    # Check if fecundities are near zero at set age
+    a_star = 20
+    #if a_star > (a_mature - ((1 / eta_rho) * np.log(rho_max - 0.5))):
+    if a_star > (a_mature - ((1 / eta_rho) * np.log((np.exp(sigm_max**2/2)) * rho_max - 0.5))):
+        results[:] = np.nan     
+    else:
+        for i in range(numbins):
+            #filt = ((a_vec > binwidth*i) & (a_vec <= binwidth*(i+1)))
+            filt = (a_vec > custom_bin_edges[i]) & (a_vec <= custom_bin_edges[i+1])
+            fecundities_bin = fecundities[filt]
+            mean_fecundities[i] = fecundities_bin.mean()
+            bin_stdevs[i] = np.std(fecundities_bin, ddof=1)
+        results[0:numbins] = mean_fecundities
+        results[numbins:numbins*2] = bin_stdevs
+
+        # If mean fecundities gt 10 std away from observed means, mark invalid
+        checks = np.repeat(False, 2)
+        for i in [1,2]:
+            check = results[numbins-i] > observations[numbins-i] + (10*observations[numbins*2-i])
+            checks[i-1] = check
+        if np.any(checks):
+            results[:] = np.nan
+        #else:
+        #    # Fecundity should level out by end of last bin;
+        #    # check using mean epsilon value
+        #    mean_diff = rho_a[-1]*np.exp(sigm_a[-1]**2 / 2) - rho_a[-2]*np.exp(sigm_a[-2]**2 / 2)
+        #    # If fecundity increases too much, mark invalid
+        #    if mean_diff > 100:
+        #        results[:] = np.nan
+        #    else:
+        #        results[-1] = mean_diff
 
     return results
