@@ -23,10 +23,10 @@ tau_vec = b_vec * gamma(1+1/c)
 tau_step = np.diff(tau_vec)[0] / 2
 tau_edges = np.concatenate(([0], np.arange(tau_step/2, tau_vec[-1]+tau_step, tau_step)))
 tauc_methods = ["flat"]
-C_i_vec = [2] # For generation of cell metric data
+C_i_vec = [4] # For generation of cell metric data
 results_pre_labs = ['gte_thresh']
 #results_pre_labs = ['distribution_avg']
-overwrite_robustness = True
+overwrite_robustness = False
 overwrite_cellmetric = True
 
 # Function to read in things specific to given results as global variables

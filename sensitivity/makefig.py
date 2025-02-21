@@ -28,7 +28,7 @@ tau_vec = b_vec * gamma(1+1/c)
 tau_step = np.diff(tau_vec)[0] / 2
 tau_edges = np.concatenate(([0], np.arange(tau_step/2, tau_vec[-1]+tau_step, tau_step)))
 tauc_methods = ["flat"]
-C_i_vec = [2]
+C_i_vec = [4]
 results_pre = 'gte_thresh' 
 #results_pre = 'distribution_avg' 
 
@@ -138,7 +138,10 @@ else:
     axes[0,0].set_xlim(0.83,1.01)
     axes[0,0].set_xlabel(rf"average stochastic growth rate {mlab}")
 # Fill in area gte thresh
-thresh = 0.5
+if metric == 'P_s':
+    thresh = 0.5
+elif metric == 'lambda_s':
+    thresh = 0.95
 bin_i = np.argmin(np.abs(bin_edges - thresh))
 axes[0,0].hist(metric_interp[metric_interp >= bin_edges[bin_i]], bins=bin_edges, color=color, 
                histtype='bar', alpha=0.6);
@@ -265,7 +268,8 @@ all_markers = ['o','^','D','s','H','*']
 all_linestyles = ['dotted', 'dashdot', 'dashed', 'solid']
 #C_i_samples = [1,5,9]
 #C_i_samples = [1,3,6,9,11]
-C_i_samples = [0,1,2,3,4]
+#C_i_samples = [0,1,2,3,4]
+C_i_samples = [i for i in range(C_vec.size)][::2]
 for line_i, C_i in enumerate(C_i_samples):
     plot_vec = np.ones(len(rob_thresh_vec)) * np.nan
     c_vec = np.ones(len(rob_thresh_vec)) * np.nan
@@ -357,12 +361,16 @@ cbar_ax = inset_axes(ax3, width="5%", height="50%", loc='center',
                      bbox_transform=ax3.transAxes, borderpad=0)
 sm = cm.ScalarMappable(cmap=cmap, norm=norm)
 cbar = fig.colorbar(sm, cax=cbar_ax, orientation="vertical", ticks=[0, 0.25, 0.5, 0.75, 1.])
-cbar.set_label(rf'frequency of $S$ given ${{\tau}}$', rotation=-90, labelpad=cbar_lpad)
 
 S_samples = np.linspace(0, 1, 5)
 yticks = (imshow_mat.shape[0] - 1) * S_samples
 ax3.set_yticks(yticks, labels=np.flip(S_samples));
-ax3.set_ylabel(rf'simulated survival probability $S$')
+if metric == 'P_s':
+    cbar.set_label(rf'frequency of $S$ given ${{\tau}}$', rotation=-90, labelpad=cbar_lpad)
+    ax3.set_ylabel(rf'simulated survival probability $S$')
+elif metric == 'lambda_s':
+    cbar.set_label(rf'frequency of $\lambda_s$ given ${{\tau}}$', rotation=-90, labelpad=cbar_lpad)
+    ax3.set_ylabel(rf'simulated stochastic growth rate $\lambda_s$')
 ax3.set_ylim(np.array([imshow_mat.shape[0], 0]) - 0.5)
 tau_samples = np.arange(20, 140, 20).astype(int)
 xticks = tau_samples / (tau_step*2)
