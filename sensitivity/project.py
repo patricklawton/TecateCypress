@@ -192,6 +192,7 @@ def compute_lambda_s(job):
             lam_products = np.product(N_slice[:,1:] / np.roll(N_slice, 1, 1)[:,1:], axis=1)
             lam_s_vec = lam_products ** (1/N_slice.shape[1]) 
 
+            # Compute final lambda value
             lam_s_all = np.concatenate((lam_s_vec, lam_s_extir))
             if len(lam_s_all) != 0:
                 job.data[f'lambda_s/{b}'] = np.mean(lam_s_all) 
@@ -315,7 +316,7 @@ class Phase:
                 if not os.path.isdir(figs_dir):
                     os.makedirs(figs_dir)
                 print("saving sensitivity figure")
-                fig.savefig(figs_dir + f"sensitivity", bbox_inches='tight')
+                fig.savefig(figs_dir + f"sensitivity", bbox_inches='tight', dpi=50)
                 plt.close(fig)
                 # Now remake with density=True for calculations later
                 metric_hist = np.histogram2d(all_tau, all_metric, bins=[self.tau_edges, metric_edges], 
@@ -337,9 +338,10 @@ class Phase:
                 metric_expect_vec[tau_i] = np.mean(metric_slice)
             t = self.tau_vec[2:-2:1] 
             k = 3
-            t = np.r_[(self.tau_vec[1],)*(k+1),
-                      t,
-                      (self.tau_vec[-1],)*(k+1)]
+            #t = np.r_[(self.tau_vec[1],)*(k+1),
+            #          t,
+            #          (self.tau_vec[-1],)*(k+1)]
+            t = np.r_[(0,)*(k+1), t, (self.tau_vec[-1],)*(k+1)]
             self.metric_exp_spl = make_lsq_spline(self.tau_vec[1:], metric_expect_vec[1:], t, k)
 
             # Read in FDM
@@ -623,12 +625,14 @@ class Phase:
         tau_with_cutoff = np.where(self.tau_expect > self.tau_vec.max(), self.tau_vec.max(), self.tau_expect)
         metric_exp_dist = self.metric_exp_spl(tau_with_cutoff)
         if self.metric == 'P_s':
+            threshold = 0.5
             # Metric value is bounded by zero, anything lt zero is an interpolation error
             metric_exp_dist[metric_exp_dist < 0] = 0.0
             if np.any(metric_exp_dist < 0): sys.exit(f"metric_expect is negative ({self.metric_expect}), exiting!")
-            gte_thresh = 0.5
+        elif self.metric == 'lambda_s':
+            threshold = 0.95
         '''Still calling this metric_expect for now but should change this to metric_quantity or something'''
-        self.metric_expect = np.count_nonzero(metric_exp_dist >= gte_thresh) / self.ncell_tot
+        self.metric_expect = np.count_nonzero(metric_exp_dist >= threshold) / self.ncell_tot
 
     def process_samples(self, C, ncell):
         '''is relocating these indicies significantly slowing things down?'''

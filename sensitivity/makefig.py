@@ -16,7 +16,8 @@ from scipy.interpolate import make_lsq_spline
 from itertools import product
 
 # Define/load things non-specific to a given set of results
-metric = "P_s"
+#metric = "P_s"
+metric = 'lambda_s'
 Aeff = 7.29
 t_final = 300
 ncell_tot = 87_993
@@ -27,9 +28,24 @@ tau_vec = b_vec * gamma(1+1/c)
 tau_step = np.diff(tau_vec)[0] / 2
 tau_edges = np.concatenate(([0], np.arange(tau_step/2, tau_vec[-1]+tau_step, tau_step)))
 tauc_methods = ["flat"]
-C_i_vec = [1, 2]
+C_i_vec = [2]
 results_pre = 'gte_thresh' 
 #results_pre = 'distribution_avg' 
+
+# Update global plotting parameters
+rc('axes', labelsize=21)  # Font size for x and y labels
+rc('axes', titlesize=16)
+rc('xtick', labelsize=19)  # Font size for x-axis tick labels
+rc('ytick', labelsize=19)  # Font size for y-axis tick labels
+rc('lines', markersize=15)  
+rc('lines', linewidth=5.5)
+rc('legend', fontsize=19)
+rc('font', family='sans-serif')
+rc('font', serif=['Computer Modern Sans Serif'] + plt.rcParams['font.serif'])
+rc('font', weight='light')
+histlw = 5.5
+cbar_lpad = 30
+dpi = 50
 
 # Function to read in things specific to given results as global variables
 def set_globals(results_pre):
@@ -50,21 +66,6 @@ def set_globals(results_pre):
         for key in handle.keys():
             eps_axes.update({key: handle[key][()]})
     globals()['eps_axes'] = eps_axes
-
-# Update global plotting parameters
-rc('axes', labelsize=21)  # Font size for x and y labels
-rc('axes', titlesize=16)
-rc('xtick', labelsize=19)  # Font size for x-axis tick labels
-rc('ytick', labelsize=19)  # Font size for y-axis tick labels
-rc('lines', markersize=15)  
-rc('lines', linewidth=5.5)
-rc('legend', fontsize=19)
-rc('font', family='sans-serif')
-rc('font', serif=['Computer Modern Sans Serif'] + plt.rcParams['font.serif'])
-rc('font', weight='light')
-histlw = 5.5
-cbar_lpad = 30
-dpi = 50
 
 # Read in maps and convert fdm to tau, used by multiple plots below
 ul_coord = [1500, 2800]
@@ -119,14 +120,23 @@ tau_max = max(tau_edges)
 bin_step = 0.01
 bin_edges = np.concatenate(([0], np.arange(bin_step/2, 1+bin_step, bin_step)))
 color = 'limegreen'
-mlab = "$<S>$"
 metric_interp = spl(tau_flat[tau_flat < tau_max])
 counts, bin_edges, hist = axes[0,0].hist(metric_interp, bins=bin_edges, color=color, histtype='step', lw=histlw);
-if np.any(counts[5:] == 0):
-    xmax_i = np.min(np.nonzero(counts[5:] == 0)[0]) + 5
-    xmax = bin_edges[xmax_i + 1] 
+if metric == 'P_s':
+    mlab = "$<S>$"
+    if np.any(counts[5:] == 0):
+        xmax_i = np.min(np.nonzero(counts[5:] == 0)[0]) + 5
+        xmax = bin_edges[xmax_i + 1] 
+    else:
+        xmax = 1
+    xticks = [0, 0.25, 0.5, 0.75, 1]
+    axes[0,0].set_xlabel(rf"average survival probabiltiy {mlab}")
+    axes[0,0].set_xlim(-0.01, xmax)
 else:
-    xmax = 1
+    mlab = "$<\lambda_s>$"
+    xticks = [0.85, 0.9, 0.95, 1]
+    axes[0,0].set_xlim(0.83,1.01)
+    axes[0,0].set_xlabel(rf"average stochastic growth rate {mlab}")
 # Fill in area gte thresh
 thresh = 0.5
 bin_i = np.argmin(np.abs(bin_edges - thresh))
@@ -138,10 +148,7 @@ axes[0,0].axvline(bin_edges[closest_bin_i], ls='--', color='darkgreen', lw=6.5)
 axes[0,0].set_yticks([])
 #axes[0,0].set_ylabel(rf"{mlab} frequency within range")
 axes[0,0].set_ylabel(rf"{mlab} frequency")
-xticks = [0, 0.25, 0.5, 0.75, 1]
 axes[0,0].set_xticks(xticks, labels=xticks)
-axes[0,0].set_xlabel(rf"average survival probabiltiy {mlab}")
-axes[0,0].set_xlim(-0.01, xmax)
 ########
 
 #### FIRE REGIME SHIFT EXAMPLES ####
@@ -286,8 +293,8 @@ cbar_ax = fig.add_axes([0.2, 0.009, 0.6, 0.025])  # [left, bottom, width, height
 fig.colorbar(scatter, cax=cbar_ax, orientation='horizontal', 
     label=r"optimal range fraction for intervention $n~/~n_{tot}$")
 
-fig.savefig(f'{results_pre}/figs/fig2_pre.png', bbox_inches='tight', dpi=dpi)
-fig.savefig(f'{results_pre}/figs/fig2_pre.svg', bbox_inches='tight')
+fig.savefig(fig_prefix + 'fig2_pre.png', bbox_inches='tight', dpi=dpi)
+fig.savefig(fig_prefix + 'fig2_pre.svg', bbox_inches='tight')
 
 ################################################################
 
@@ -398,8 +405,8 @@ gs.update(hspace=-0.21)  # Adjust vertical spacing
 gs.update(wspace=0.3)
 ########
 
-fig.savefig(f'{results_pre}/figs/fig1_pre.png', bbox_inches='tight', dpi=dpi)
-fig.savefig(f'{results_pre}/figs/fig1_pre.svg', bbox_inches='tight')
+fig.savefig(fig_prefix + 'fig1_pre.png', bbox_inches='tight', dpi=dpi)
+fig.savefig(fig_prefix + 'fig1_pre.svg', bbox_inches='tight')
 
 ################################################################
 
@@ -416,9 +423,9 @@ for C_i in C_i_vec:
 
     # Read in / set constants
     set_globals(results_pre)
-    stepfit_T1 = np.load(fn_prefix + f"/{C_i}/stepfit_T1.npy")
-    total_inoptima = np.load(fn_prefix + f"/{C_i}/total_inoptima.npy")
-    closest_thresh_i = np.load(fn_prefix + f"/{C_i}/closest_thresh_i.npy")
+    stepfit_T1 = np.load(fn_prefix + f"{C_i}/stepfit_T1.npy")
+    total_inoptima = np.load(fn_prefix + f"{C_i}/total_inoptima.npy")
+    closest_thresh_i = np.load(fn_prefix + f"{C_i}/closest_thresh_i.npy")
 
     mapi_sorted = mapindices[tau_argsort].T
     # Initialize array for sensitivity metric; no changes needed to case of inclusions (T1 > 0)
@@ -503,7 +510,7 @@ for C_i in C_i_vec:
     ax4.axis('off')
     ######
 
-    fn = f'{results_pre}/figs/fig3_pre_{C_i}.png'
+    fn = fig_prefix + f'fig3_pre_{C_i}.png'
     fig.savefig(fn, bbox_inches='tight', dpi=dpi)
-    fn = f'{results_pre}/figs/fig3_pre_{C_i}.svg'
+    fn = fig_prefix + f'fig3_pre_{C_i}.svg'
     fig.savefig(fn, bbox_inches='tight', dpi=dpi)

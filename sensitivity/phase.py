@@ -40,15 +40,16 @@ constants['meta_metric'] = 'gte_thresh'
 
 # Define metrics and tauc methods to run analysis on
 #metrics = ["lambda_s", "mu_s", "r"]
-metrics = ["P_s"]
+#metrics = ["P_s"]
+metrics = ["lambda_s"]
 #tauc_methods = ["flat", "initlinear", "initinverse"]
 tauc_methods = ["flat"]
 
 # Define uncertainty axes (and save under metric folder later)
-mu_tau_vec = np.linspace(-10, 0, 6)
-sigm_tau_vec = np.linspace(0, 10, 5)
-mu_tauc_vec = np.linspace(-10, 0, 6)
-sigm_tauc_vec = np.linspace(0, 10, 5)
+mu_tau_vec = np.linspace(-10, 0, 4)
+sigm_tau_vec = np.linspace(0, 10, 3)
+mu_tauc_vec = np.linspace(-10, 0, 4)
+sigm_tauc_vec = np.linspace(0, 10, 3)
 #mu_tau_vec = np.linspace(0, 0, 1)
 #sigm_tau_vec = np.linspace(0, 0, 1)
 #mu_tauc_vec = np.linspace(0, 0, 1)

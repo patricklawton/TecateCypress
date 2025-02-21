@@ -11,7 +11,8 @@ from itertools import product
 import os
 
 # Define/load things non-specific to a given set of results
-metric = "P_s"
+#metric = "P_s"
+metric = "lambda_s"
 Aeff = 7.29
 t_final = 300
 ncell_tot = 87_993
@@ -22,7 +23,9 @@ tau_vec = b_vec * gamma(1+1/c)
 tau_step = np.diff(tau_vec)[0] / 2
 tau_edges = np.concatenate(([0], np.arange(tau_step/2, tau_vec[-1]+tau_step, tau_step)))
 tauc_methods = ["flat"]
-C_i_vec = [1,2] # For generation of cell metric data
+C_i_vec = [2] # For generation of cell metric data
+results_pre_labs = ['gte_thresh']
+#results_pre_labs = ['distribution_avg']
 overwrite_robustness = True
 overwrite_cellmetric = True
 
@@ -47,8 +50,7 @@ def set_globals(results_pre):
     globals()['eps_axes'] = eps_axes
 
 #### POSTPROCESS ROBUSTNESS ####
-# for results_pre in ['distribution_avg']:
-for results_pre in ['gte_thresh']:
+for results_pre in results_pre_labs:
     if not overwrite_robustness: continue
     # Load things saved specific to these results
     set_globals(results_pre)
@@ -109,6 +111,7 @@ for results_pre in ['gte_thresh']:
     np.save(fn_prefix + "argmaxrob.npy", argmaxrob)
 
 #### COMPUTE AND STORE PER CELL METRIC ####
+
 # Read in maps and convert fdm to tau
 ul_coord = [1500, 2800]
 lr_coord = [2723, 3905]
@@ -166,19 +169,18 @@ allowed_values = np.array([0, 1])
 
 # First, populate matrix recording which cells are in optima for a range of omega requirement
 omega_samples = np.linspace(0, 1, 50)
-# for res_i, results_pre in enumerate(['distribution_avg']):
-for res_i, results_pre in enumerate(['gte_thresh']):
+for res_i, results_pre in enumerate(results_pre_labs):
     if not overwrite_cellmetric: continue
     set_globals(results_pre)
     maxrob = np.load(fn_prefix + "maxrob.npy")
     argmaxrob = np.load(fn_prefix + "argmaxrob.npy")
     rob_thresh_vec = np.load(fn_prefix + "rob_thresh_vec.npy")
     for C_i in C_i_vec:
-        if os.path.isdir(fn_prefix + f"/{C_i}") == False:
-            os.makedirs(fn_prefix + f"/{C_i}")
+        if os.path.isdir(fn_prefix + f"{C_i}") == False:
+            os.makedirs(fn_prefix + f"{C_i}")
 
         # Select metric threshold indices as close as possible to desired omega samples
-        closest_thresh_i = np.array([np.abs(maxrob[:,C_i] - val).argmin() for val in omega_samples])
+        #closest_thresh_i = np.array([np.abs(maxrob[:,C_i] - val).argmin() for val in omega_samples])
         closest_thresh_i = []
         for i, omega in enumerate(omega_samples):
             closest_i = np.nanargmin(np.abs(maxrob[:,C_i] - omega))
@@ -197,7 +199,7 @@ for res_i, results_pre in enumerate(['gte_thresh']):
             opt_sl = slice_left_all[opt_sl_i]
             '''Note that we assume the tau axis of inoptima_vec is in sorted order'''
             inoptima_vec[opt_sl:opt_sl+opt_ncell, omega_sample_i] = True
-        np.save(fn_prefix + f"/{C_i}/inoptima_vec.npy", inoptima_vec)
+        np.save(fn_prefix + f"{C_i}/inoptima_vec.npy", inoptima_vec)
 
         # Now, fit a step function to each cell's data and store information based on that
         stepfit_T1 = np.ones(tau_flat.size) * np.nan
@@ -226,7 +228,7 @@ for res_i, results_pre in enumerate(['gte_thresh']):
                 if best_fit_i == 1:
                     stepfit_T2[k] = sign * best_fit.x[1]
                 total_inoptima[k] = np.count_nonzero(y == 1)
-        np.save(fn_prefix + f"/{C_i}/stepfit_T1.npy", stepfit_T1)
-        np.save(fn_prefix + f"/{C_i}/stepfit_T2.npy", stepfit_T2)
-        np.save(fn_prefix + f"/{C_i}/total_inoptima.npy", total_inoptima)
-        np.save(fn_prefix + f"/{C_i}/closest_thresh_i.npy", closest_thresh_i)
+        np.save(fn_prefix + f"{C_i}/stepfit_T1.npy", stepfit_T1)
+        np.save(fn_prefix + f"{C_i}/stepfit_T2.npy", stepfit_T2)
+        np.save(fn_prefix + f"{C_i}/total_inoptima.npy", total_inoptima)
+        np.save(fn_prefix + f"{C_i}/closest_thresh_i.npy", closest_thresh_i)
