@@ -12,7 +12,7 @@ from sbi.utils import MultipleIndependent
 from torch import tensor
 import json
 
-processes = ['mortality']
+processes = ['fecundity']
 for pr in processes:
     if pr == 'mortality':
         from mortality.simulator import simulator, fixed

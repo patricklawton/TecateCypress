@@ -14,7 +14,7 @@ h_o = np.mean(sdm_otay[sdm_otay!=0]) #excluding zero, would be better to use SDM
 
 fixed = {'gamm_m': 0.01, 'tau_m': 0.0, 'mu_m': 0.0, 
          'alph_nu': 0.0, 'beta_nu': 0.0, 'gamm_nu': 0.0, 
-         'kappa': 0.0, 'K_adult': 1.0, 'K_seedling': 0.0}
+         'kappa': 0.0, 'K_adult': 1_000.0, 'K_seedling': 0.0}
          #'K_seedling': 60_000/h_o, 'K_adult': 10_000/h_o}
 with open('mortality/fixed.pkl', 'wb') as handle:
     pickle.dump(fixed, handle)

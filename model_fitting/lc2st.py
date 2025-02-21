@@ -64,6 +64,7 @@ for pr in processes:
         # filter out invalid parameter samples
         theta_cal = theta_cal[~torch.any(x_cal.isnan(),dim=1)]
         x_cal = x_cal[~torch.any(x_cal.isnan(),dim=1)]
+        # draw samples from estimated posterior at each calibration sample
         post_samples_cal = [posterior.sample(sample_shape=(1,), x=xc)[0] for xc in x_cal]
         post_samples_cal = torch.stack(post_samples_cal, dim=0)
 

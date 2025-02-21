@@ -44,11 +44,12 @@ def run_sims(job):
     params.update(fec_fixed)
     Aeff = job.sp['Aeff'] #ha
     delta_t = 1
-    num_reps = 1_250
+    num_reps = 1_000
     N_0_1 = Aeff*params['K_adult']
     N_0_1_vec = np.repeat(N_0_1, num_reps)
-    '''Could figure out mature age in a more sophisticated way'''
-    init_age = round(params['a_mature']) + 20
+    init_age = params['a_mature'] - (np.log((1/0.90)-1) / params['eta_rho']) # Age where 90% of reproductive capacity reached
+    print('init_age:', init_age)
+    init_age = int(init_age + 0.5) # Round to nearest integer
     t_vec = np.arange(delta_t, job.sp.t_final+delta_t, delta_t)
 
     for b in b_vec:
@@ -625,7 +626,7 @@ class Phase:
             # Metric value is bounded by zero, anything lt zero is an interpolation error
             metric_exp_dist[metric_exp_dist < 0] = 0.0
             if np.any(metric_exp_dist < 0): sys.exit(f"metric_expect is negative ({self.metric_expect}), exiting!")
-            gte_threshold = 0.25
+            gte_threshold = 0.5
         '''Still calling this metric_expect for now but should change this to metric_quantity or something'''
         self.metric_expect = np.count_nonzero(metric_exp_dist >= gte_threshold) / self.ncell_tot
 
