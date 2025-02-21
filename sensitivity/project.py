@@ -626,9 +626,9 @@ class Phase:
             # Metric value is bounded by zero, anything lt zero is an interpolation error
             metric_exp_dist[metric_exp_dist < 0] = 0.0
             if np.any(metric_exp_dist < 0): sys.exit(f"metric_expect is negative ({self.metric_expect}), exiting!")
-            gte_threshold = 0.5
+            gte_thresh = 0.5
         '''Still calling this metric_expect for now but should change this to metric_quantity or something'''
-        self.metric_expect = np.count_nonzero(metric_exp_dist >= gte_threshold) / self.ncell_tot
+        self.metric_expect = np.count_nonzero(metric_exp_dist >= gte_thresh) / self.ncell_tot
 
     def process_samples(self, C, ncell):
         '''is relocating these indicies significantly slowing things down?'''
@@ -649,7 +649,7 @@ class Phase:
             if self.meta_metric == 'distribution_avg':
                 # Calculate <metric>
                 self.calculate_metric_expect()
-            elif self.meta_metric == 'gte_threshold':
+            elif self.meta_metric == 'gte_thresh':
                 # Calculate <metric>_k density above some threshold
                 self.calculate_metric_gte()
             # Store sample if not computing no change scenario

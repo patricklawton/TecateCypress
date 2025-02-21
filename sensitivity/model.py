@@ -192,14 +192,16 @@ class Model:
             else:
                 # Age-dependent mortality functions
                 m_t = self.alph_m * np.exp(-self.beta_m*t) + self.gamm_m
-                K_t = self.K_seedling * np.exp(-self.kappa*t) + self.K_adult
-                nu_t = self.alph_nu * np.exp(-self.beta_nu*t) + self.gamm_nu
+                #K_t = self.K_seedling * np.exp(-self.kappa*t) + self.K_adult
+                #nu_t = self.alph_nu * np.exp(-self.beta_nu*t) + self.gamm_nu
                 #eta_t = 2 / ((nu_t*(1-m_t)) * self.Aeff * self.K_adult)
-                ''' Turing off dens dep so set eta_t to 1 or it will blow up'''
-                eta_t = 1
-                dens_dep = ((nu_t)*(1-m_t)) / (1 + np.exp(-eta_t*self.K_adult*(N/K_t - self.Aeff)))
-                m_t_N = m_t + dens_dep
-                sigm_m_t = self.sigm_m*np.exp(-self.tau_m*t)
+                #''' Turing off dens dep so set eta_t to 1 or it will blow up'''
+                #eta_t = 1
+                #dens_dep = ((nu_t)*(1-m_t)) / (1 + np.exp(-eta_t*self.K_adult*(N/K_t - self.Aeff)))
+                #m_t_N = m_t + dens_dep
+                m_t_N = m_t
+                #sigm_m_t = self.sigm_m*np.exp(-self.tau_m*t)
+                sigm_m_t = self.sigm_m
                 epsilon_m_mean = np.exp(self.mu_m + (sigm_m_t**2 / 2))
                 return -m_t_N * N * epsilon_m_mean
 

@@ -36,7 +36,7 @@ constants['root'] = 0 #For mpi
 constants.update({'final_max_tau': np.nan})
 constants['overwrite_results'] = True
 #constants['meta_metric'] = 'distribution_avg'
-constants['meta_metric'] = 'gte_threshold'
+constants['meta_metric'] = 'gte_thresh'
 
 # Define metrics and tauc methods to run analysis on
 #metrics = ["lambda_s", "mu_s", "r"]
