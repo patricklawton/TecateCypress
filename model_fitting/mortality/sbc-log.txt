@@ -1,6 +1,6 @@
 kolmogorov-smirnov p-values 
 
-            check_stats['ks_pvals'] = [1.6094690e-07 3.4269127e-01 5.8437896e-01] 
+            check_stats['ks_pvals'] = [1.7273329e-05 1.1226767e-03 2.7019028e-02 5.7667782e-10] 
 c2st accuracies 
-check_stats['c2st_ranks'] = [0.5002018 0.5015136 0.5031282] 
-check_stats['c2st_dap'] = [0.50201815 0.49858728 0.49303734] 
+check_stats['c2st_ranks'] = [0.49172452 0.5096376  0.5003136  0.5037706 ] 
+check_stats['c2st_dap'] = [0.49486756 0.4953925  0.50262046 0.49319032] 

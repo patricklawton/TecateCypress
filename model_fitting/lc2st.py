@@ -11,16 +11,14 @@ from sbi.utils.analysis_utils import get_probs_per_marginal
 import os
 
 overwrite = True
-processes = ['fecundity']
+dpi = 60
+processes = ['mortality']
 for pr in processes:
     if pr == 'mortality':
         from mortality.simulator import simulator, fixed
-        #labels = ['alph_m', 'beta_m', 'sigm_m', 'gamm_nu', 'kappa', 'K_adult']
         NUM_CAL = 3_000
     elif pr == 'fecundity':
         from fecundity.simulator import simulator, fixed
-        #fixed = {}
-        #labels = ['rho_max', 'eta_rho', 'a_mature', 'sigm_max', 'eta_sigm']
         NUM_CAL = 2_000
     with open(pr+"/restricted_prior.pkl", "rb") as handle:
         prior = pickle.load(handle)
@@ -143,7 +141,7 @@ for pr in processes:
         )
     axes[-1].legend(bbox_to_anchor=(1.1, .5), loc='center left')
     #plt.show()
-    fig.savefig(f'sbi_figs/{pr}_lc2st_1.png', bbox_inches='tight')
+    fig.savefig(f'sbi_figs/{pr}_lc2st_1.png', bbox_inches='tight', dpi=dpi)
 
     # P-P plots
 
@@ -171,7 +169,7 @@ for pr in processes:
         )
         axes[i].set_title(f"PP-plot for observation {i+1}")
     axes[-1].legend(bbox_to_anchor=(1.1, .5), loc='center left')
-    fig.savefig(f'sbi_figs/{pr}_lc2st_2.png', bbox_inches='tight')
+    fig.savefig(f'sbi_figs/{pr}_lc2st_2.png', bbox_inches='tight', dpi=dpi)
 
 
     label = "Probabilities (class 0)"
@@ -273,4 +271,4 @@ for pr in processes:
     for j in range(num_ref_obs):
         axes[j][0].set_ylabel(f"observation {j + 1}")
     axes[0][2].legend()
-    fig.savefig(f'sbi_figs/{pr}_lc2st_3.png', bbox_inches='tight')
+    fig.savefig(f'sbi_figs/{pr}_lc2st_3.png', bbox_inches='tight', dpi=dpi)

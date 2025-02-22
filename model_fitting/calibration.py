@@ -12,15 +12,13 @@ from sbi.utils import MultipleIndependent
 from torch import tensor
 import json
 
-processes = ['fecundity']
+dpi = 60
+processes = ['mortality']
 for pr in processes:
     if pr == 'mortality':
         from mortality.simulator import simulator, fixed
-        #labels = ['alph_m', 'beta_m', 'sigm_m', 'gamm_nu', 'kappa', 'K_adult']
     elif pr == 'fecundity':
         from fecundity.simulator import simulator, fixed
-        #fixed = {}
-        #labels = ['rho_max', 'eta_rho', 'a_mature', 'sigm_max', 'eta_sigm']
     with open(pr+"/restricted_prior.pkl", "rb") as handle:
         prior = pickle.load(handle)
     simulator = utils.user_input_checks.process_simulator(simulator, prior, is_numpy_simulator=True)
@@ -75,7 +73,7 @@ for pr in processes:
         parameter_labels=labels,
         num_bins=None,  # by passing None we use a heuristic for the number of bins.
     )
-    f.savefig('sbi_figs/{}_rank_hist.png'.format(pr), bbox_inches='tight')
+    f.savefig('sbi_figs/{}_rank_hist.png'.format(pr), bbox_inches='tight', dpi=dpi)
 
     f, ax = analysis.plot.sbc_rank_plot(
         ranks=ranks, 
@@ -83,7 +81,7 @@ for pr in processes:
         plot_type="cdf",
         parameter_labels=labels
     )
-    f.savefig('sbi_figs/{}_rank_cdf.png'.format(pr), bbox_inches='tight')
+    f.savefig('sbi_figs/{}_rank_cdf.png'.format(pr), bbox_inches='tight', dpi=dpi)
 
     ### ppc
     x_o = np.load(pr+'/observations/observations.npy')
@@ -116,4 +114,4 @@ for pr in processes:
         limits=limits,
         figsize=(16,16)
     )
-    ppc[0].savefig('sbi_figs/{}_npe_ppc.png'.format(pr), bbox_inches='tight')
+    ppc[0].savefig('sbi_figs/{}_npe_ppc.png'.format(pr), bbox_inches='tight', dpi=dpi)

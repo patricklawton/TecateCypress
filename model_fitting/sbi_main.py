@@ -18,16 +18,18 @@ overwrite_simulations = True
 overwrite_posterior = True
 add_simulations = False
 
-processes = ['fecundity']
+processes = ['mortality']
 for pr in processes:
     if pr == 'mortality':
         from mortality.simulator import simulator, h_o
-        labels = ['alph_m', 'beta_m', 'sigm_m'] 
+        labels = ['alph_m', 'beta_m', 'gamm_m', 'sigm_m'] 
         ranges = np.array([
                            # alph_m
                            [0.01, 0.7], 
                            # beta_m
                            [0.01, 0.9], 
+                           # gamm_m
+                           [0.001, 0.05],
                            # sigm_m
                            [0.1,1.7],
                            ## alph_nu
@@ -44,7 +46,7 @@ for pr in processes:
                            #[(0.1/h_o)*10_000, (3/h_o)*10_000]
         ])
         restrictor_sims = 10_000
-        training_sims = 20_000
+        training_sims = 40_000
         num_samples = 1_000_000 
         allowed_false_negatives = 0.0
     elif pr == 'fecundity':
@@ -199,4 +201,4 @@ for pr in processes:
     _ = analysis.pairplot(
         npe_samples, limits=ranges, figsize=(10, 10), labels=labels
     )
-    _[0].savefig('sbi_figs/{}_posterior_pairplot.png'.format(pr), bbox_inches='tight')
+    _[0].savefig('sbi_figs/{}_posterior_pairplot.png'.format(pr), bbox_inches='tight', dpi=60)

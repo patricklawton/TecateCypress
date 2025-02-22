@@ -12,7 +12,7 @@ otay = np.loadtxt("../shared_maps/otayraster.asc", skiprows=6)
 sdm_otay = sdm[otay==1] #index "1" indicates the specific part where study was done
 h_o = np.mean(sdm_otay[sdm_otay!=0]) #excluding zero, would be better to use SDM w/o threshold
 
-fixed = {'gamm_m': 0.01, 'tau_m': 0.0, 'mu_m': 0.0, 
+fixed = {'tau_m': 0.0, 'mu_m': 0.0, 
          'alph_nu': 0.0, 'beta_nu': 0.0, 'gamm_nu': 0.0, 
          'kappa': 0.0, 'K_adult': 1_000.0, 'K_seedling': 0.0}
          #'K_seedling': 60_000/h_o, 'K_adult': 10_000/h_o}
@@ -21,8 +21,8 @@ with open('mortality/fixed.pkl', 'wb') as handle:
 
 def simulator(params):
     # Assign parameter labels
-    alph_m = params[0]; beta_m = params[1]; gamm_m = fixed['gamm_m']
-    sigm_m = params[2]; tau_m = fixed['tau_m']; mu_m = fixed['mu_m']
+    alph_m = params[0]; beta_m = params[1]; gamm_m = params[2]
+    sigm_m = params[3]; tau_m = fixed['tau_m']; mu_m = fixed['mu_m']
     alph_nu = fixed['alph_nu']; beta_nu = fixed['beta_nu']; gamm_nu = fixed['gamm_nu']
     K_seedling = fixed['K_seedling']; kappa = fixed['kappa']; K_adult = fixed['K_adult']; 
 
