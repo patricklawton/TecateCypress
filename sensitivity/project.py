@@ -336,12 +336,14 @@ class Phase:
                 tau_filt = (all_tau == tau)
                 metric_slice = self.metric_data["all_metric"][tau_filt]
                 metric_expect_vec[tau_i] = np.mean(metric_slice)
-            t = self.tau_vec[2:-2:1] 
-            k = 3
-            #t = np.r_[(self.tau_vec[1],)*(k+1),
-            #          t,
-            #          (self.tau_vec[-1],)*(k+1)]
-            t = np.r_[(0,)*(k+1), t, (self.tau_vec[-1],)*(k+1)]
+            if self.metric == 'P_s':
+                t = self.tau_vec[2:-2:1] 
+                k = 3
+                t = np.r_[(0,)*(k+1), t, (self.tau_vec[-1],)*(k+1)]
+            else:
+                t = self.tau_vec[2:-2:2] 
+                k = 3
+                t = np.r_[(self.tau_vec[1],)*(k+1), t, (self.tau_vec[-1],)*(k+1)]
             self.metric_exp_spl = make_lsq_spline(self.tau_vec[1:], metric_expect_vec[1:], t, k)
 
             # Read in FDM

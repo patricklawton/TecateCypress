@@ -110,9 +110,9 @@ for tau_i, tau in enumerate(tau_vec):
     tau_filt = (all_tau == tau)
     metric_slice = all_metric[tau_filt]
     metric_expect_vec[tau_i] = np.mean(metric_slice)
-t = tau_vec[2:-2:1] 
+t = tau_vec[2:-2:2] 
 k = 3
-t = np.r_[(0,)*(k+1), t, (tau_vec[-1],)*(k+1)]
+t = np.r_[(tau_vec[1],)*(k+1), t, (tau_vec[-1],)*(k+1)]
 spl = make_lsq_spline(tau_vec[1:], metric_expect_vec[1:], t, k)
 
 # Plot <metric> distribution outline
@@ -378,16 +378,6 @@ ax3.set_xticks(xticks, labels=tau_samples);
 ax3.set_xlabel(r"average fire return interval $\tau$")
 ax3.set_xlim(1, imshow_mat.shape[1]-1)
 
-# Make interpolation function
-metric_expect_vec = np.ones(tau_vec.size) * np.nan
-for tau_i, tau in enumerate(tau_vec):
-    tau_filt = (all_tau == tau)
-    metric_slice = all_metric[tau_filt]
-    metric_expect_vec[tau_i] = np.mean(metric_slice)
-t = tau_vec[2:-2:1]
-k = 3
-t = np.r_[(0,)*(k+1), t, (tau_vec[-1],)*(k+1)]
-spl = make_lsq_spline(tau_vec[1:], metric_expect_vec[1:], t, k)
 # Overplot interpolated means
 tau_samples = np.arange(5, 140, 2)
 mean_points = (imshow_mat.shape[0]-1) * (1 - spl(tau_samples))
