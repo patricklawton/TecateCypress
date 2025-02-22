@@ -23,15 +23,15 @@ constants['min_tau'] = 2
 constants['A_cell'] = 270**2 / 1e6 #km^2
 constants['plotting_tau_bw_ratio'] = 30 #For binning initial tau (with uncertainty) in phase slice plots
 constants['tauc_baseline'] = 200 #years, max(tauc) possible at min(ncell) given C
-constants['ncell_samples'] = 20
-#constants['ncell_samples'] = 15
-constants['slice_samples'] = 40
-#constants['slice_samples'] = 30
+#constants['ncell_samples'] = 20
+constants['ncell_samples'] = 15
+#constants['slice_samples'] = 40
+constants['slice_samples'] = 30
 constants['baseline_A_min'] = 10 #km^2
 constants['baseline_A_max'] = 160 * 2.0043963553530753
 #constants['baseline_A_max'] = (160 * 2.0043963553530753) * 2
-constants['baseline_A_samples'] = 9
-#constants['baseline_A_samples'] = 5
+#constants['baseline_A_samples'] = 9
+constants['baseline_A_samples'] = 5
 constants['root'] = 0 #For mpi
 constants.update({'final_max_tau': np.nan})
 constants['overwrite_results'] = True
@@ -46,10 +46,10 @@ metrics = ["lambda_s"]
 tauc_methods = ["flat"]
 
 # Define uncertainty axes (and save under metric folder later)
-mu_tau_vec = np.linspace(-10, 0, 9)
-sigm_tau_vec = np.linspace(0, 10, 7)
-mu_tauc_vec = np.linspace(-10, 0, 9)
-sigm_tauc_vec = np.linspace(0, 10, 7)
+mu_tau_vec = np.arange(-10, 8, 2).astype(float)
+sigm_tau_vec = np.linspace(0, 10, 3)
+mu_tauc_vec = np.arange(-10, 8, 2).astype(float)
+sigm_tauc_vec = np.linspace(0, 10, 3)
 #mu_tau_vec = np.linspace(-10, 0, 4)
 #sigm_tau_vec = np.linspace(0, 10, 3)
 #mu_tauc_vec = np.linspace(-10, 0, 4)

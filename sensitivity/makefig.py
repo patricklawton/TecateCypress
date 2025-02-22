@@ -28,7 +28,7 @@ tau_vec = b_vec * gamma(1+1/c)
 tau_step = np.diff(tau_vec)[0] / 2
 tau_edges = np.concatenate(([0], np.arange(tau_step/2, tau_vec[-1]+tau_step, tau_step)))
 tauc_methods = ["flat"]
-C_i_vec = [4]
+C_i_vec = [2,3,4]
 results_pre = 'gte_thresh' 
 #results_pre = 'distribution_avg' 
 
@@ -269,7 +269,7 @@ all_linestyles = ['dotted', 'dashdot', 'dashed', 'solid']
 #C_i_samples = [1,5,9]
 #C_i_samples = [1,3,6,9,11]
 #C_i_samples = [0,1,2,3,4]
-C_i_samples = [i for i in range(C_vec.size)][::2]
+C_i_samples = [i for i in range(C_vec.size)][::1]
 for line_i, C_i in enumerate(C_i_samples):
     plot_vec = np.ones(len(rob_thresh_vec)) * np.nan
     c_vec = np.ones(len(rob_thresh_vec)) * np.nan
@@ -422,6 +422,7 @@ cmap = copy.copy(cm.twilight_shifted)
 vmin = -1; vmax = 1
 norm = colors.Normalize(vmin=vmin, vmax=vmax)
 for C_i in C_i_vec:
+    tauhat_min = np.round(C_vec[C_i]/ncell_tot, 2)
     fig = plt.figure(figsize=np.array([6.8, 6])*2.)
     gs = GridSpec(3, 4, figure=fig, width_ratios=[2, 2, 1.1, 1.1], height_ratios=[1, 1, 1])
     ax1 = fig.add_subplot(gs[0, :2])  # Top-left subplot
@@ -431,9 +432,9 @@ for C_i in C_i_vec:
 
     # Read in / set constants
     set_globals(results_pre)
-    stepfit_T1 = np.load(fn_prefix + f"{C_i}/stepfit_T1.npy")
-    total_inoptima = np.load(fn_prefix + f"{C_i}/total_inoptima.npy")
-    closest_thresh_i = np.load(fn_prefix + f"{C_i}/closest_thresh_i.npy")
+    stepfit_T1 = np.load(fn_prefix + f"{tauhat_min}/stepfit_T1.npy")
+    total_inoptima = np.load(fn_prefix + f"{tauhat_min}/total_inoptima.npy")
+    closest_thresh_i = np.load(fn_prefix + f"{tauhat_min}/closest_thresh_i.npy")
 
     mapi_sorted = mapindices[tau_argsort].T
     # Initialize array for sensitivity metric; no changes needed to case of inclusions (T1 > 0)
@@ -518,7 +519,7 @@ for C_i in C_i_vec:
     ax4.axis('off')
     ######
 
-    fn = fig_prefix + f'fig3_pre_{C_i}.png'
+    fn = fig_prefix + f'fig3_pre_{tauhat_min}.png'
     fig.savefig(fn, bbox_inches='tight', dpi=dpi)
-    fn = fig_prefix + f'fig3_pre_{C_i}.svg'
+    fn = fig_prefix + f'fig3_pre_{tauhat_min}.svg'
     fig.savefig(fn, bbox_inches='tight', dpi=dpi)

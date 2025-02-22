@@ -23,10 +23,10 @@ tau_vec = b_vec * gamma(1+1/c)
 tau_step = np.diff(tau_vec)[0] / 2
 tau_edges = np.concatenate(([0], np.arange(tau_step/2, tau_vec[-1]+tau_step, tau_step)))
 tauc_methods = ["flat"]
-C_i_vec = [4] # For generation of cell metric data
+C_i_vec = [2,3,4] # For generation of cell metric data
 results_pre_labs = ['gte_thresh']
 #results_pre_labs = ['distribution_avg']
-overwrite_robustness = False
+overwrite_robustness = True
 overwrite_cellmetric = True
 
 # Function to read in things specific to given results as global variables
@@ -176,8 +176,9 @@ for res_i, results_pre in enumerate(results_pre_labs):
     argmaxrob = np.load(fn_prefix + "argmaxrob.npy")
     rob_thresh_vec = np.load(fn_prefix + "rob_thresh_vec.npy")
     for C_i in C_i_vec:
-        if os.path.isdir(fn_prefix + f"{C_i}") == False:
-            os.makedirs(fn_prefix + f"{C_i}")
+        tauhat_min = np.round(C_vec[C_i]/ncell_tot, 2) 
+        if os.path.isdir(fn_prefix + f"{tauhat_min}") == False:
+            os.makedirs(fn_prefix + f"{tauhat_min}")
 
         # Select metric threshold indices as close as possible to desired omega samples
         #closest_thresh_i = np.array([np.abs(maxrob[:,C_i] - val).argmin() for val in omega_samples])
@@ -199,7 +200,7 @@ for res_i, results_pre in enumerate(results_pre_labs):
             opt_sl = slice_left_all[opt_sl_i]
             '''Note that we assume the tau axis of inoptima_vec is in sorted order'''
             inoptima_vec[opt_sl:opt_sl+opt_ncell, omega_sample_i] = True
-        np.save(fn_prefix + f"{C_i}/inoptima_vec.npy", inoptima_vec)
+        np.save(fn_prefix + f"{tauhat_min}/inoptima_vec.npy", inoptima_vec)
 
         # Now, fit a step function to each cell's data and store information based on that
         stepfit_T1 = np.ones(tau_flat.size) * np.nan
@@ -228,7 +229,7 @@ for res_i, results_pre in enumerate(results_pre_labs):
                 if best_fit_i == 1:
                     stepfit_T2[k] = sign * best_fit.x[1]
                 total_inoptima[k] = np.count_nonzero(y == 1)
-        np.save(fn_prefix + f"{C_i}/stepfit_T1.npy", stepfit_T1)
-        np.save(fn_prefix + f"{C_i}/stepfit_T2.npy", stepfit_T2)
-        np.save(fn_prefix + f"{C_i}/total_inoptima.npy", total_inoptima)
-        np.save(fn_prefix + f"{C_i}/closest_thresh_i.npy", closest_thresh_i)
+        np.save(fn_prefix + f"{tauhat_min}/stepfit_T1.npy", stepfit_T1)
+        np.save(fn_prefix + f"{tauhat_min}/stepfit_T2.npy", stepfit_T2)
+        np.save(fn_prefix + f"{tauhat_min}/total_inoptima.npy", total_inoptima)
+        np.save(fn_prefix + f"{tauhat_min}/closest_thresh_i.npy", closest_thresh_i)
