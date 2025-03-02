@@ -28,7 +28,7 @@ tau_vec = b_vec * gamma(1+1/c)
 tau_step = np.diff(tau_vec)[0] / 2
 tau_edges = np.concatenate(([0], np.arange(tau_step/2, tau_vec[-1]+tau_step, tau_step)))
 tauc_methods = ["flat"]
-C_i_vec = [2,3,4]
+C_i_vec = [0,1]
 results_pre = 'gte_thresh' 
 #results_pre = 'distribution_avg' 
 
@@ -422,25 +422,29 @@ for C_i in C_i_vec:
 
     # Read in / set constants
     set_globals(results_pre)
-    stepfit_T1 = np.load(fn_prefix + f"{tauhat_min}/stepfit_T1.npy")
+    #stepfit_T1 = np.load(fn_prefix + f"{tauhat_min}/stepfit_T1.npy")
     total_inoptima = np.load(fn_prefix + f"{tauhat_min}/total_inoptima.npy")
     closest_thresh_i = np.load(fn_prefix + f"{tauhat_min}/closest_thresh_i.npy")
+    inoptima_vec = np.load(fn_prefix + f"{tauhat_min}/inoptima_vec.npy")
 
     mapi_sorted = mapindices[tau_argsort].T
     # Initialize array for sensitivity metric; no changes needed to case of inclusions (T1 > 0)
     '''NOTE sampling is only approximately even across omega, could be throwing results off'''
     sens_metric = total_inoptima / closest_thresh_i.size
-    inclusion_filt = (stepfit_T1 > 0) & (stepfit_T1 <= 1)
+    '''DONT ACTUALLY NEED TO USE T1'''
+    #inclusion_filt = (stepfit_T1 > 0) & (stepfit_T1 <= 1)
     # Flip sign and adjust value for cells with exclusions
-    exclusion_filt = (stepfit_T1 < 0)
+    #exclusion_filt = (stepfit_T1 < 0)
+    exclusion_filt = (sens_metric != 1) & (inoptima_vec[:, 0] == True)
     sens_metric[exclusion_filt] = -1 * sens_metric[exclusion_filt]
 
-    alwaysex_filt = (stepfit_T1 == 2)
-    sens_metric[alwaysex_filt] = 0
-    '''could set this to -1, doesn't matter'''
+    #alwaysex_filt = (stepfit_T1 == 2)
+    #sens_metric[alwaysex_filt] = 0
+    '''change always in value to -1 for the sake of plotting'''
     '''Should split the quantity thats == 1 on top & bottom in the tau plot?'''
-    alwaysin_filt = (stepfit_T1 == 3)
-    sens_metric[alwaysin_filt] =-1
+    #alwaysin_filt = (stepfit_T1 == 3)
+    #sens_metric[alwaysin_filt] =-1
+    sens_metric[sens_metric == 1] = -1
 
     ### INITIAL TAU DISTRIBUTION VIZ ###
     colorbar_samples = np.linspace(-1, 1, 51)

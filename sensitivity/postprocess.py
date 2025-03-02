@@ -23,7 +23,7 @@ tau_vec = b_vec * gamma(1+1/c)
 tau_step = np.diff(tau_vec)[0] / 2
 tau_edges = np.concatenate(([0], np.arange(tau_step/2, tau_vec[-1]+tau_step, tau_step)))
 tauc_methods = ["flat"]
-C_i_vec = [2,3,4] # For generation of cell metric data
+C_i_vec = [0,1] # For generation of cell metric data
 results_pre_labs = ['gte_thresh']
 #results_pre_labs = ['distribution_avg']
 overwrite_robustness = True
@@ -203,33 +203,35 @@ for res_i, results_pre in enumerate(results_pre_labs):
         np.save(fn_prefix + f"{tauhat_min}/inoptima_vec.npy", inoptima_vec)
 
         # Now, fit a step function to each cell's data and store information based on that
-        stepfit_T1 = np.ones(tau_flat.size) * np.nan
-        stepfit_T2 = np.ones(tau_flat.size) * np.nan
+        #stepfit_T1 = np.ones(tau_flat.size) * np.nan
+        #stepfit_T2 = np.ones(tau_flat.size) * np.nan
         total_inoptima = np.ones(tau_flat.size) * np.nan
         for k in tqdm(range(tau_flat.size)):
         #for k in tqdm(range(100)):
-            # Retrieve and relabel cell k's data for fitting
-            X = maxrob[:, C_i][closest_thresh_i]
-            y = inoptima_vec[k]
-            y0_i = np.argwhere(y[0] == allowed_values)[0][0]
-            y0 = allowed_values[y0_i]
-            # Check if always in/ex-cluded from optima
-            if np.all(y == y0):
-                # Encode 2 -> always excluded, 3 -> always included
-                stepfit_T1[k] = y0 + 2
-                total_inoptima[k] = y0*y.size
-            # Perform fitting otherwise
-            else:
-                # Determine the best fit
-                best_fit = stepfit1(X,y,y0_i); best_fit_i = 0
-                # Use y0 to determine the sign
-                sign = 1 if y0 == 0 else -1
-                # Store the threshold values with direction from sign
-                stepfit_T1[k] = sign * best_fit.x[0]
-                if best_fit_i == 1:
-                    stepfit_T2[k] = sign * best_fit.x[1]
-                total_inoptima[k] = np.count_nonzero(y == 1)
-        np.save(fn_prefix + f"{tauhat_min}/stepfit_T1.npy", stepfit_T1)
-        np.save(fn_prefix + f"{tauhat_min}/stepfit_T2.npy", stepfit_T2)
+            total_inoptima[k] = np.count_nonzero(inoptima_vec[k] == 1)
+            ## Retrieve and relabel cell k's data for fitting
+            #X = maxrob[:, C_i][closest_thresh_i]
+            #y = inoptima_vec[k]
+            #y0_i = np.argwhere(y[0] == allowed_values)[0][0]
+            #y0 = allowed_values[y0_i]
+            ## Check if always in/ex-cluded from optima
+            #if np.all(y == y0):
+            #    # Encode 2 -> always excluded, 3 -> always included
+            #    '''Could just store as 0 and 1/-1 respecitvely if only using T1'''
+            #    stepfit_T1[k] = y0 + 2
+            #    total_inoptima[k] = y0*y.size
+            ## Perform fitting otherwise
+            #else:
+            #    # Determine the best fit
+            #    best_fit = stepfit1(X,y,y0_i); best_fit_i = 0
+            #    # Use y0 to determine the sign
+            #    sign = 1 if y0 == 0 else -1
+            #    # Store the threshold values with direction from sign
+            #    stepfit_T1[k] = sign * best_fit.x[0]
+            #    if best_fit_i == 1:
+            #        stepfit_T2[k] = sign * best_fit.x[1]
+            #    total_inoptima[k] = np.count_nonzero(y == 1)
+        #np.save(fn_prefix + f"{tauhat_min}/stepfit_T1.npy", stepfit_T1)
+        #np.save(fn_prefix + f"{tauhat_min}/stepfit_T2.npy", stepfit_T2)
         np.save(fn_prefix + f"{tauhat_min}/total_inoptima.npy", total_inoptima)
         np.save(fn_prefix + f"{tauhat_min}/closest_thresh_i.npy", closest_thresh_i)
