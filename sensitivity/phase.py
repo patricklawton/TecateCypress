@@ -15,7 +15,7 @@ constants['c'] = 1.42
 constants['Aeff'] = 7.29
 #constants['t_final'] = 600
 constants['t_final'] = 300
-constants['sim_method'] = 'nint'
+constants['sim_method'] = 'discrete'
 constants['ul_coord'] = [1500, 2800]
 constants['lr_coord'] = [2723, 3905]
 '''Should just set this to min tau_vec I think, which it basically already is'''
@@ -23,10 +23,10 @@ constants['min_tau'] = 2
 constants['A_cell'] = 270**2 / 1e6 #km^2
 constants['plotting_tau_bw_ratio'] = 30 #For binning initial tau (with uncertainty) in phase slice plots
 constants['tauc_baseline'] = 200 #years, max(tauc) possible at min(ncell) given C
-#constants['ncell_samples'] = 20
-constants['ncell_samples'] = 15
-#constants['slice_samples'] = 40
-constants['slice_samples'] = 30
+constants['ncell_samples'] = 25
+#constants['ncell_samples'] = 15
+constants['slice_samples'] = 50
+#constants['slice_samples'] = 30
 constants['baseline_A_min'] = 10 #km^2
 constants['baseline_A_max'] = 160 * 2.0043963553530753
 #constants['baseline_A_max'] = (160 * 2.0043963553530753) * 2
@@ -65,7 +65,7 @@ num_computations_finished = 0
 with tqdm(total=total_computations) as pbar:
     for metric in metrics:
         constants.update({'metric': metric})
-        constants.update({'overwrite_metrics': False}) #Set True to overwrite metrics (only once per metric)
+        constants.update({'overwrite_metrics': True}) #Set True to overwrite metrics (only once per metric)
         constants.update({'overwrite_scaleparams': False}) 
         for (tauc_method_i, tauc_method) in enumerate(tauc_methods):
             if tauc_method_i > 0:

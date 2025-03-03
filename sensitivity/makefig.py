@@ -28,7 +28,7 @@ tau_vec = b_vec * gamma(1+1/c)
 tau_step = np.diff(tau_vec)[0] / 2
 tau_edges = np.concatenate(([0], np.arange(tau_step/2, tau_vec[-1]+tau_step, tau_step)))
 tauc_methods = ["flat"]
-C_i_vec = [0,1]
+C_i_vec = [0,1,2,3,4]
 results_pre = 'gte_thresh' 
 #results_pre = 'distribution_avg' 
 

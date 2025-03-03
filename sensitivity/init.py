@@ -29,7 +29,7 @@ Aeff_vec = np.array([np.round(A_cell, 2)])
 #Aeff_vec = np.array([1.0])
 t_final_vec = np.array([300])
 demographic_samples_vec = np.array([500])
-method_vec = ["nint"]
+method_vec = ["discrete"]
 #for Aeff, t_final, demographic_samples in zip(Aeff_vec, t_final_vec, demographic_samples_vec):
 for Aeff, t_final, demographic_samples, method in product(Aeff_vec, t_final_vec, 
                                                           demographic_samples_vec, 
