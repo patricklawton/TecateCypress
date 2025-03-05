@@ -674,7 +674,8 @@ class Phase:
             metric_exp_dist[metric_exp_dist < 0] = 0.0
             if np.any(metric_exp_dist < 0): sys.exit(f"metric_expect is negative ({self.metric_expect}), exiting!")
         elif self.metric == 'lambda_s':
-            threshold = 0.975
+            #threshold = 0.975
+            threshold = 0.994
         '''Still calling this metric_expect for now but should change this to metric_quantity or something'''
         self.metric_expect = np.count_nonzero(metric_exp_dist >= threshold) / self.ncell_tot
 
