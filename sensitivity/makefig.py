@@ -224,7 +224,7 @@ set_globals(results_pre)
 
 # Plot <metric> distribution outline
 tau_max = max(tau_edges)
-bin_step = 0.01
+bin_step = 0.005
 bin_edges = np.concatenate(([0], np.arange(bin_step/2, 1+bin_step, bin_step)))
 color = 'limegreen'
 metric_interp = spl(tau_flat[tau_flat < tau_max])
@@ -241,14 +241,15 @@ if metric == 'P_s':
     axes[0,0].set_xlim(-0.01, xmax)
 else:
     mlab = "$<\lambda_s>$"
-    xticks = [0.85, 0.9, 0.95, 1]
-    axes[0,0].set_xlim(0.83,1.01)
+    xticks = [0.9, 0.95, 1]
+    #xticks = np.round(np.arange(0.9, 1.02, 0.02), 3)
+    axes[0,0].set_xlim(0.89,1.0+bin_step)
     axes[0,0].set_xlabel(rf"average stochastic growth rate {mlab}")
 # Fill in area gte thresh
 if metric == 'P_s':
     thresh = 0.5
 elif metric == 'lambda_s':
-    thresh = 0.95
+    thresh = 0.975
 bin_i = np.argmin(np.abs(bin_edges - thresh))
 axes[0,0].hist(metric_interp[metric_interp >= bin_edges[bin_i]], bins=bin_edges, color=color, 
                histtype='bar', alpha=0.6);

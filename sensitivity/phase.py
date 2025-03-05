@@ -65,7 +65,7 @@ num_computations_finished = 0
 with tqdm(total=total_computations) as pbar:
     for metric in metrics:
         constants.update({'metric': metric})
-        constants.update({'overwrite_metrics': True}) #Set True to overwrite metrics (only once per metric)
+        constants.update({'overwrite_metrics': False}) #Set True to overwrite metrics (only once per metric)
         constants.update({'overwrite_scaleparams': False}) 
         for (tauc_method_i, tauc_method) in enumerate(tauc_methods):
             if tauc_method_i > 0:

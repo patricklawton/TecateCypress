@@ -180,9 +180,13 @@ def compute_lambda_s(job):
                 final_i = zero_i_min
 
                 t = census_t[burn_in_end_i:final_i]
+                if len(t) == 1:
+                    print('hey')
                 N_slice = N_t[burn_in_end_i:final_i]
                 lam_s_replica = np.product(N_slice[1:] / np.roll(N_slice, 1)[1:]) ** (1/len(t))
                 lam_s_extir.append(lam_s_replica)
+            if np.any(lam_s_extir == 1):
+                print('that shouldnt happen')
 
             # Now handle cases with no extirpation
             N_tot = np.delete(N_tot, extirpated_replicas, axis=0)
@@ -193,10 +197,45 @@ def compute_lambda_s(job):
             #lam_s_vec = np.sum(log_ratios, axis=1) / N_slice.shape[1]
             growthrates = N_slice[:,1:] / np.roll(N_slice, 1, 1)[:,1:]
             #lam_products = np.product(, axis=1)
-            lam_s_vec = np.product(growthrates, axis=1) ** (1/N_slice.shape[1]) 
+            lam_s_vec = np.product(growthrates, axis=1) ** (1/(N_slice.shape[1]-1)) 
+            if np.any(lam_s_vec == 1):
+                print('that also shouldnt happen')
 
             # Compute final lambda value
             lam_s_all = np.concatenate((lam_s_vec, lam_s_extir))
+
+            #N_tot = np.array(job.data[f"N_tot/{b}"])
+            #nonzero_counts = np.count_nonzero(N_tot, axis=1)  # Count nonzero timesteps
+            #extirpated_replicas = np.nonzero(nonzero_counts < job.sp.t_final)[0]  # Find extirpated replicas
+
+            ## Create a mask where N_tot > 0 (avoiding inf values)
+            #valid_mask = N_tot > 0
+
+            ## Indices for slicing
+            #start_i = burn_in_end_i  # Start after burn-in
+            #final_i = N_tot.shape[1]  # Last valid timestep
+
+            ## Apply mask and slice
+            #masked_N_tot = np.where(valid_mask, N_tot, np.nan)  # Replace zeros with NaN (ignored in np.nanprod)
+            #N_slice = masked_N_tot[:, start_i:final_i]  # Select valid timesteps
+
+            ## Compute number of valid timesteps for each simulation
+            #valid_timesteps = np.sum(valid_mask[:, start_i:final_i], axis=1) - 1  # Subtract 1 to avoid zero exponent
+
+            ## Compute per-replica growth rates (ignore NaNs)
+            #growthrates = N_slice[:, 1:] / np.roll(N_slice, 1, axis=1)[:, 1:]
+
+            ## Avoid zero exponent by setting invalid cases to NaN
+            #valid_exponent_mask = valid_timesteps > 0
+            #lam_s_all = np.full(N_tot.shape[0], np.nan)  # Default to NaN
+            #lam_s_all[valid_exponent_mask] = np.nanprod(growthrates[valid_exponent_mask], axis=1) ** (1 / valid_timesteps[valid_exponent_mask])
+            #if np.any(np.sum(valid_mask[:, start_i:final_i], axis=1) == 1):
+            #    print('thats not good')
+            if np.any(np.isnan(lam_s_all)):
+                print('theres nans')
+            if np.any(lam_s_all == 1):
+                print('theres exact 1s')
+
             if len(lam_s_all) != 0:
                 job.data[f'lambda_s/{b}'] = np.mean(lam_s_all) 
             else:
@@ -635,7 +674,7 @@ class Phase:
             metric_exp_dist[metric_exp_dist < 0] = 0.0
             if np.any(metric_exp_dist < 0): sys.exit(f"metric_expect is negative ({self.metric_expect}), exiting!")
         elif self.metric == 'lambda_s':
-            threshold = 0.95
+            threshold = 0.975
         '''Still calling this metric_expect for now but should change this to metric_quantity or something'''
         self.metric_expect = np.count_nonzero(metric_exp_dist >= threshold) / self.ncell_tot
 
