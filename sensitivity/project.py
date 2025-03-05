@@ -169,8 +169,10 @@ def compute_lambda_s(job):
             N_tot = np.array(job.data[f"N_tot/{b}"])
             nonzero_counts = np.count_nonzero(N_tot, axis=1)
             extirpated_replicas = np.nonzero(nonzero_counts < job.sp.t_final)[0]
+            all_growthrates = np.zeros(N_tot.shape)
 
             # First handle replicas where extirpations occur
+            '''Could probably speed up with masking'''
             lam_s_extir = []
             for rep_i in extirpated_replicas:
                 N_t = N_tot[rep_i]
@@ -189,8 +191,9 @@ def compute_lambda_s(job):
             N_slice = N_tot[:,start_i:final_i]
             #log_ratios = np.log(N_slice[:,1:] / np.roll(N_slice, 1, 1)[:,1:])
             #lam_s_vec = np.sum(log_ratios, axis=1) / N_slice.shape[1]
-            lam_products = np.product(N_slice[:,1:] / np.roll(N_slice, 1, 1)[:,1:], axis=1)
-            lam_s_vec = lam_products ** (1/N_slice.shape[1]) 
+            growthrates = N_slice[:,1:] / np.roll(N_slice, 1, 1)[:,1:]
+            #lam_products = np.product(, axis=1)
+            lam_s_vec = np.product(growthrates, axis=1) ** (1/N_slice.shape[1]) 
 
             # Compute final lambda value
             lam_s_all = np.concatenate((lam_s_vec, lam_s_extir))

@@ -89,6 +89,123 @@ tau_sorted = tau_flat[tau_argsort]
 
 ################################################################
 
+fig = plt.figure(figsize=np.array([12, 6])*2.)
+gs = GridSpec(4, 4, figure=fig, width_ratios=[1,1,1,1], height_ratios=[1,1,1,1])
+ax1 = fig.add_subplot(gs[:, :2])  # Left panel for FDM
+ax2 = fig.add_subplot(gs[0, 2:])  # Top right for tau hist
+ax3 = fig.add_subplot(gs[1:, 2:])  # Bottom right for P(S) vs tau
+
+#### FDM map ####
+# Color data
+#cmap = copy.copy(cm.YlOrRd)
+#vmin = 0; vmax = 1
+cmap = copy.copy(cm.YlOrRd_r)
+vmin = 15; vmax = 45
+norm = colors.Normalize(vmin=vmin, vmax=vmax)
+colored_data = cmap(norm(tau_raster))
+# Color background
+colored_data[maps_filt == False] = colors.to_rgba('black', alpha=0.3)
+# Crop out border where all nans
+nonzero_indices = np.nonzero(maps_filt)
+row_min, row_max = nonzero_indices[0].min(), nonzero_indices[0].max()
+col_min, col_max = nonzero_indices[1].min(), nonzero_indices[1].max()
+colored_data = colored_data[row_min:row_max + 1, col_min:col_max + 1]
+
+im1 = ax1.imshow(colored_data)
+# Add the colorbar to inset axis
+cbar_ax = inset_axes(ax1, width="5%", height="50%", loc='center',
+                     bbox_to_anchor=(-0.1, -0.15, 0.65, 0.9),  # Centered on the plot,
+                     bbox_transform=ax1.transAxes, borderpad=0)
+sm = cm.ScalarMappable(cmap=cmap, norm=norm)
+cbar = fig.colorbar(sm, cax=cbar_ax, orientation="vertical")#, ticks=[0, 0.25, 0.5, 0.75, 1])
+cbar_ticks = cbar.get_ticks()
+cbar.set_ticks(cbar_ticks)
+cbar_ticklabels = [rf'$\leq${cbar_ticks[0]}'] + [t for t in cbar_ticks[1:-1]] + [rf'$\geq${cbar_ticks[-1]}']
+cbar.set_ticklabels(cbar_ticklabels)
+#cbar.set_label('30 year fire probability', color='white', rotation=-90, labelpad=cbar_lpad)
+cbar.set_label(r'average fire return interval $\tau$', color='white', rotation=-90, labelpad=cbar_lpad)
+cbar.ax.tick_params(labelcolor='white', color='white')
+ax1.set_xticks([])
+ax1.set_yticks([])
+########
+
+#### P(S) vs tau ####
+set_globals(results_pre)
+metric_edges = np.linspace(0, 1, 50)
+metric_hist = np.histogram2d(all_tau, all_metric, bins=[tau_edges[::2], metric_edges], density=False)
+cmap = copy.copy(cm.YlGn)
+cmap.set_bad(cmap(0.0))
+imshow_mat = np.flip(np.transpose(metric_hist[0]), axis=0)
+samples_per_tau = int(len(all_metric)/len(b_vec))
+imshow_mat = imshow_mat / samples_per_tau
+# smoothed = scipy.ndimage.gaussian_filter(imshow_mat, sigma=0.125)
+im = ax3.imshow(imshow_mat, cmap=cmap,
+              norm=colors.LogNorm(vmax=1), interpolation="nearest")
+
+# Add the colorbar to inset axis
+cbar_ax = inset_axes(ax3, width="5%", height="50%", loc='center',
+                     bbox_to_anchor=(0.5, -0.1, 0.55, 1.1),
+                     bbox_transform=ax3.transAxes, borderpad=0)
+sm = cm.ScalarMappable(cmap=cmap, norm=norm)
+cbar = fig.colorbar(sm, cax=cbar_ax, orientation="vertical", ticks=[0, 0.25, 0.5, 0.75, 1.])
+
+# Make interpolation function for <metric> wrt tau
+metric_expect_vec = np.ones(tau_vec.size) * np.nan
+for tau_i, tau in enumerate(tau_vec):
+    tau_filt = (all_tau == tau)
+    metric_slice = all_metric[tau_filt]
+    metric_expect_vec[tau_i] = np.mean(metric_slice)
+t = tau_vec[2:-2:2] 
+k = 3
+t = np.r_[(tau_vec[1],)*(k+1), t, (tau_vec[-1],)*(k+1)]
+spl = make_lsq_spline(tau_vec[1:], metric_expect_vec[1:], t, k)
+
+S_samples = np.linspace(0, 1, 5)
+yticks = (imshow_mat.shape[0] - 1) * S_samples
+ax3.set_yticks(yticks, labels=np.flip(S_samples));
+if metric == 'P_s':
+    cbar.set_label(rf'frequency of $S$ given ${{\tau}}$', rotation=-90, labelpad=cbar_lpad)
+    ax3.set_ylabel(rf'simulated survival probability $S$')
+elif metric == 'lambda_s':
+    cbar.set_label(rf'frequency of $\lambda_s$ given ${{\tau}}$', rotation=-90, labelpad=cbar_lpad)
+    ax3.set_ylabel(rf'simulated stochastic growth rate $\lambda_s$')
+ax3.set_ylim(np.array([imshow_mat.shape[0], 0]) - 0.5)
+tau_samples = np.arange(20, 140, 20).astype(int)
+xticks = tau_samples / (tau_step*2)
+ax3.set_xticks(xticks, labels=tau_samples);
+ax3.set_xlabel(r"average fire return interval $\tau$")
+ax3.set_xlim(1, imshow_mat.shape[1]-1)
+
+# Overplot interpolated means
+tau_samples = np.arange(5, 140, 2)
+mean_points = (imshow_mat.shape[0]-1) * (1 - spl(tau_samples))
+x_samples = tau_samples / (tau_step*2)
+ax3.plot(x_samples, mean_points, color='k')
+dot_spacing = 5
+ax3.scatter(x_samples[::dot_spacing], mean_points[::dot_spacing], color='k')
+ax3.plot([], [], marker='o', color='k', label=r'$<S>$')
+ax3.legend(bbox_to_anchor=(0.2, -0.05, 0.5, 0.5), fontsize=21)
+########
+
+#### INITIAL TAU DISTRIBUTION ####
+tau_flat = tau_raster[maps_filt]
+tau_argsort = np.argsort(tau_flat)
+ax2.hist(tau_flat, bins=tau_edges, color='black', histtype='step', lw=histlw, density=True);
+ax2.set_yticks([])
+ax2.set_ylabel(r"$\tau$ frequency")
+# ax2.set_xlabel(r"average fire return interval $\tau$")
+ax2.set_xticks([])
+# Use the boundaries of the P(S) imshow plot for the tau limits
+ax2.set_xlim(metric_hist[1][1], metric_hist[1][imshow_mat.shape[1]-1])
+gs.update(hspace=-0.21)  # Adjust vertical spacing
+gs.update(wspace=0.3)
+########
+
+fig.savefig(fig_prefix + 'fig1_pre.png', bbox_inches='tight', dpi=dpi)
+fig.savefig(fig_prefix + 'fig1_pre.svg', bbox_inches='tight')
+
+################################################################
+
 # Initialize figure
 #fig, axes = plt.subplots(2, 2, figsize=np.array([7.,5])*2.5)
 fig = plt.figure(figsize=np.array([7.75, 5])*2.5)
@@ -104,16 +221,6 @@ gs.update(hspace=0.4)
 
 #### VIZ OF METAPOP METRIC ####
 set_globals(results_pre)
-# Make interpolation function for <metric> wrt tau
-metric_expect_vec = np.ones(tau_vec.size) * np.nan
-for tau_i, tau in enumerate(tau_vec):
-    tau_filt = (all_tau == tau)
-    metric_slice = all_metric[tau_filt]
-    metric_expect_vec[tau_i] = np.mean(metric_slice)
-t = tau_vec[2:-2:2] 
-k = 3
-t = np.r_[(tau_vec[1],)*(k+1), t, (tau_vec[-1],)*(k+1)]
-spl = make_lsq_spline(tau_vec[1:], metric_expect_vec[1:], t, k)
 
 # Plot <metric> distribution outline
 tau_max = max(tau_edges)
@@ -299,112 +406,6 @@ fig.colorbar(scatter, cax=cbar_ax, orientation='horizontal',
 
 fig.savefig(fig_prefix + 'fig2_pre.png', bbox_inches='tight', dpi=dpi)
 fig.savefig(fig_prefix + 'fig2_pre.svg', bbox_inches='tight')
-
-################################################################
-
-fig = plt.figure(figsize=np.array([12, 6])*2.)
-gs = GridSpec(4, 4, figure=fig, width_ratios=[1,1,1,1], height_ratios=[1,1,1,1])
-ax1 = fig.add_subplot(gs[:, :2])  # Left panel for FDM
-ax2 = fig.add_subplot(gs[0, 2:])  # Top right for tau hist
-ax3 = fig.add_subplot(gs[1:, 2:])  # Bottom right for P(S) vs tau
-
-#### FDM map ####
-# Color data
-#cmap = copy.copy(cm.YlOrRd)
-#vmin = 0; vmax = 1
-cmap = copy.copy(cm.YlOrRd_r)
-vmin = 15; vmax = 45
-norm = colors.Normalize(vmin=vmin, vmax=vmax)
-colored_data = cmap(norm(tau_raster))
-# Color background
-colored_data[maps_filt == False] = colors.to_rgba('black', alpha=0.3)
-# Crop out border where all nans
-nonzero_indices = np.nonzero(maps_filt)
-row_min, row_max = nonzero_indices[0].min(), nonzero_indices[0].max()
-col_min, col_max = nonzero_indices[1].min(), nonzero_indices[1].max()
-colored_data = colored_data[row_min:row_max + 1, col_min:col_max + 1]
-
-im1 = ax1.imshow(colored_data)
-# Add the colorbar to inset axis
-cbar_ax = inset_axes(ax1, width="5%", height="50%", loc='center',
-                     bbox_to_anchor=(-0.1, -0.15, 0.65, 0.9),  # Centered on the plot,
-                     bbox_transform=ax1.transAxes, borderpad=0)
-sm = cm.ScalarMappable(cmap=cmap, norm=norm)
-cbar = fig.colorbar(sm, cax=cbar_ax, orientation="vertical")#, ticks=[0, 0.25, 0.5, 0.75, 1])
-cbar_ticks = cbar.get_ticks()
-cbar.set_ticks(cbar_ticks)
-cbar_ticklabels = [rf'$\leq${cbar_ticks[0]}'] + [t for t in cbar_ticks[1:-1]] + [rf'$\geq${cbar_ticks[-1]}']
-cbar.set_ticklabels(cbar_ticklabels)
-#cbar.set_label('30 year fire probability', color='white', rotation=-90, labelpad=cbar_lpad)
-cbar.set_label(r'average fire return interval $\tau$', color='white', rotation=-90, labelpad=cbar_lpad)
-cbar.ax.tick_params(labelcolor='white', color='white')
-ax1.set_xticks([])
-ax1.set_yticks([])
-########
-
-#### P(S) vs tau ####
-set_globals(results_pre)
-metric_edges = np.linspace(0, 1, 50)
-metric_hist = np.histogram2d(all_tau, all_metric, bins=[tau_edges[::2], metric_edges], density=False)
-cmap = copy.copy(cm.YlGn)
-cmap.set_bad(cmap(0.0))
-imshow_mat = np.flip(np.transpose(metric_hist[0]), axis=0)
-samples_per_tau = int(len(all_metric)/len(b_vec))
-imshow_mat = imshow_mat / samples_per_tau
-# smoothed = scipy.ndimage.gaussian_filter(imshow_mat, sigma=0.125)
-im = ax3.imshow(imshow_mat, cmap=cmap,
-              norm=colors.LogNorm(vmax=1), interpolation="nearest")
-
-# Add the colorbar to inset axis
-cbar_ax = inset_axes(ax3, width="5%", height="50%", loc='center',
-                     bbox_to_anchor=(0.5, -0.1, 0.55, 1.1),
-                     bbox_transform=ax3.transAxes, borderpad=0)
-sm = cm.ScalarMappable(cmap=cmap, norm=norm)
-cbar = fig.colorbar(sm, cax=cbar_ax, orientation="vertical", ticks=[0, 0.25, 0.5, 0.75, 1.])
-
-S_samples = np.linspace(0, 1, 5)
-yticks = (imshow_mat.shape[0] - 1) * S_samples
-ax3.set_yticks(yticks, labels=np.flip(S_samples));
-if metric == 'P_s':
-    cbar.set_label(rf'frequency of $S$ given ${{\tau}}$', rotation=-90, labelpad=cbar_lpad)
-    ax3.set_ylabel(rf'simulated survival probability $S$')
-elif metric == 'lambda_s':
-    cbar.set_label(rf'frequency of $\lambda_s$ given ${{\tau}}$', rotation=-90, labelpad=cbar_lpad)
-    ax3.set_ylabel(rf'simulated stochastic growth rate $\lambda_s$')
-ax3.set_ylim(np.array([imshow_mat.shape[0], 0]) - 0.5)
-tau_samples = np.arange(20, 140, 20).astype(int)
-xticks = tau_samples / (tau_step*2)
-ax3.set_xticks(xticks, labels=tau_samples);
-ax3.set_xlabel(r"average fire return interval $\tau$")
-ax3.set_xlim(1, imshow_mat.shape[1]-1)
-
-# Overplot interpolated means
-tau_samples = np.arange(5, 140, 2)
-mean_points = (imshow_mat.shape[0]-1) * (1 - spl(tau_samples))
-x_samples = tau_samples / (tau_step*2)
-ax3.plot(x_samples, mean_points, color='k')
-dot_spacing = 5
-ax3.scatter(x_samples[::dot_spacing], mean_points[::dot_spacing], color='k')
-ax3.plot([], [], marker='o', color='k', label=r'$<S>$')
-ax3.legend(bbox_to_anchor=(0.2, -0.05, 0.5, 0.5), fontsize=21)
-########
-
-#### INITIAL TAU DISTRIBUTION ####
-tau_flat = tau_raster[maps_filt]
-tau_argsort = np.argsort(tau_flat)
-ax2.hist(tau_flat, bins=tau_edges, color='black', histtype='step', lw=histlw, density=True);
-ax2.set_yticks([])
-ax2.set_ylabel(r"$\tau$ frequency")
-# ax2.set_xlabel(r"average fire return interval $\tau$")
-ax2.set_xticks([])
-# Use the boundaries of the P(S) imshow plot for the tau limits
-ax2.set_xlim(metric_hist[1][1], metric_hist[1][imshow_mat.shape[1]-1])
-gs.update(hspace=-0.21)  # Adjust vertical spacing
-gs.update(wspace=0.3)
-########
-
-fig.savefig(fig_prefix + 'fig1_pre.png', bbox_inches='tight', dpi=dpi)
-fig.savefig(fig_prefix + 'fig1_pre.svg', bbox_inches='tight')
 
 ################################################################
 

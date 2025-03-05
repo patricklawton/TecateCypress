@@ -124,18 +124,19 @@ class Model:
                     N_vec[pop_i][age_i_vec[-1]] = 0
                     age_i_vec[-1] = len(self.t_vec) - 2
                 # Determine if this is a single age population
-                if len(age_i_vec) > 1:
-                    single_age = False
-                else:
-                    single_age = True
-                    age_i = age_i_vec[0]
-                    N = N_vec[pop_i][age_i]
+                #if len(age_i_vec) > 1:
+                #    single_age = False
+                #else:
+                #    single_age = True
+                #    age_i = age_i_vec[0]
+                #    N = N_vec[pop_i][age_i]
+                single_age = False
 
                 # If a fire occurs this timestep, reproduce
                 if self.t_fire_vec[pop_i, t_i]:
                     # Update seedlings, kill all adults
                     if not single_age:
-                        #'''Should only draw values for ages that are present, inefficient otherwise'''
+                        '''Should only draw values for ages that are present, inefficient otherwise'''
                         #epsilon_rho = rng.lognormal(np.zeros(len(self.t_vec)), sigm_a)
                         #fecundities = rho_a*epsilon_rho
                         fecundities = rho_a*epsilon_rho_vec[pop_i]
@@ -143,7 +144,9 @@ class Model:
                         # Make it deterministic
                         #num_births = fecundities*N_vec[pop_i]
                         N_vec[pop_i,0] = num_births.sum()
-                        N_vec[pop_i,1:] = 0
+                        '''Actually, let 1 out of 400 survive'''
+                        N_vec[pop_i,1:] = np.roll(N_vec[pop_i,1:]*0.0025, 1)
+                        #N_vec[pop_i,1:] = 0
                     else:
                         #epsilon_rho = rng.lognormal(0, sigm_a[age_i])
                         #fecundities = rho_a[age_i]*epsilon_rho
@@ -314,12 +317,13 @@ class Model:
         # Get initial age time indices
         init_age_i_vec = [np.nonzero(self.t_vec == a)[0][0] for a in self.init_age]
 
+        # Initialize empty per age abundnace vec updated each timestep in discrete sims
         N_vec = np.ma.array(np.zeros((len(self.N_0_1), len(self.t_vec))))
         for pop_i, N_pop in enumerate(N_vec):
             a_i = init_age_i_vec[pop_i]
             N_pop[a_i] = self.N_0_1[pop_i]
         N_vec = N_vec.astype(int)
-        # Initialize empty abundance array
+        # Initialize empty total abundance array (used in nint and discrete sims)
         self.census_t = self.t_vec[::census_every]
         self.N_tot_vec = np.nan * np.ones((len(self.N_0_1), len(self.census_t)))
         self.N_tot_vec[:,0] = self.N_0_1
