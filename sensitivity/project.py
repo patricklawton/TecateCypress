@@ -48,7 +48,6 @@ def run_sims(job):
     N_0_1 = Aeff*params['K_adult']
     N_0_1_vec = np.repeat(N_0_1, num_reps)
     init_age = params['a_mature'] - (np.log((1/0.90)-1) / params['eta_rho']) # Age where 90% of reproductive capacity reached
-    print('init_age:', init_age)
     init_age = int(init_age + 0.5) # Round to nearest integer
     t_vec = np.arange(delta_t, job.sp.t_final+delta_t, delta_t)
 
@@ -265,11 +264,6 @@ class Phase:
         if np.isnan(self.final_max_tau): 
             # NaN here means set to max of fri_vec
             self.final_max_tau = max(self.tau_vec)
-        self.baseline_A_vec = np.linspace(self.baseline_A_min, self.baseline_A_max, self.baseline_A_samples)
-
-        # Generate resource allocation values
-        self.ncell_baseline_vec = np.round(self.baseline_A_vec / self.A_cell).astype(int) 
-        self.C_vec = self.ncell_baseline_vec * self.tauc_baseline
 
         # Set generator for random uncertainties
         self.rng = np.random.default_rng()
@@ -354,7 +348,6 @@ class Phase:
                 ax.set_xlabel('<FRI>')
                 ax.set_ylabel(self.metric)
                 figs_dir = f"{self.meta_metric}/figs/Aeff_{self.Aeff}/tfinal_{self.t_final}/metric_{self.metric}/"
-                print(figs_dir)
                 if not os.path.isdir(figs_dir):
                     os.makedirs(figs_dir)
                 print("saving sensitivity figure")
@@ -425,6 +418,8 @@ class Phase:
 
         # Generate samples of remaining state variables
         self.ncell_tot = len(self.tau_flat)
+        # Get samples of total shift to fire regime (C)  
+        self.C_vec = self.tauc_min_samples * self.ncell_tot
         # Use the max post alteration tau to get an upper bound on right hand of initial tau slices
         self.tau_argsort_ref = np.argsort(self.tau_flat)
         tau_sorted = self.tau_flat[self.tau_argsort_ref] 
@@ -435,7 +430,7 @@ class Phase:
         # Min left bound set by user-defined constant
         slice_left_min = np.nonzero(tau_sorted > self.min_tau)[0][0]
         # Generate slice sizes of the tau distribution
-        self.ncell_vec = np.linspace(max(self.ncell_baseline_vec), self.slice_right_max, self.ncell_samples)
+        self.ncell_vec = np.linspace(self.ncell_min, self.slice_right_max, self.ncell_samples)
         self.ncell_vec = np.round(self.ncell_vec).astype(int)
         # Max left bound set by smallest slice size
         self.slice_left_max = self.slice_right_max - min(self.ncell_vec)
@@ -674,8 +669,8 @@ class Phase:
             metric_exp_dist[metric_exp_dist < 0] = 0.0
             if np.any(metric_exp_dist < 0): sys.exit(f"metric_expect is negative ({self.metric_expect}), exiting!")
         elif self.metric == 'lambda_s':
-            #threshold = 0.975
-            threshold = 0.994
+            threshold = 0.975
+            #threshold = 0.994
         '''Still calling this metric_expect for now but should change this to metric_quantity or something'''
         self.metric_expect = np.count_nonzero(metric_exp_dist >= threshold) / self.ncell_tot
 

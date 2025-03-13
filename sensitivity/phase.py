@@ -22,16 +22,13 @@ constants['lr_coord'] = [2723, 3905]
 constants['min_tau'] = 2
 constants['A_cell'] = 270**2 / 1e6 #km^2
 constants['plotting_tau_bw_ratio'] = 30 #For binning initial tau (with uncertainty) in phase slice plots
-constants['tauc_baseline'] = 200 #years, max(tauc) possible at min(ncell) given C
+constants['ncell_min'] = 2_500
 #constants['ncell_samples'] = 25
 constants['ncell_samples'] = 15
 #constants['slice_samples'] = 50
 constants['slice_samples'] = 30
-constants['baseline_A_min'] = 10 #km^2
-constants['baseline_A_max'] = 160 * 2.0043963553530753
-#constants['baseline_A_max'] = (160 * 2.0043963553530753) * 2
-#constants['baseline_A_samples'] = 9
-constants['baseline_A_samples'] = 5
+# Use the minimum tauc values (i.e. when spread over all cells) to determine C values
+constants['tauc_min_samples'] = np.arange(1, 17, 2) 
 constants['root'] = 0 #For mpi
 constants.update({'final_max_tau': np.nan})
 constants['overwrite_results'] = True
@@ -92,7 +89,7 @@ with tqdm(total=total_computations) as pbar:
                 # Generate uncertainties on initial tau values
                 pproc.generate_eps_tau(mu_tau, sigm_tau)
                 for mu_tauc, sigm_tauc in product(mu_tauc_vec, sigm_tauc_vec):
-                    if pproc.rank == pproc.root: print(f"on (mu_tau, sigm_tau, mu_tauc, sigm_tauc)={mu_tau, sigm_tau, mu_tauc, sigm_tauc}")
+                    #if pproc.rank == pproc.root: print(f"on (mu_tau, sigm_tau, mu_tauc, sigm_tauc)={mu_tau, sigm_tau, mu_tauc, sigm_tauc}")
                     # Generate uncertainties on alterations to tau values
                     pproc.generate_eps_tauc(mu_tauc, sigm_tauc)
                     # Calculate <metric> at sampled resource constraint values and alteration slice sizes

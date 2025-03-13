@@ -28,7 +28,7 @@ tau_vec = b_vec * gamma(1+1/c)
 tau_step = np.diff(tau_vec)[0] / 2
 tau_edges = np.concatenate(([0], np.arange(tau_step/2, tau_vec[-1]+tau_step, tau_step)))
 tauc_methods = ["flat"]
-C_i_vec = [0,1,2,3,4]
+C_i_vec = [0,2,4,6]
 results_pre = 'gte_thresh' 
 #results_pre = 'distribution_avg' 
 
@@ -224,10 +224,13 @@ set_globals(results_pre)
 
 # Plot <metric> distribution outline
 tau_max = max(tau_edges)
-bin_step = 0.005
-bin_edges = np.concatenate(([0], np.arange(bin_step/2, 1+bin_step, bin_step)))
 color = 'limegreen'
 metric_interp = spl(tau_flat[tau_flat < tau_max])
+print(max(metric_interp))
+#bin_edges[-1] = max(metric_interp)
+bin_step = 0.0025
+#bin_edges = np.concatenate(([0], np.arange(bin_step/2, 1+bin_step, bin_step)))
+bin_edges = np.concatenate(([0], np.arange(bin_step/2, 1+bin_step, bin_step)))
 counts, bin_edges, hist = axes[0,0].hist(metric_interp, bins=bin_edges, color=color, histtype='step', lw=histlw);
 if metric == 'P_s':
     mlab = "$<S>$"
@@ -377,7 +380,8 @@ all_linestyles = ['dotted', 'dashdot', 'dashed', 'solid']
 #C_i_samples = [1,5,9]
 #C_i_samples = [1,3,6,9,11]
 #C_i_samples = [0,1,2,3,4]
-C_i_samples = [i for i in range(C_vec.size)][::1]
+C_i_samples = C_i_vec.copy()
+#C_i_samples = [i for i in range(C_vec.size)][::1]
 for line_i, C_i in enumerate(C_i_samples):
     plot_vec = np.ones(len(rob_thresh_vec)) * np.nan
     c_vec = np.ones(len(rob_thresh_vec)) * np.nan
