@@ -126,6 +126,50 @@ class DirectPosterior(NeuralPosterior):
         )[0]
         return samples
 
+    def sample_batched(
+        self,
+        sample_shape: Shape,
+        x: Tensor,
+        max_sampling_batch_size: int = 10_000,
+        show_progress_bars: bool = True,
+    ) -> Tensor:
+        r"""Given a batch of observations [x_1, ..., x_B] this function samples from
+        posteriors $p(\theta|x_1)$, ... ,$p(\theta|x_B)$, in a batched (i.e. vectorized)
+        manner.
+
+        Args:
+            sample_shape: Desired shape of samples that are drawn from the posterior
+                given every observation.
+            x: A batch of observations, of shape `(batch_dim, event_shape_x)`.
+                `batch_dim` corresponds to the number of observations to be drawn.
+            max_sampling_batch_size: Maximum batch size for rejection sampling.
+            show_progress_bars: Whether to show sampling progress monitor.
+
+        Returns:
+            Samples from the posteriors of shape (*sample_shape, B, *input_shape)
+        """
+        num_samples = torch.Size(sample_shape).numel()
+        condition_shape = self.posterior_estimator.condition_shape
+        x = reshape_to_batch_event(x, event_shape=condition_shape)
+
+        max_sampling_batch_size = (
+            self.max_sampling_batch_size
+            if max_sampling_batch_size is None
+            else max_sampling_batch_size
+        )
+
+        samples = rejection.accept_reject_sample(
+            proposal=self.posterior_estimator,
+            accept_reject_fn=lambda theta: within_support(self.prior, theta),
+            num_samples=num_samples,
+            show_progress_bars=show_progress_bars,
+            max_sampling_batch_size=max_sampling_batch_size,
+            proposal_sampling_kwargs={"condition": x},
+            alternative_method="build_posterior(..., sample_with='mcmc')",
+        )[0]
+
+        return samples
+
     def log_prob(
         self,
         theta: Tensor,

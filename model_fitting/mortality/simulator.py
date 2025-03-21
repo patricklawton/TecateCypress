@@ -12,18 +12,19 @@ otay = np.loadtxt("../shared_maps/otayraster.asc", skiprows=6)
 sdm_otay = sdm[otay==1] #index "1" indicates the specific part where study was done
 h_o = np.mean(sdm_otay[sdm_otay!=0]) #excluding zero, would be better to use SDM w/o threshold
 
-fixed = {'gamm_m': 0.01, 'tau_m': 0.01, 'mu_m': 0.0, 
-         'alph_nu': 0.0, 'beta_nu': 0.25,
-         'K_seedling': 60_000/h_o, 'K_adult': 10_000/h_o}
+fixed = {'tau_m': 0.0, 'mu_m': 0.0, 
+         'alph_nu': 0.0, 'beta_nu': 0.0, 'gamm_nu': 0.0, 
+         'kappa': 0.0, 'K_adult': 1_000.0, 'K_seedling': 0.0}
+         #'K_seedling': 60_000/h_o, 'K_adult': 10_000/h_o}
 with open('mortality/fixed.pkl', 'wb') as handle:
     pickle.dump(fixed, handle)
 
 def simulator(params):
     # Assign parameter labels
-    alph_m = params[0]; beta_m = params[1]; gamm_m = fixed['gamm_m']
-    sigm_m = params[2]; tau_m = fixed['tau_m']; mu_m = fixed['mu_m']
-    alph_nu = fixed['alph_nu']; beta_nu = fixed['beta_nu']; gamm_nu = params[3]
-    K_seedling = fixed['K_seedling']; kappa = params[4]; K_adult = fixed['K_adult']; 
+    alph_m = params[0]; beta_m = params[1]; gamm_m = params[2]
+    sigm_m = params[3]; tau_m = fixed['tau_m']; mu_m = fixed['mu_m']
+    alph_nu = fixed['alph_nu']; beta_nu = fixed['beta_nu']; gamm_nu = fixed['gamm_nu']
+    K_seedling = fixed['K_seedling']; kappa = fixed['kappa']; K_adult = fixed['K_adult']; 
 
     # For generating env stochasticity multipliers
     rng = np.random.default_rng()
@@ -31,7 +32,7 @@ def simulator(params):
     # Initialize empty results array
     census_yrs = np.array([1,2,6,8,11,14])
     res_len = len(census_yrs) - 1
-    results = np.empty(res_len * 3)
+    results = np.empty(res_len * 2)
     res_i = 0
 
     t_vec = np.arange(1,15)
@@ -52,8 +53,8 @@ def simulator(params):
     nu_a = alph_nu * np.exp(-beta_nu*t_vec) + gamm_nu
     # Use linear approx to set eta s.t. shape of dens. dep. curve is 
     # the same for arbitrary effective patch size
-    delta, theta = (1.05, 0.050000000000000044) #just hardcoding these in
-    eta_a = (theta*2)/((nu_a*(1-m_a)) * (A_o*h_o*K_adult) * (delta-1))
+    #eta_a = 2 / ((nu_a*(1-m_a)) * (A_o*h_o) * K_adult)
+    eta_a = np.repeat(1, len(m_a))
     sigm_m_a = sigm_m*np.exp(-tau_m*t_vec)
     epsilon_m_vec = rng.lognormal(np.zeros_like(N_vec)+mu_m, np.tile(sigm_m_a, (len(N_0_1),1)))
 
@@ -104,7 +105,7 @@ def simulator(params):
         if (np.ma.is_masked(N_vec)) and (sum(np.ma.getmask(N_vec)[:,0]) > 3):
             results[0:res_len] = np.ones(len(census_yrs)-1)*np.nan
             results[res_len:res_len*2] = np.ones(len(census_yrs)-1)*np.nan
-            results[res_len*2:res_len*3] = np.ones(len(census_yrs)-1)*np.nan
+            #results[res_len*2:res_len*3] = np.ones(len(census_yrs)-1)*np.nan
             break
         elif t+1 in census_yrs:
             # Calculate and store mortality stats
@@ -114,7 +115,7 @@ def simulator(params):
             # Use the first three moments
             results[res_i] = np.mean(mortality)
             results[res_len + res_i] = moment(mortality, moment=2)
-            results[res_len*2 + res_i] = moment(mortality, moment=3)
+            #results[res_len*2 + res_i] = moment(mortality, moment=3)
             # Reset for next census
             res_i += 1
             census_init = census_final

@@ -33,24 +33,29 @@ with sg.H5Store(sd_fn).open(mode='r') as sd:
 
 with open('../model_fitting/mortality/fixed.pkl', 'rb') as handle:
     mort_fixed = pickle.load(handle)
+with open('../model_fitting/fecundity/fixed.pkl', 'rb') as handle:
+    fec_fixed = pickle.load(handle)
 
 @FlowProject.post(lambda job: job.doc.get('simulated'))
 @FlowProject.operation
 def run_sims(job):
     params = job.sp['params']
     params.update(mort_fixed)
+    params.update(fec_fixed)
     Aeff = job.sp['Aeff'] #ha
     delta_t = 1
-    num_reps = 1_250
+    num_reps = 1_000
     N_0_1 = Aeff*params['K_adult']
     N_0_1_vec = np.repeat(N_0_1, num_reps)
-    '''Could figure out mature age in a more sophisticated way'''
-    init_age = round(params['a_mature']) + 20
+    init_age = params['a_mature'] - (np.log((1/0.90)-1) / params['eta_rho']) # Age where 90% of reproductive capacity reached
+    init_age = int(init_age + 0.5) # Round to nearest integer
     t_vec = np.arange(delta_t, job.sp.t_final+delta_t, delta_t)
 
     for b in b_vec:
-        # Skip if simulations already run at this b value
-        if str(b) in list(job.data['N_tot'].keys()): continue
+        ## Skip if simulations already run at this b value
+        #if 'frac_extirpated' in list(job.data.keys()):
+        #    if str(b) in list(job.data['frac_extirpated'].keys()): 
+        #        continue
         model = Model(**params)
         model.set_effective_area(Aeff)
         model.init_N(N_0_1_vec, init_age)
@@ -154,45 +159,94 @@ def compute_mu_s(job):
 @FlowProject.post(lambda job: job.doc.get('lambda_s_computed'))
 @FlowProject.operation
 def compute_lambda_s(job):
+    print(job.id)
     with job.data:
         census_t = np.array(job.data["census_t"])
         burn_in_end_i = 0
         for b in b_vec:
-            ## Skip if lambda_s already computed at this b value
-            #if str(b) in list(job.data['lambda_s'].keys()): continue
+            ### Skip if lambda_s already computed at this b value
+            ##if str(b) in list(job.data['lambda_s'].keys()): continue
+            #N_tot = np.array(job.data[f"N_tot/{b}"])
+            #nonzero_counts = np.count_nonzero(N_tot, axis=1)
+            #extirpated_replicas = np.nonzero(nonzero_counts < job.sp.t_final)[0]
+            #all_growthrates = np.zeros(N_tot.shape)
+
+            ## First handle replicas where extirpations occur
+            #'''Could probably speed up with masking'''
+            #lam_s_extir = []
+            #for rep_i in extirpated_replicas:
+            #    N_t = N_tot[rep_i]
+            #    zero_i_min = nonzero_counts[rep_i]
+            #    final_i = zero_i_min
+
+            #    t = census_t[burn_in_end_i:final_i]
+            #    if len(t) == 1:
+            #        print('hey')
+            #    N_slice = N_t[burn_in_end_i:final_i]
+            #    growthrates = N_slice[1:] / np.roll(N_slice, 1)[1:]
+            #    lam_s_replica = np.product(growthrates) ** (1/len(t))
+            #    lam_s_extir.append(lam_s_replica)
+            #if np.any(lam_s_extir == 1):
+            #    print('that shouldnt happen')
+
+            ## Now handle cases with no extirpation
+            #N_tot = np.delete(N_tot, extirpated_replicas, axis=0)
+            #start_i = burn_in_end_i
+            #final_i = N_tot.shape[1]
+            #N_slice = N_tot[:,start_i:final_i]
+            ##log_ratios = np.log(N_slice[:,1:] / np.roll(N_slice, 1, 1)[:,1:])
+            ##lam_s_vec = np.sum(log_ratios, axis=1) / N_slice.shape[1]
+            #growthrates = N_slice[:,1:] / np.roll(N_slice, 1, 1)[:,1:]
+            ##lam_products = np.product(, axis=1)
+            #lam_s_vec = np.product(growthrates, axis=1) ** (1/(N_slice.shape[1]-1)) 
+            #if np.any(lam_s_vec == 1):
+            #    print('that also shouldnt happen')
+
+            ## Compute final lambda value
+            #lam_s_all = np.concatenate((lam_s_vec, lam_s_extir))
+
             N_tot = np.array(job.data[f"N_tot/{b}"])
-            nonzero_counts = np.count_nonzero(N_tot, axis=1)
-            extirpated_replicas = np.nonzero(nonzero_counts < job.sp.t_final)[0]
+            nonzero_counts = np.count_nonzero(N_tot, axis=1)  # Count nonzero timesteps
+            extirpated_replicas = np.nonzero(nonzero_counts < job.sp.t_final)[0]  # Find extirpated replicas
 
-            # First handle replicas where extirpations occur
-            lam_s_extir = []
-            for rep_i in extirpated_replicas:
-                N_t = N_tot[rep_i]
-                zero_i_min = nonzero_counts[rep_i]
-                final_i = zero_i_min
+            # Create a mask where N_tot > 0 (avoiding inf values)
+            valid_mask = N_tot > 0
 
-                t = census_t[burn_in_end_i:final_i]
-                N_slice = N_t[burn_in_end_i:final_i]
-                lam_s_replica = np.product(N_slice[1:] / np.roll(N_slice, 1)[1:]) ** (1/len(t))
-                lam_s_extir.append(lam_s_replica)
+            # Indices for slicing
+            start_i = burn_in_end_i  # Start after burn-in
+            final_i = N_tot.shape[1]  # Last valid timestep
 
-            # Now handle cases with no extirpation
-            N_tot = np.delete(N_tot, extirpated_replicas, axis=0)
-            start_i = burn_in_end_i
-            final_i = N_tot.shape[1]
-            N_slice = N_tot[:,start_i:final_i]
-            #log_ratios = np.log(N_slice[:,1:] / np.roll(N_slice, 1, 1)[:,1:])
-            #lam_s_vec = np.sum(log_ratios, axis=1) / N_slice.shape[1]
-            lam_products = np.product(N_slice[:,1:] / np.roll(N_slice, 1, 1)[:,1:], axis=1)
-            lam_s_vec = lam_products ** (1/N_slice.shape[1]) 
+            # Apply mask and slice
+            masked_N_tot = np.where(valid_mask, N_tot, np.nan)  # Replace zeros with NaN (ignored in np.nanprod)
+            N_slice = masked_N_tot[:, start_i:final_i]  # Slice N_tot by all post burn in timesteps
 
-            lam_s_all = np.concatenate((lam_s_vec, lam_s_extir))
+            # Compute number of valid timesteps for each simulation
+            valid_timesteps = np.sum(valid_mask[:, start_i:final_i], axis=1) - 1  # Subtract 1 to avoid zero exponent
+
+            # Compute per-replica growth rates (ignore NaNs)
+            growthrates = N_slice[:, 1:] / np.roll(N_slice, 1, axis=1)[:, 1:]
+
+            # Avoid zero exponent by setting invalid cases to NaN
+            valid_exponent_mask = valid_timesteps > 0
+            lam_s_all = np.full(N_tot.shape[0], np.nan)  # Default to NaN
+            lam_s_all[valid_exponent_mask] = np.nanprod(growthrates[valid_exponent_mask], axis=1) ** (1 / valid_timesteps[valid_exponent_mask])
+            #if np.any(np.sum(valid_mask[:, start_i:final_i], axis=1) == 1):
+            #    print('thats not good')
+            if np.any(np.isnan(lam_s_all)):
+                print('theres nans')
+            if np.any(lam_s_all == 1):
+                print(f'theres exact 1s for b={b}')
+                #print(valid_timesteps)
+
             if len(lam_s_all) != 0:
-                job.data[f'lambda_s/{b}'] = np.mean(lam_s_all) 
+                job.data[f'lambda_s/{b}'] = np.nanmean(lam_s_all) 
             else:
+                print('double check this')
                 #N_tot_mean = np.array(job.data[f"N_tot_mean/{b}"])
                 lam_s = np.exp(-np.log(job.sp.Aeff*job.sp.params.K_adult) / len(t))
                 job.data[f'lambda_s/{b}'] = lam_s
+
+        #import sys; sys.exit()
 
     job.doc['lambda_s_computed'] = True
 
@@ -216,18 +270,13 @@ class Phase:
         if np.isnan(self.final_max_tau): 
             # NaN here means set to max of fri_vec
             self.final_max_tau = max(self.tau_vec)
-        self.baseline_A_vec = np.linspace(self.baseline_A_min, self.baseline_A_max, self.baseline_A_samples)
-
-        # Generate resource allocation values
-        self.ncell_baseline_vec = np.round(self.baseline_A_vec / self.A_cell).astype(int) 
-        self.C_vec = self.ncell_baseline_vec * self.tauc_baseline
 
         # Set generator for random uncertainties
         self.rng = np.random.default_rng()
         
         # Create empty file for final results (if overwriting)
         if self.rank == self.root:
-            self.data_dir = f"data/Aeff_{self.Aeff}/tfinal_{self.t_final}/metric_{self.metric}"
+            self.data_dir = f"{self.meta_metric}/data/Aeff_{self.Aeff}/tfinal_{self.t_final}/metric_{self.metric}"
             if not os.path.isdir(self.data_dir):
                 os.makedirs(self.data_dir)
             fn = self.data_dir + f"/phase_{self.tauc_method}.h5"
@@ -256,7 +305,8 @@ class Phase:
 
             jobs = project.find_jobs({'doc.simulated': True, 'Aeff': self.Aeff, 
                                       't_final': self.t_final, 'method': self.sim_method})
-            self.data_dir = f"data/Aeff_{self.Aeff}/tfinal_{self.t_final}"
+            print(len(jobs))
+            self.data_dir = f"{self.meta_metric}/data/Aeff_{self.Aeff}/tfinal_{self.t_final}"
             fn = self.data_dir + "/all_tau.npy"
             if (not os.path.isfile(fn)) or self.overwrite_metrics:
                 all_tau = np.tile(self.tau_vec, len(jobs))
@@ -264,7 +314,7 @@ class Phase:
             else:
                 all_tau = np.load(fn)
 
-            self.data_dir = f"data/Aeff_{self.Aeff}/tfinal_{self.t_final}/metric_{self.metric}"
+            self.data_dir = f"{self.meta_metric}/data/Aeff_{self.Aeff}/tfinal_{self.t_final}/metric_{self.metric}"
             fn = self.data_dir + f"/metric_data.pkl"
             if (not os.path.isfile(fn)) or self.overwrite_metrics:
                 self.metric_data = {}
@@ -278,7 +328,7 @@ class Phase:
                         for b in self.b_vec:
                             if self.metric == 'P_s':
                                 # Just consider the cummulative extinction probability by some timestep T
-                                T = 300
+                                T = 200
                                 metric_vec.append(1.0 - float(data[f'frac_extirpated/{b}'][T-1]))
                             else:
                                 metric_vec.append(float(data[f'{metric_label}/{b}']))
@@ -303,11 +353,11 @@ class Phase:
                 cbar.ax.set_ylabel('demographic robustness', rotation=-90, fontsize=10, labelpad=20)
                 ax.set_xlabel('<FRI>')
                 ax.set_ylabel(self.metric)
-                figs_dir = f"figs/Aeff_{self.Aeff}/tfinal_{self.t_final}/metric_{self.metric}/"
+                figs_dir = f"{self.meta_metric}/figs/Aeff_{self.Aeff}/tfinal_{self.t_final}/metric_{self.metric}/"
                 if not os.path.isdir(figs_dir):
                     os.makedirs(figs_dir)
                 print("saving sensitivity figure")
-                fig.savefig(figs_dir + f"sensitivity", bbox_inches='tight')
+                fig.savefig(figs_dir + f"sensitivity", bbox_inches='tight', dpi=50)
                 plt.close(fig)
                 # Now remake with density=True for calculations later
                 metric_hist = np.histogram2d(all_tau, all_metric, bins=[self.tau_edges, metric_edges], 
@@ -327,11 +377,14 @@ class Phase:
                 tau_filt = (all_tau == tau)
                 metric_slice = self.metric_data["all_metric"][tau_filt]
                 metric_expect_vec[tau_i] = np.mean(metric_slice)
-            t = self.tau_vec[2:-2:1] 
-            k = 3
-            t = np.r_[(self.tau_vec[1],)*(k+1),
-                      t,
-                      (self.tau_vec[-1],)*(k+1)]
+            if self.metric == 'P_s':
+                t = self.tau_vec[2:-2:1] 
+                k = 3
+                t = np.r_[(0,)*(k+1), t, (self.tau_vec[-1],)*(k+1)]
+            else:
+                t = self.tau_vec[2:-2:2] 
+                k = 3
+                t = np.r_[(self.tau_vec[1],)*(k+1), t, (self.tau_vec[-1],)*(k+1)]
             self.metric_exp_spl = make_lsq_spline(self.tau_vec[1:], metric_expect_vec[1:], t, k)
 
             # Read in FDM
@@ -371,6 +424,8 @@ class Phase:
 
         # Generate samples of remaining state variables
         self.ncell_tot = len(self.tau_flat)
+        # Get samples of total shift to fire regime (C)  
+        self.C_vec = self.tauc_min_samples * self.ncell_tot
         # Use the max post alteration tau to get an upper bound on right hand of initial tau slices
         self.tau_argsort_ref = np.argsort(self.tau_flat)
         tau_sorted = self.tau_flat[self.tau_argsort_ref] 
@@ -381,7 +436,7 @@ class Phase:
         # Min left bound set by user-defined constant
         slice_left_min = np.nonzero(tau_sorted > self.min_tau)[0][0]
         # Generate slice sizes of the tau distribution
-        self.ncell_vec = np.linspace(max(self.ncell_baseline_vec), self.slice_right_max, self.ncell_samples)
+        self.ncell_vec = np.linspace(self.ncell_min, self.slice_right_max, self.ncell_samples)
         self.ncell_vec = np.round(self.ncell_vec).astype(int)
         # Max left bound set by smallest slice size
         self.slice_left_max = self.slice_right_max - min(self.ncell_vec)
@@ -615,12 +670,15 @@ class Phase:
         tau_with_cutoff = np.where(self.tau_expect > self.tau_vec.max(), self.tau_vec.max(), self.tau_expect)
         metric_exp_dist = self.metric_exp_spl(tau_with_cutoff)
         if self.metric == 'P_s':
+            threshold = 0.5
             # Metric value is bounded by zero, anything lt zero is an interpolation error
             metric_exp_dist[metric_exp_dist < 0] = 0.0
             if np.any(metric_exp_dist < 0): sys.exit(f"metric_expect is negative ({self.metric_expect}), exiting!")
-            gte_threshold = 0.5
+        elif self.metric == 'lambda_s':
+            threshold = 0.975
+            #threshold = 0.994
         '''Still calling this metric_expect for now but should change this to metric_quantity or something'''
-        self.metric_expect = np.count_nonzero(metric_exp_dist >= gte_threshold) / self.ncell_tot
+        self.metric_expect = np.count_nonzero(metric_exp_dist >= threshold) / self.ncell_tot
 
     def process_samples(self, C, ncell):
         '''is relocating these indicies significantly slowing things down?'''
@@ -641,7 +699,7 @@ class Phase:
             if self.meta_metric == 'distribution_avg':
                 # Calculate <metric>
                 self.calculate_metric_expect()
-            elif self.meta_metric == 'gte_threshold':
+            elif self.meta_metric == 'gte_thresh':
                 # Calculate <metric>_k density above some threshold
                 self.calculate_metric_gte()
             # Store sample if not computing no change scenario
@@ -649,7 +707,7 @@ class Phase:
                 self.metric_expect_rank[slice_left_i-self.rank_start] = self.metric_expect
             # Otherwise save <metric> under no change
             elif self.rank == self.root:
-                self.data_dir = f"data/Aeff_{self.Aeff}/tfinal_{self.t_final}/metric_{self.metric}"
+                self.data_dir = f"{self.meta_metric}/data/Aeff_{self.Aeff}/tfinal_{self.t_final}/metric_{self.metric}"
                 fn = self.data_dir + f"/phase_{self.tauc_method}.h5"
                 with h5py.File(fn, "a") as handle:
                     data_key = f"{np.round(self.mu_tau, 3)}/{np.round(self.sigm_tau, 3)}/"
@@ -759,7 +817,7 @@ class Phase:
                 secax.set_xticks(xticks, labels=np.round(tauc_vec[::xtick_spacing], decimals=3));
                 secax.set_xlabel(r'Change in $\tau$ per unit area ($\hat{\tau}$)', fontsize=axfontsize)
             # Save to file
-            figs_dir = f"figs/Aeff_{self.Aeff}/tfinal_{self.t_final}/metric_{self.metric}/"
+            figs_dir = f"{self.meta_metric}/figs/Aeff_{self.Aeff}/tfinal_{self.t_final}/metric_{self.metric}/"
             figs_dir += f"mutau_{np.round(self.mu_tau,3)}/sigmtau_{np.round(self.sigm_tau, 3)}/"
             figs_dir += f"mutauc_{np.round(self.mu_tauc,3)}/sigmtauc_{np.round(self.sigm_tauc, 3)}/C_{C}"
             if not os.path.isdir(figs_dir):

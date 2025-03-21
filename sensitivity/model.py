@@ -24,7 +24,8 @@ class Model:
         self.alph_m = kwargs['alph_m']; self.beta_m = kwargs['beta_m']; self.gamm_m = kwargs['gamm_m']
         self.sigm_m = kwargs['sigm_m']; self.tau_m = kwargs['tau_m']; self.mu_m = kwargs['mu_m']
         self.alph_nu = kwargs['alph_nu']; self.beta_nu = kwargs['beta_nu']; self.gamm_nu = kwargs['gamm_nu']
-        self.K_seedling = kwargs['K_seedling']; self.kappa = kwargs['kappa']; self.K_adult = kwargs['K_adult']
+        self.K_seedling = kwargs['K_adult']*6 #NEED TO UDPATE FIXED PKL 
+        self.kappa = kwargs['kappa']; self.K_adult = kwargs['K_adult']
         # Fecundity parameters
         self.rho_max = kwargs['rho_max']; self.eta_rho = kwargs['eta_rho']; self.a_mature = kwargs['a_mature']
         self.sigm_max = kwargs['sigm_max']; self.eta_sigm = kwargs['eta_sigm']; 
@@ -95,18 +96,20 @@ class Model:
         nu_a = self.alph_nu * np.exp(-self.beta_nu*self.t_vec) + self.gamm_nu
         # Use linear approx to set eta s.t. shape of dens. dep. curve is 
         # the same for arbitrary effective patch size
-        delta, theta = (1.05, 0.050000000000000044) #just hardcoding these in
-        eta_a = (theta*2)/((nu_a*(1-m_a)) * (A_o*h_o*self.K_adult) * (delta-1))
+        #eta_a = 2 / ((nu_a*(1-m_a)) * self.Aeff * self.K_adult)
+        #eta_a = np.ones(self.t_vec.size)
         sigm_m_a = self.sigm_m*np.exp(-self.tau_m*self.t_vec)
         epsilon_m_vec = rng.lognormal(np.zeros_like(N_vec)+self.mu_m, np.tile(sigm_m_a, (len(self.N_0_1),1)))
-        # Make it deterministic
-        epsilon_m_mean = np.exp(sigm_m_a**2 / 2) 
+        ## Make it deterministic
+        #epsilon_m_mean = np.exp(sigm_m_a**2 / 2) 
         # Age-dependent fecundity functions
         rho_a = self.rho_max / (1+np.exp(-self.eta_rho*(self.t_vec-self.a_mature)))
-        sigm_a = self.sigm_max / (1+np.exp(-self.eta_sigm*(self.t_vec-self.a_sigm_star)))
-        # Make it deterministic
-        epsilon_rho = np.exp(sigm_a**2 / 2)
-        fecundities = rho_a*epsilon_rho
+        #sigm_a = self.sigm_max / (1+np.exp(-self.eta_sigm*(self.t_vec-self.a_sigm_star)))
+        sigm_a = np.repeat(self.sigm_max, self.t_vec.size)
+        epsilon_rho_vec = rng.lognormal(np.zeros_like(N_vec), np.tile(sigm_a, (len(self.N_0_1),1)))
+        ## Make it deterministic
+        #epsilon_rho = np.exp(sigm_a**2 / 2)
+        #fecundities = rho_a*epsilon_rho
 
         for t_i, t in enumerate(tqdm(self.t_vec[:-1], disable=(not progress))):
             for pop_i in range(len(N_vec)):
@@ -121,46 +124,55 @@ class Model:
                     N_vec[pop_i][age_i_vec[-1]] = 0
                     age_i_vec[-1] = len(self.t_vec) - 2
                 # Determine if this is a single age population
-                if len(age_i_vec) > 1:
-                    single_age = False
-                else:
-                    single_age = True
-                    age_i = age_i_vec[0]
-                    N = N_vec[pop_i][age_i]
+                #if len(age_i_vec) > 1:
+                #    single_age = False
+                #else:
+                #    single_age = True
+                #    age_i = age_i_vec[0]
+                #    N = N_vec[pop_i][age_i]
+                single_age = False
 
                 # If a fire occurs this timestep, reproduce
                 if self.t_fire_vec[pop_i, t_i]:
                     # Update seedlings, kill all adults
                     if not single_age:
-                        epsilon_rho = rng.lognormal(np.zeros(len(self.t_vec)), sigm_a)
-                        fecundities = rho_a*epsilon_rho
+                        '''Should only draw values for ages that are present, inefficient otherwise'''
+                        #epsilon_rho = rng.lognormal(np.zeros(len(self.t_vec)), sigm_a)
+                        #fecundities = rho_a*epsilon_rho
+                        fecundities = rho_a*epsilon_rho_vec[pop_i]
                         num_births = rng.poisson(fecundities*N_vec[pop_i])
                         # Make it deterministic
                         #num_births = fecundities*N_vec[pop_i]
                         N_vec[pop_i,0] = num_births.sum()
-                        N_vec[pop_i,1:] = 0
+                        '''Actually, let 1 out of 400 survive'''
+                        N_vec[pop_i,1:] = np.roll(N_vec[pop_i,1:]*0.0025, 1)
+                        #N_vec[pop_i,1:] = 0
                     else:
-                        epsilon_rho = rng.lognormal(0, sigm_a[age_i])
-                        fecundities = rho_a[age_i]*epsilon_rho
-                        '''Really sloppy way to deal with too large abudances, can get away with this for now because I end up throwing out these simulations during analysis anyways'''
-                        try:
-                            num_births = rng.poisson(fecundities*N)
-                        except ValueError:
-                            num_births = rng.poisson(1e18)
+                        #epsilon_rho = rng.lognormal(0, sigm_a[age_i])
+                        #fecundities = rho_a[age_i]*epsilon_rho
+                        fecundities = rho_a[age_i]*epsilon_rho_vec[pop_i][age_i]
+                        num_births = rng.poisson(fecundities*N)
+                        #'''Really sloppy way to deal with too large abudances, can get away with this for now because I end up throwing out these simulations during analysis anyways'''
+                        #try:
+                        #    num_births = rng.poisson(fecundities*N)
+                        #except ValueError:
+                        #    num_births = rng.poisson(1e18)
                         N_vec[pop_i,0] = num_births
                         N_vec[pop_i,1:] = 0
                 # Update each pop given mortality rates
                 else:
                     # Add density dependent term to mortalities
                     if not single_age:
-                        dens_dep = ((nu_a)*(1-m_a)) / (1 + np.exp(-eta_a*self.K_adult*(np.sum(N_vec[pop_i]/K_a) - self.Aeff)))
-                        m_a_N = m_a + dens_dep
+                        #dens_dep = ((nu_a)*(1-m_a)) / (1 + np.exp(-eta_a*self.K_adult*(np.sum(N_vec[pop_i]/K_a) - self.Aeff)))
+                        #m_a_N = m_a + dens_dep
+                        m_a_N = m_a
                         survival_probs = np.exp(-m_a_N * epsilon_m_vec[pop_i] * self.delta_t)
                         # Make it deterministic
                         #survival_probs = np.exp(-m_a_N * epsilon_m_mean * self.delta_t)
                     else:
-                        dens_dep = ((nu_a[age_i])*(1-m_a[age_i])) / (1 + np.exp(-eta_a[age_i]*self.K_adult*(N/K_a[age_i] - self.Aeff)))
-                        m_a_N = m_a[age_i] + dens_dep
+                        #dens_dep = ((nu_a[age_i])*(1-m_a[age_i])) / (1 + np.exp(-eta_a[age_i]*self.K_adult*(N/K_a[age_i] - self.Aeff)))
+                        #m_a_N = m_a[age_i] + dens_dep
+                        m_a_N = m_a[age_i]
                         survival_probs = np.exp(-m_a_N * epsilon_m_vec[pop_i][age_i] * self.delta_t)
 
                     # Ensure survival probs are feasible, otherwise mark sim invalid 
@@ -192,13 +204,16 @@ class Model:
             else:
                 # Age-dependent mortality functions
                 m_t = self.alph_m * np.exp(-self.beta_m*t) + self.gamm_m
-                K_t = self.K_seedling * np.exp(-self.kappa*t) + self.K_adult
-                nu_t = self.alph_nu * np.exp(-self.beta_nu*t) + self.gamm_nu
-                delta, theta = (1.05, 0.050000000000000044) #just hardcoding these in
-                eta_t = (theta*2)/((nu_t*(1-m_t)) * (A_o*h_o*self.K_adult) * (delta-1))
-                dens_dep = ((nu_t)*(1-m_t)) / (1 + np.exp(-eta_t*self.K_adult*(N/K_t - self.Aeff)))
-                m_t_N = m_t + dens_dep
-                sigm_m_t = self.sigm_m*np.exp(-self.tau_m*t)
+                #K_t = self.K_seedling * np.exp(-self.kappa*t) + self.K_adult
+                #nu_t = self.alph_nu * np.exp(-self.beta_nu*t) + self.gamm_nu
+                #eta_t = 2 / ((nu_t*(1-m_t)) * self.Aeff * self.K_adult)
+                #''' Turing off dens dep so set eta_t to 1 or it will blow up'''
+                #eta_t = 1
+                #dens_dep = ((nu_t)*(1-m_t)) / (1 + np.exp(-eta_t*self.K_adult*(N/K_t - self.Aeff)))
+                #m_t_N = m_t + dens_dep
+                m_t_N = m_t
+                #sigm_m_t = self.sigm_m*np.exp(-self.tau_m*t)
+                sigm_m_t = self.sigm_m
                 epsilon_m_mean = np.exp(self.mu_m + (sigm_m_t**2 / 2))
                 return -m_t_N * N * epsilon_m_mean
 
@@ -206,7 +221,8 @@ class Model:
         def _get_num_births(t, N):
             # Age-dependent fecundity functions
             rho_t = self.rho_max / (1+np.exp(-self.eta_rho*(t-self.a_mature)))
-            sigm_t = self.sigm_max / (1+np.exp(-self.eta_sigm*(t-self.a_sigm_star)))
+            #sigm_t = self.sigm_max / (1+np.exp(-self.eta_sigm*(t-self.a_sigm_star)))
+            sigm_t = self.sigm_max
             # Approximate number of births
             epsilon_rho_mean = np.exp(0 + (sigm_t**2 / 2))
             num_births = rho_t*epsilon_rho_mean*N
@@ -301,12 +317,13 @@ class Model:
         # Get initial age time indices
         init_age_i_vec = [np.nonzero(self.t_vec == a)[0][0] for a in self.init_age]
 
+        # Initialize empty per age abundnace vec updated each timestep in discrete sims
         N_vec = np.ma.array(np.zeros((len(self.N_0_1), len(self.t_vec))))
         for pop_i, N_pop in enumerate(N_vec):
             a_i = init_age_i_vec[pop_i]
             N_pop[a_i] = self.N_0_1[pop_i]
         N_vec = N_vec.astype(int)
-        # Initialize empty abundance array
+        # Initialize empty total abundance array (used in nint and discrete sims)
         self.census_t = self.t_vec[::census_every]
         self.N_tot_vec = np.nan * np.ones((len(self.N_0_1), len(self.census_t)))
         self.N_tot_vec[:,0] = self.N_0_1

@@ -11,40 +11,46 @@ from tqdm import tqdm
 constants = {}
 constants['progress'] = False
 constants['c'] = 1.42
-constants['Aeff'] = 1.0
-constants['t_final'] = 600
-constants['sim_method'] = 'nint'
+#constants['Aeff'] = 1.0
+constants['Aeff'] = 7.29
+#constants['t_final'] = 600
+constants['t_final'] = 300
+constants['sim_method'] = 'discrete'
 constants['ul_coord'] = [1500, 2800]
 constants['lr_coord'] = [2723, 3905]
 '''Should just set this to min tau_vec I think, which it basically already is'''
 constants['min_tau'] = 2
 constants['A_cell'] = 270**2 / 1e6 #km^2
 constants['plotting_tau_bw_ratio'] = 30 #For binning initial tau (with uncertainty) in phase slice plots
-constants['tauc_baseline'] = 200 #years, max(tauc) possible at min(ncell) given C
+constants['ncell_min'] = 2_500
 constants['ncell_samples'] = 30
-#constants['slice_samples'] = 30
+#constants['ncell_samples'] = 15
 constants['slice_samples'] = 60
-constants['baseline_A_min'] = 10 #km^2
-constants['baseline_A_max'] = 160 * 2.0043963553530753
-#constants['baseline_A_samples'] = 20
-constants['baseline_A_samples'] = 10
+#constants['slice_samples'] = 30
+# Use the minimum tauc values (i.e. when spread over all cells) to determine C values
+constants['tauc_min_samples'] = np.arange(1, 17, 2) 
 constants['root'] = 0 #For mpi
 constants.update({'final_max_tau': np.nan})
-constants['overwrite_results'] = True
-constants['meta_metric'] = 'distribution_avg'
-#constants['meta_metric'] = 'gte_threshold'
+constants['overwrite_results'] = False
+#constants['meta_metric'] = 'distribution_avg'
+constants['meta_metric'] = 'gte_thresh'
 
 # Define metrics and tauc methods to run analysis on
 #metrics = ["lambda_s", "mu_s", "r"]
-metrics = ["P_s"]
+#metrics = ["P_s"]
+metrics = ["lambda_s"]
 #tauc_methods = ["flat", "initlinear", "initinverse"]
 tauc_methods = ["flat"]
 
 # Define uncertainty axes (and save under metric folder later)
-mu_tau_vec = np.linspace(-10, 0, 10)
-sigm_tau_vec = np.linspace(0, 10, 10)
-mu_tauc_vec = np.linspace(-10, 0, 10)
-sigm_tauc_vec = np.linspace(0, 10, 10)
+mu_tau_vec = np.arange(-10, 8, 2).astype(float)
+sigm_tau_vec = np.linspace(0, 10, 5)
+mu_tauc_vec = np.arange(-10, 8, 2).astype(float)
+sigm_tauc_vec = np.linspace(0, 10, 5)
+#mu_tau_vec = np.linspace(-10, 0, 4)
+#sigm_tau_vec = np.linspace(0, 10, 3)
+#mu_tauc_vec = np.linspace(-10, 0, 4)
+#sigm_tauc_vec = np.linspace(0, 10, 3)
 #mu_tau_vec = np.linspace(0, 0, 1)
 #sigm_tau_vec = np.linspace(0, 0, 1)
 #mu_tauc_vec = np.linspace(0, 0, 1)
@@ -56,7 +62,7 @@ num_computations_finished = 0
 with tqdm(total=total_computations) as pbar:
     for metric in metrics:
         constants.update({'metric': metric})
-        constants.update({'overwrite_metrics': False}) #Set True to overwrite metrics (only once per metric)
+        constants.update({'overwrite_metrics': True}) #Set True to overwrite metrics (only once per metric)
         constants.update({'overwrite_scaleparams': False}) 
         for (tauc_method_i, tauc_method) in enumerate(tauc_methods):
             if tauc_method_i > 0:
@@ -67,6 +73,7 @@ with tqdm(total=total_computations) as pbar:
             pproc = Phase(**constants) 
             if pproc.rank == pproc.root: print(f"on {tauc_method} tauc_method")
             pproc.initialize()
+            import sys; sys.exit()
 
             # Save uncertainty axes to file
             if (pproc.rank == pproc.root):
@@ -83,7 +90,7 @@ with tqdm(total=total_computations) as pbar:
                 # Generate uncertainties on initial tau values
                 pproc.generate_eps_tau(mu_tau, sigm_tau)
                 for mu_tauc, sigm_tauc in product(mu_tauc_vec, sigm_tauc_vec):
-                    if pproc.rank == pproc.root: print(f"on (mu_tau, sigm_tau, mu_tauc, sigm_tauc)={mu_tau, sigm_tau, mu_tauc, sigm_tauc}")
+                    #if pproc.rank == pproc.root: print(f"on (mu_tau, sigm_tau, mu_tauc, sigm_tauc)={mu_tau, sigm_tau, mu_tauc, sigm_tauc}")
                     # Generate uncertainties on alterations to tau values
                     pproc.generate_eps_tauc(mu_tauc, sigm_tauc)
                     # Calculate <metric> at sampled resource constraint values and alteration slice sizes

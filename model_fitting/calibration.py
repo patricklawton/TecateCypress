@@ -12,19 +12,19 @@ from sbi.utils import MultipleIndependent
 from torch import tensor
 import json
 
+dpi = 60
 processes = ['mortality']
 for pr in processes:
     if pr == 'mortality':
         from mortality.simulator import simulator, fixed
-        labels = ['alph_m', 'beta_m', 'sigm_m', 'gamm_nu', 'kappa']#, 'gamm_m']
     elif pr == 'fecundity':
-        from fecundity.simulator import simulator
-        fixed = {}
-        labels = ['rho_max', 'eta_rho', 'a_mature', 'sigm_max', 'eta_sigm']
-    with open(pr+"/prior.pkl", "rb") as handle:
+        from fecundity.simulator import simulator, fixed
+    with open(pr+"/restricted_prior.pkl", "rb") as handle:
         prior = pickle.load(handle)
     simulator = utils.user_input_checks.process_simulator(simulator, prior, is_numpy_simulator=True)
 
+    with open(pr+"/param_labels.pkl", 'rb') as handle:
+        labels = pickle.load(handle)
     with open(pr+"/posterior.pkl", "rb") as handle:
         posterior = pickle.load(handle)
 
@@ -73,7 +73,7 @@ for pr in processes:
         parameter_labels=labels,
         num_bins=None,  # by passing None we use a heuristic for the number of bins.
     )
-    f.savefig('sbi_figs/{}_rank_hist.png'.format(pr), bbox_inches='tight')
+    f.savefig('sbi_figs/{}_rank_hist.png'.format(pr), bbox_inches='tight', dpi=dpi)
 
     f, ax = analysis.plot.sbc_rank_plot(
         ranks=ranks, 
@@ -81,7 +81,7 @@ for pr in processes:
         plot_type="cdf",
         parameter_labels=labels
     )
-    f.savefig('sbi_figs/{}_rank_cdf.png'.format(pr), bbox_inches='tight')
+    f.savefig('sbi_figs/{}_rank_cdf.png'.format(pr), bbox_inches='tight', dpi=dpi)
 
     ### ppc
     x_o = np.load(pr+'/observations/observations.npy')
@@ -96,17 +96,17 @@ for pr in processes:
     limits = torch.tensor([[mins[i], maxes[i]] for i in range(x_pp.shape[1])])
     if pr == 'mortality':
         limits[9][0] = -0.0005; limits[9][1] = 0.001
-        limits[12][0] = -0.0005; limits[12][1] = 0.0008
-        limits[13][0] = -0.00005; limits[13][1] = 0.00015
-        limits[14][0] = -0.00005; limits[14][1] = 0.0001
+        #limits[12][0] = -0.0005; limits[12][1] = 0.0008
+        #limits[13][0] = -0.00005; limits[13][1] = 0.00015
+        #limits[14][0] = -0.00005; limits[14][1] = 0.0001
     elif pr == 'fecundity':
-        limits[0][0] = -0.0005; limits[0][1] = 10
+        limits[0][0] = -0.0005; limits[0][1] = 1.5
         limits[1][0] = -0.0005; limits[1][1] = 250
-        limits[2][0] = -0.0005; limits[2][1] = 2500
-        limits[3][0] = -0.0005; limits[3][1] = 10
+        limits[2][0] = -0.0005; limits[2][1] = 900
+        limits[3][0] = -0.0005; limits[3][1] = 2
         limits[4][0] = -0.0005; limits[4][1] = 250
-        limits[5][0] = -0.0005; limits[5][1] = 2500
-        limits[6][0] = -0.0005; limits[6][1] = 1
+        limits[5][0] = -0.0005; limits[5][1] = 900
+        #limits[6][0] = -0.0005; limits[6][1] = 1
     ppc = analysis.pairplot(
         samples=x_pp,
         points=x_o, 
@@ -114,4 +114,4 @@ for pr in processes:
         limits=limits,
         figsize=(16,16)
     )
-    ppc[0].savefig('sbi_figs/{}_npe_ppc.png'.format(pr), bbox_inches='tight')
+    ppc[0].savefig('sbi_figs/{}_npe_ppc.png'.format(pr), bbox_inches='tight', dpi=dpi)
