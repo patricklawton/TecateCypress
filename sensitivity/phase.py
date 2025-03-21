@@ -31,7 +31,7 @@ constants['slice_samples'] = 60
 constants['tauc_min_samples'] = np.arange(1, 17, 2) 
 constants['root'] = 0 #For mpi
 constants.update({'final_max_tau': np.nan})
-constants['overwrite_results'] = True
+constants['overwrite_results'] = False
 #constants['meta_metric'] = 'distribution_avg'
 constants['meta_metric'] = 'gte_thresh'
 
@@ -62,7 +62,7 @@ num_computations_finished = 0
 with tqdm(total=total_computations) as pbar:
     for metric in metrics:
         constants.update({'metric': metric})
-        constants.update({'overwrite_metrics': False}) #Set True to overwrite metrics (only once per metric)
+        constants.update({'overwrite_metrics': True}) #Set True to overwrite metrics (only once per metric)
         constants.update({'overwrite_scaleparams': False}) 
         for (tauc_method_i, tauc_method) in enumerate(tauc_methods):
             if tauc_method_i > 0:
@@ -73,6 +73,7 @@ with tqdm(total=total_computations) as pbar:
             pproc = Phase(**constants) 
             if pproc.rank == pproc.root: print(f"on {tauc_method} tauc_method")
             pproc.initialize()
+            import sys; sys.exit()
 
             # Save uncertainty axes to file
             if (pproc.rank == pproc.root):
