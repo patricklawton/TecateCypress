@@ -159,7 +159,7 @@ def compute_mu_s(job):
 @FlowProject.post(lambda job: job.doc.get('lambda_s_computed'))
 @FlowProject.operation
 def compute_lambda_s(job):
-    print(job.id)
+    #print(job.id)
     with job.data:
         census_t = np.array(job.data["census_t"])
         burn_in_end_i = 0
@@ -220,16 +220,25 @@ def compute_lambda_s(job):
             masked_N_tot = np.where(valid_mask, N_tot, np.nan)  # Replace zeros with NaN (ignored in np.nanprod)
             N_slice = masked_N_tot[:, start_i:final_i]  # Slice N_tot by all post burn in timesteps
 
-            # Compute number of valid timesteps for each simulation
-            valid_timesteps = np.sum(valid_mask[:, start_i:final_i], axis=1) - 1  # Subtract 1 to avoid zero exponent
+            ## Compute number of valid timesteps for each simulation
+            #valid_timesteps = np.sum(valid_mask[:, start_i:final_i], axis=1) - 1  # Subtract 1 to avoid zero exponent
 
-            # Compute per-replica growth rates (ignore NaNs)
-            growthrates = N_slice[:, 1:] / np.roll(N_slice, 1, axis=1)[:, 1:]
+            ## Compute per-replica growth rates (ignore NaNs)
+            #growthrates = N_slice[:, 1:] / np.roll(N_slice, 1, axis=1)[:, 1:]
 
-            # Avoid zero exponent by setting invalid cases to NaN
+            ## Avoid zero exponent by setting invalid cases to NaN
+            #valid_exponent_mask = valid_timesteps > 0
+            #lam_s_all = np.full(N_tot.shape[0], np.nan)  # Default to NaN
+            #lam_s_all[valid_exponent_mask] = np.nanprod(growthrates[valid_exponent_mask], axis=1) ** (1 / valid_timesteps[valid_exponent_mask])
+
+            # Just use the first and final timesteps
+            valid_timesteps = np.sum(valid_mask[:, start_i:final_i], axis=1) - 1
+            final_N = np.take_along_axis(N_slice, valid_timesteps[..., None], axis=1)[:, 0]
+            growthrates = final_N / N_slice[:, 0]
             valid_exponent_mask = valid_timesteps > 0
             lam_s_all = np.full(N_tot.shape[0], np.nan)  # Default to NaN
-            lam_s_all[valid_exponent_mask] = np.nanprod(growthrates[valid_exponent_mask], axis=1) ** (1 / valid_timesteps[valid_exponent_mask])
+            lam_s_all[valid_exponent_mask] = growthrates[valid_exponent_mask] ** (1 / valid_timesteps[valid_exponent_mask]) 
+
             #if np.any(np.sum(valid_mask[:, start_i:final_i], axis=1) == 1):
             #    print('thats not good')
             if np.any(np.isnan(lam_s_all)):
