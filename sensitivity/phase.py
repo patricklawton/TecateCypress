@@ -23,10 +23,10 @@ constants['min_tau'] = 2
 constants['A_cell'] = 270**2 / 1e6 #km^2
 constants['plotting_tau_bw_ratio'] = 30 #For binning initial tau (with uncertainty) in phase slice plots
 constants['ncell_min'] = 2_500
-#constants['ncell_samples'] = 25
-constants['ncell_samples'] = 15
-#constants['slice_samples'] = 50
-constants['slice_samples'] = 30
+constants['ncell_samples'] = 30
+#constants['ncell_samples'] = 15
+constants['slice_samples'] = 60
+#constants['slice_samples'] = 30
 # Use the minimum tauc values (i.e. when spread over all cells) to determine C values
 constants['tauc_min_samples'] = np.arange(1, 17, 2) 
 constants['root'] = 0 #For mpi
@@ -44,9 +44,9 @@ tauc_methods = ["flat"]
 
 # Define uncertainty axes (and save under metric folder later)
 mu_tau_vec = np.arange(-10, 8, 2).astype(float)
-sigm_tau_vec = np.linspace(0, 10, 3)
+sigm_tau_vec = np.linspace(0, 10, 5)
 mu_tauc_vec = np.arange(-10, 8, 2).astype(float)
-sigm_tauc_vec = np.linspace(0, 10, 3)
+sigm_tauc_vec = np.linspace(0, 10, 5)
 #mu_tau_vec = np.linspace(-10, 0, 4)
 #sigm_tau_vec = np.linspace(0, 10, 3)
 #mu_tauc_vec = np.linspace(-10, 0, 4)
