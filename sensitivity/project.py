@@ -164,98 +164,37 @@ def compute_lambda_s(job):
         census_t = np.array(job.data["census_t"])
         burn_in_end_i = 0
         for b in b_vec:
-            ### Skip if lambda_s already computed at this b value
-            ##if str(b) in list(job.data['lambda_s'].keys()): continue
-            #N_tot = np.array(job.data[f"N_tot/{b}"])
-            #nonzero_counts = np.count_nonzero(N_tot, axis=1)
-            #extirpated_replicas = np.nonzero(nonzero_counts < job.sp.t_final)[0]
-            #all_growthrates = np.zeros(N_tot.shape)
-
-            ## First handle replicas where extirpations occur
-            #'''Could probably speed up with masking'''
-            #lam_s_extir = []
-            #for rep_i in extirpated_replicas:
-            #    N_t = N_tot[rep_i]
-            #    zero_i_min = nonzero_counts[rep_i]
-            #    final_i = zero_i_min
-
-            #    t = census_t[burn_in_end_i:final_i]
-            #    if len(t) == 1:
-            #        print('hey')
-            #    N_slice = N_t[burn_in_end_i:final_i]
-            #    growthrates = N_slice[1:] / np.roll(N_slice, 1)[1:]
-            #    lam_s_replica = np.product(growthrates) ** (1/len(t))
-            #    lam_s_extir.append(lam_s_replica)
-            #if np.any(lam_s_extir == 1):
-            #    print('that shouldnt happen')
-
-            ## Now handle cases with no extirpation
-            #N_tot = np.delete(N_tot, extirpated_replicas, axis=0)
-            #start_i = burn_in_end_i
-            #final_i = N_tot.shape[1]
-            #N_slice = N_tot[:,start_i:final_i]
-            ##log_ratios = np.log(N_slice[:,1:] / np.roll(N_slice, 1, 1)[:,1:])
-            ##lam_s_vec = np.sum(log_ratios, axis=1) / N_slice.shape[1]
-            #growthrates = N_slice[:,1:] / np.roll(N_slice, 1, 1)[:,1:]
-            ##lam_products = np.product(, axis=1)
-            #lam_s_vec = np.product(growthrates, axis=1) ** (1/(N_slice.shape[1]-1)) 
-            #if np.any(lam_s_vec == 1):
-            #    print('that also shouldnt happen')
-
-            ## Compute final lambda value
-            #lam_s_all = np.concatenate((lam_s_vec, lam_s_extir))
-
             N_tot = np.array(job.data[f"N_tot/{b}"])
-            nonzero_counts = np.count_nonzero(N_tot, axis=1)  # Count nonzero timesteps
-            extirpated_replicas = np.nonzero(nonzero_counts < job.sp.t_final)[0]  # Find extirpated replicas
-
-            # Create a mask where N_tot > 0 (avoiding inf values)
-            valid_mask = N_tot > 0
-
             # Indices for slicing
             start_i = burn_in_end_i  # Start after burn-in
             final_i = N_tot.shape[1]  # Last valid timestep
+            N_slice = N_tot[:, start_i:final_i]  # Slice N_tot by all post burn in timesteps
 
-            # Apply mask and slice
-            masked_N_tot = np.where(valid_mask, N_tot, np.nan)  # Replace zeros with NaN (ignored in np.nanprod)
-            N_slice = masked_N_tot[:, start_i:final_i]  # Slice N_tot by all post burn in timesteps
-
-            ## Compute number of valid timesteps for each simulation
-            #valid_timesteps = np.sum(valid_mask[:, start_i:final_i], axis=1) - 1  # Subtract 1 to avoid zero exponent
-
-            ## Compute per-replica growth rates (ignore NaNs)
-            #growthrates = N_slice[:, 1:] / np.roll(N_slice, 1, axis=1)[:, 1:]
-
-            ## Avoid zero exponent by setting invalid cases to NaN
-            #valid_exponent_mask = valid_timesteps > 0
-            #lam_s_all = np.full(N_tot.shape[0], np.nan)  # Default to NaN
-            #lam_s_all[valid_exponent_mask] = np.nanprod(growthrates[valid_exponent_mask], axis=1) ** (1 / valid_timesteps[valid_exponent_mask])
+            # Mask where N_slice > 0 (avoiding inf values)
+            valid_mask = N_slice > 0
+            masked_N_slice = np.where(valid_mask, N_slice, np.nan)  # Replace zeros with NaN (ignored in np.nanprod)
 
             # Just use the first and final timesteps
-            valid_timesteps = np.sum(valid_mask[:, start_i:final_i], axis=1) - 1
+            valid_timesteps = np.sum(valid_mask, axis=1) - 1
             final_N = np.take_along_axis(N_slice, valid_timesteps[..., None], axis=1)[:, 0]
+
+            # Add extinction threshold
+            eps = 1
+            ext_mask = valid_timesteps < (N_slice.shape[1] - 1)
+            valid_timesteps[ext_mask] = valid_timesteps[ext_mask] + 1
+            final_N[ext_mask] = eps 
+
+            # Compute lambda
             growthrates = final_N / N_slice[:, 0]
             valid_exponent_mask = valid_timesteps > 0
             lam_s_all = np.full(N_tot.shape[0], np.nan)  # Default to NaN
             lam_s_all[valid_exponent_mask] = growthrates[valid_exponent_mask] ** (1 / valid_timesteps[valid_exponent_mask]) 
+            job.data[f'lambda_s/{b}'] = np.nanmean(lam_s_all) 
 
-            #if np.any(np.sum(valid_mask[:, start_i:final_i], axis=1) == 1):
-            #    print('thats not good')
             if np.any(np.isnan(lam_s_all)):
                 print('theres nans')
             if np.any(lam_s_all == 1):
                 print(f'theres exact 1s for b={b}')
-                #print(valid_timesteps)
-
-            if len(lam_s_all) != 0:
-                job.data[f'lambda_s/{b}'] = np.nanmean(lam_s_all) 
-            else:
-                print('double check this')
-                #N_tot_mean = np.array(job.data[f"N_tot_mean/{b}"])
-                lam_s = np.exp(-np.log(job.sp.Aeff*job.sp.params.K_adult) / len(t))
-                job.data[f'lambda_s/{b}'] = lam_s
-
-        #import sys; sys.exit()
 
     job.doc['lambda_s_computed'] = True
 
@@ -386,11 +325,12 @@ class Phase:
                 tau_filt = (all_tau == tau)
                 metric_slice = self.metric_data["all_metric"][tau_filt]
                 metric_expect_vec[tau_i] = np.mean(metric_slice)
-            if self.metric == 'P_s':
-                t = self.tau_vec[2:-2:1] 
-                k = 3
-                t = np.r_[(0,)*(k+1), t, (self.tau_vec[-1],)*(k+1)]
-            else:
+            #if self.metric == 'P_s':
+            #    t = self.tau_vec[2:-2:1] 
+            #    k = 3
+            #    t = np.r_[(0,)*(k+1), t, (self.tau_vec[-1],)*(k+1)]
+            #else:
+            if True:
                 t = self.tau_vec[2:-2:2] 
                 k = 3
                 t = np.r_[(self.tau_vec[1],)*(k+1), t, (self.tau_vec[-1],)*(k+1)]
