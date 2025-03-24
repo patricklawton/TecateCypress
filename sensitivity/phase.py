@@ -38,7 +38,8 @@ constants['meta_metric'] = 'gte_thresh'
 # Define metrics and tauc methods to run analysis on
 #metrics = ["lambda_s", "mu_s", "r"]
 #metrics = ["P_s"]
-metrics = ["lambda_s"]
+#metrics = ["lambda_s"]
+metrics = ["s"]
 #tauc_methods = ["flat", "initlinear", "initinverse"]
 tauc_methods = ["flat"]
 
@@ -73,7 +74,6 @@ with tqdm(total=total_computations) as pbar:
             pproc = Phase(**constants) 
             if pproc.rank == pproc.root: print(f"on {tauc_method} tauc_method")
             pproc.initialize()
-            import sys; sys.exit()
 
             # Save uncertainty axes to file
             if (pproc.rank == pproc.root):
@@ -84,6 +84,7 @@ with tqdm(total=total_computations) as pbar:
                         handle['sigm_tau'] = sigm_tau_vec
                         handle['mu_tauc'] = mu_tauc_vec
                         handle['sigm_tauc'] = sigm_tauc_vec
+            import sys; sys.exit()
 
             # Process data over uncertainty space samples
             for mu_tau, sigm_tau in product(mu_tau_vec, sigm_tau_vec):

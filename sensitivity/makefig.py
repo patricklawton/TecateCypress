@@ -18,7 +18,8 @@ import os
 
 # Define/load things non-specific to a given set of results
 #metric = "P_s"
-metric = 'lambda_s'
+#metric = 'lambda_s'
+metric = 's'
 Aeff = 7.29
 t_final = 300
 ncell_tot = 87_993
@@ -59,6 +60,10 @@ def set_globals(results_pre):
         globals()['metric_lab'] = r'$S_{meta}$'
         globals()['rob_metric_lab'] = r'$\S_{meta}^*$'
         globals()['mean_metric_lab'] = r'$<P_s>$'
+    if metric == 's':
+        globals()['metric_lab'] = r'$s_{meta}$'
+        globals()['rob_metric_lab'] = r'$\s_{meta}^*$'
+        globals()['mean_metric_lab'] = r'$<s>$'
     globals()['fn_prefix'] = f"{results_pre}/data/Aeff_{Aeff}/tfinal_{t_final}/metric_{metric}/"
     globals()['fig_prefix'] = f"{results_pre}/figs/Aeff_{Aeff}/tfinal_{t_final}/metric_{metric}/"
     #globals()['fig_prefix'] = os.path.join('/','Volumes', 'Macintosh HD', 'Users', 'patrick', 
@@ -73,7 +78,7 @@ def set_globals(results_pre):
     globals()['ncell_vec'] = np.load(fn_prefix + "ncell_vec.npy")
     globals()['slice_left_all'] = np.load(fn_prefix + "slice_left_all.npy")
     eps_axes = {}
-    with h5py.File(fn_prefix + "/eps_axes.h5", "r") as handle:
+    with h5py.File(fn_prefix + "eps_axes.h5", "r") as handle:
         for key in handle.keys():
             eps_axes.update({key: handle[key][()]})
     globals()['eps_axes'] = eps_axes
@@ -189,6 +194,8 @@ if metric == 'P_s':
 elif metric == 'lambda_s':
     cbar.set_label(rf'frequency of $\lambda$ given ${{\tau}}$', rotation=-90, labelpad=cbar_lpad)
     ax3.set_ylabel(rf'simulated stochastic growth rate $\lambda$')
+elif metric == 's':
+    ax3.set_ylabel(rf's')
 ax3.plot([], [], marker='o', color='k', label=mean_metric_lab)
 ax3.legend(bbox_to_anchor=(0.2, -0.05, 0.5, 0.5), fontsize=21)
 ax3.set_ylim(metric_edges[np.nonzero(im[0][min_edge_i])[0].min()], max(metric_edges))
@@ -257,6 +264,8 @@ else:
 if metric == 'P_s':
     thresh = 0.5
 elif metric == 'lambda_s':
+    thresh = 0.975
+elif metric == 's':
     thresh = 0.975
 bin_i = np.argmin(np.abs(bin_edges - thresh))
 axes[0,0].hist(metric_interp[metric_interp >= bin_edges[bin_i]], bins=bin_edges, color=color, 
@@ -332,6 +341,7 @@ axes[0,1].set_xlabel(r"average fire return interval $\tau$")
 #axes[0,1].set_xlim(15, 81);
 axes[0,1].set_xlim(15, xmax);
 ########
+import sys; sys.exit('exiting after fig2b')
 
 #### RESULTS UNDER ZERO UNCERTAINTY ####
 width = 0.875
