@@ -41,7 +41,7 @@ h_o = np.mean(sdm_otay[sdm_otay!=0]) #excluding zero, would be better to use SDM
 A_o = 0.1 #area of observed sites in Ha
 delta_t = 1
 t_final = 300
-num_reps = 1_000
+num_reps = 6_000
 init_age = params['a_mature'] - (np.log((1/0.90)-1) / params['eta_rho']) # Age where 90% of reproductive capacity reached
 init_age = int(init_age + 0.5) # Round to nearest integer
 #t_final = 10

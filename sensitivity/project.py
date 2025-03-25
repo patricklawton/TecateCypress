@@ -21,7 +21,7 @@ import sys
 import itertools
 from itertools import product
 import h5py
-from global_functions import adjustmaps
+from global_functions import adjustmaps, lambda_s
 MPI.COMM_WORLD.Set_errhandler(MPI.ERRORS_RETURN)
 
 # Open up signac project
@@ -44,7 +44,7 @@ def run_sims(job):
     params.update(fec_fixed)
     Aeff = job.sp['Aeff'] #ha
     delta_t = 1
-    num_reps = 1_000
+    num_reps = 100
     N_0_1 = Aeff*params['K_adult']
     N_0_1_vec = np.repeat(N_0_1, num_reps)
     init_age = params['a_mature'] - (np.log((1/0.90)-1) / params['eta_rho']) # Age where 90% of reproductive capacity reached
@@ -56,17 +56,30 @@ def run_sims(job):
         #if 'frac_extirpated' in list(job.data.keys()):
         #    if str(b) in list(job.data['frac_extirpated'].keys()): 
         #        continue
+        # Initialize model instance
         model = Model(**params)
         model.set_effective_area(Aeff)
         model.init_N(N_0_1_vec, init_age)
         model.set_t_vec(t_vec)
         model.set_weibull_fire(b=b, c=1.42)
         model.generate_fires()
+        # Run simulation
         model.simulate(method=job.sp.method, census_every=1, progress=False) 
         # Store some results
-        N_tot_mean = model.N_tot_vec.mean(axis=0)
-        job.data[f'N_tot_mean/{b}'] = N_tot_mean 
-        job.data[f'N_tot/{b}'] = model.N_tot_vec
+        #N_tot_mean = model.N_tot_vec.mean(axis=0)
+        #job.data[f'N_tot_mean/{b}'] = N_tot_mean 
+        # Mask where N_tot > 0 
+        valid_mask = model.N_tot_vec > 0
+        # Store only the first and final abundances, and the number of timesteps in between
+        valid_timesteps = np.sum(valid_mask, axis=1) - 1
+        ext_mask = valid_timesteps < (model.N_tot_vec.shape[1] - 1)
+        final_N = np.take_along_axis(model.N_tot_vec, valid_timesteps[..., None], axis=1)[:, 0]
+        first_and_final = np.full((model.N_tot_vec.shape[0], 2), np.nan)
+        first_and_final[:, 0] = model.N_tot_vec[:, 0]
+        first_and_final[:, 1] = final_N
+        job.data[f'first_and_final/{b}'] = first_and_final
+        job.data[f'valid_timesteps/{b}'] = valid_timesteps
+        job.data[f'ext_mask/{b}'] = ext_mask 
         frac_extirpated = np.array([sum(model.N_tot_vec[:,t_i]==0)/model.N_tot_vec.shape[0] for t_i in range(model.N_tot_vec.shape[1])])
         job.data[f'frac_extirpated/{b}'] = frac_extirpated
 
@@ -160,38 +173,22 @@ def compute_mu_s(job):
 @FlowProject.operation
 def compute_lambda_s(job):
     #print(job.id)
+    compressed = True
     with job.data:
         census_t = np.array(job.data["census_t"])
-        burn_in_end_i = 0
         for b in b_vec:
-            N_tot = np.array(job.data[f"N_tot/{b}"])
-            # Indices for slicing
-            start_i = burn_in_end_i  # Start after burn-in
-            final_i = N_tot.shape[1]  # Last valid timestep
-            N_slice = N_tot[:, start_i:final_i]  # Slice N_tot by all post burn in timesteps
-
-            # Mask where N_slice > 0 (avoiding inf values)
-            valid_mask = N_slice > 0
-            masked_N_slice = np.where(valid_mask, N_slice, np.nan)  # Replace zeros with NaN (ignored in np.nanprod)
-
-            # Just use the first and final timesteps
-            valid_timesteps = np.sum(valid_mask, axis=1) - 1
-            final_N = np.take_along_axis(N_slice, valid_timesteps[..., None], axis=1)[:, 0]
-
-            # Add extinction threshold
-            eps = 1
-            ext_mask = valid_timesteps < (N_slice.shape[1] - 1)
-            valid_timesteps[ext_mask] = valid_timesteps[ext_mask] + 1
-            final_N[ext_mask] = eps 
-
-            # Compute lambda
-            growthrates = final_N / N_slice[:, 0]
-            valid_exponent_mask = valid_timesteps > 0
-            lam_s_all = np.full(N_tot.shape[0], np.nan)  # Default to NaN
-            lam_s_all[valid_exponent_mask] = growthrates[valid_exponent_mask] ** (1 / valid_timesteps[valid_exponent_mask]) 
-            job.data[f'lambda_s/{b}'] = np.nanmean(lam_s_all) 
-            job.data[f'lambda_s_all/{b}'] = lam_s_all[valid_exponent_mask]
-            job.data[f'lambda_s_std/{b}'] = np.std(lam_s_all[valid_exponent_mask], ddof=1)
+            if compressed:
+                valid_timesteps = np.array(job.data[f"valid_timesteps/{b}"])
+                ext_mask = np.array(job.data[f"ext_mask/{b}"])
+                N_tot = np.array(job.data[f"first_and_final/{b}"])
+            else:
+                valid_timesteps = None
+                ext_mask = None
+                N_tot = np.array(job.data[f"N_tot/{b}"])
+            lam_s_all = lambda_s(N_tot, compressed=compressed, valid_timesteps=valid_timesteps, ext_mask=ext_mask)
+            job.data[f'lambda_s/{b}'] = np.mean(lam_s_all) 
+            job.data[f'lambda_s_all/{b}'] = lam_s_all
+            job.data[f'lambda_s_std/{b}'] = np.std(lam_s_all, ddof=1)
 
             if np.any(np.isnan(lam_s_all)):
                 print('theres nans')
