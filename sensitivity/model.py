@@ -100,6 +100,7 @@ class Model:
         #eta_a = np.ones(self.t_vec.size)
         sigm_m_a = self.sigm_m*np.exp(-self.tau_m*self.t_vec)
         epsilon_m_vec = rng.lognormal(np.zeros_like(N_vec)+self.mu_m, np.tile(sigm_m_a, (len(self.N_0_1),1)))
+        survival_probs = np.exp(-m_a * epsilon_m_vec * self.delta_t)  # Shape: (pop, age)
         ## Make it deterministic
         #epsilon_m_mean = np.exp(sigm_m_a**2 / 2) 
         # Age-dependent fecundity functions
@@ -107,6 +108,7 @@ class Model:
         #sigm_a = self.sigm_max / (1+np.exp(-self.eta_sigm*(self.t_vec-self.a_sigm_star)))
         sigm_a = np.repeat(self.sigm_max, self.t_vec.size)
         epsilon_rho_vec = rng.lognormal(np.zeros_like(N_vec), np.tile(sigm_a, (len(self.N_0_1),1)))
+        fecundities = rho_a * epsilon_rho_vec  # Shape: (pop, age)
         ## Make it deterministic
         #epsilon_rho = np.exp(sigm_a**2 / 2)
         #fecundities = rho_a*epsilon_rho
@@ -129,19 +131,34 @@ class Model:
 
             # Fire event update (vectorized)
             fire_mask = self.t_fire_vec[:, t_i] & valid_pops
+            comb_mask = fire_mask[:, None] * age_mask # Make a combined mask for fire and nonzero ages
             if np.any(fire_mask):
-                fecundities = rho_a * epsilon_rho_vec  # Shape: (pop, age)
-                num_births = rng.poisson(fecundities * N_vec)  # Shape: (pop, age)
-                N_vec[fire_mask, 0] = num_births.sum(axis=1)[fire_mask]  # Seedling recruitment
+                # Only compute births for populations with fires
+                #num_births = rng.poisson(fecundities[fire_mask, :] * N_vec[fire_mask, :])  # Shape: (pop, age)
+                #N_vec[fire_mask, 0] = num_births.sum(axis=1)  # Seedling recruitment
+                #N_vec[fire_mask, 1:] = np.roll(N_vec[fire_mask, 1:] * 0.0025, shift=1, axis=1)  # post-fire survival
+
+                # Draw births, only where necessary (using comb_mask)
+                num_births = np.zeros_like(N_vec)
+                births_input = fecundities * N_vec
+                try:
+                    num_births[comb_mask] = rng.poisson(births_input[comb_mask]) 
+                # If the abundances get too large, we need to cap them
+                except(ValueError):
+                    births_input[births_input > 1e18] = 1e18 
+                    num_births[comb_mask] = rng.poisson(births_input[comb_mask]) 
+                N_vec[fire_mask, 0] = num_births[fire_mask, :].sum(axis=1)  # Seedling recruitment
                 N_vec[fire_mask, 1:] = np.roll(N_vec[fire_mask, 1:] * 0.0025, shift=1, axis=1)  # post-fire survival
 
             # Mortality update (vectorized) - Only applied where fire **does not** occur
             mortality_mask = ~fire_mask & valid_pops  # Populations without fire
+            comb_mask = mortality_mask[:, None] * age_mask
             if np.any(mortality_mask):
-                survival_probs = np.exp(-m_a * epsilon_m_vec * self.delta_t)  # Shape: (pop, age)
-                prob_check = np.all(survival_probs >= 0) and np.all(survival_probs <= 1)
-                if not prob_check: print("FUCK")
-                num_survivors = rng.binomial(N_vec, survival_probs)  # Binomial survival draw
+                #prob_check = np.all(survival_probs >= 0) and np.all(survival_probs <= 1)
+                #if not prob_check: print("invalid survival probs!!")
+                # Draw survivors, only where necessary
+                num_survivors = np.zeros_like(N_vec)
+                num_survivors[comb_mask] = rng.binomial(N_vec[comb_mask], survival_probs[comb_mask])  # Binomial survival draw
                 N_vec[mortality_mask, :] = np.roll(num_survivors[mortality_mask], shift=1, axis=1)  # Age shift
 
             # Census update (vectorized)
