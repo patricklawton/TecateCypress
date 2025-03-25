@@ -87,7 +87,7 @@ class Model:
                         else:
                             if t_star_vec[pop_i] < len(self.t_vec)-1:
                                 t_star_vec[pop_i] += 1
-        self.t_fire_vec = t_fire_vec
+        self.t_fire_vec = t_fire_vec.astype(bool)
     
     def _simulate_discrete(self, N_vec, progress):
         # Age-dependent mortality functions
@@ -112,89 +112,41 @@ class Model:
         #fecundities = rho_a*epsilon_rho
 
         for t_i, t in enumerate(tqdm(self.t_vec[:-1], disable=(not progress))):
-            for pop_i in range(len(N_vec)):
-                # If sim invalid or pop extirpated, skip
-                if np.all(np.isnan(N_vec)) or (np.sum(N_vec[pop_i]) == 0):
-                    continue
-                age_i_vec = np.nonzero(N_vec[pop_i])[0]
-                # Cap the max age at the length of the time vector minus 1;
-                # just because that's all we compute, could calculate on the fly
-                if max(age_i_vec) >= len(self.t_vec) - 1:
-                    N_vec[pop_i][age_i_vec[-1]-1] += N_vec[pop_i][age_i_vec[-1]]
-                    N_vec[pop_i][age_i_vec[-1]] = 0
-                    age_i_vec[-1] = len(self.t_vec) - 2
-                # Determine if this is a single age population
-                #if len(age_i_vec) > 1:
-                #    single_age = False
-                #else:
-                #    single_age = True
-                #    age_i = age_i_vec[0]
-                #    N = N_vec[pop_i][age_i]
-                single_age = False
+            # Identify extirpated populations (fully zero) and valid ones
+            valid_pops = np.sum(N_vec, axis=1) > 0  # Boolean mask for surviving populations
+            if not np.any(valid_pops):  # If all populations are extinct, stop early
+                break
 
-                # If a fire occurs this timestep, reproduce
-                if self.t_fire_vec[pop_i, t_i]:
-                    # Update seedlings, kill all adults
-                    if not single_age:
-                        '''Should only draw values for ages that are present, inefficient otherwise'''
-                        #epsilon_rho = rng.lognormal(np.zeros(len(self.t_vec)), sigm_a)
-                        #fecundities = rho_a*epsilon_rho
-                        fecundities = rho_a*epsilon_rho_vec[pop_i]
-                        num_births = rng.poisson(fecundities*N_vec[pop_i])
-                        # Make it deterministic
-                        #num_births = fecundities*N_vec[pop_i]
-                        N_vec[pop_i,0] = num_births.sum()
-                        '''Actually, let 1 out of 400 survive'''
-                        N_vec[pop_i,1:] = np.roll(N_vec[pop_i,1:]*0.0025, 1)
-                        #N_vec[pop_i,1:] = 0
-                    else:
-                        #epsilon_rho = rng.lognormal(0, sigm_a[age_i])
-                        #fecundities = rho_a[age_i]*epsilon_rho
-                        fecundities = rho_a[age_i]*epsilon_rho_vec[pop_i][age_i]
-                        num_births = rng.poisson(fecundities*N)
-                        #'''Really sloppy way to deal with too large abudances, can get away with this for now because I end up throwing out these simulations during analysis anyways'''
-                        #try:
-                        #    num_births = rng.poisson(fecundities*N)
-                        #except ValueError:
-                        #    num_births = rng.poisson(1e18)
-                        N_vec[pop_i,0] = num_births
-                        N_vec[pop_i,1:] = 0
-                # Update each pop given mortality rates
-                else:
-                    # Add density dependent term to mortalities
-                    if not single_age:
-                        #dens_dep = ((nu_a)*(1-m_a)) / (1 + np.exp(-eta_a*self.K_adult*(np.sum(N_vec[pop_i]/K_a) - self.Aeff)))
-                        #m_a_N = m_a + dens_dep
-                        m_a_N = m_a
-                        survival_probs = np.exp(-m_a_N * epsilon_m_vec[pop_i] * self.delta_t)
-                        # Make it deterministic
-                        #survival_probs = np.exp(-m_a_N * epsilon_m_mean * self.delta_t)
-                    else:
-                        #dens_dep = ((nu_a[age_i])*(1-m_a[age_i])) / (1 + np.exp(-eta_a[age_i]*self.K_adult*(N/K_a[age_i] - self.Aeff)))
-                        #m_a_N = m_a[age_i] + dens_dep
-                        m_a_N = m_a[age_i]
-                        survival_probs = np.exp(-m_a_N * epsilon_m_vec[pop_i][age_i] * self.delta_t)
+            # Compute existing age indices for valid populations
+            age_mask = N_vec > 0  # Boolean mask for nonzero ages
 
-                    # Ensure survival probs are feasible, otherwise mark sim invalid 
-                    prob_check = np.all(survival_probs >= 0) and np.all(survival_probs <= 1)
-                    if prob_check:
-                        if not single_age:
-                            num_survivors = rng.binomial(N_vec[pop_i], survival_probs)
-                            # Make it deterministic
-                            #num_survivors = N_vec[pop_i]*survival_probs
-                            num_survivors = np.roll(num_survivors, 1)
-                            # Update abundances
-                            N_vec[pop_i] = num_survivors
-                        else:
-                            num_survivors = rng.binomial(N, survival_probs)
-                            # Update abundances
-                            N_vec[pop_i][age_i+1] = num_survivors
-                            N_vec[pop_i][age_i] = 0
-                    else:
-                        N_vec = np.nan * np.ones((len(self.N_0_1), len(self.t_vec)))
-            if self.t_vec[t_i+1] in self.census_t:
-                self.N_tot_vec[:, t_i+1] = N_vec.sum(axis=1)
+            # Cap maximum age at len(self.t_vec) - 1
+            max_age_mask = np.argmax(age_mask[:, ::-1], axis=1)  # Get rightmost nonzero index
+            max_age_mask = N_vec.shape[1] - 1 - max_age_mask
+            cap_mask = max_age_mask >= len(self.t_vec) - 1
+            N_vec[np.arange(N_vec.shape[0]), max_age_mask - 1] += N_vec[np.arange(N_vec.shape[0]), max_age_mask] * cap_mask
+            N_vec[np.arange(N_vec.shape[0]), max_age_mask] *= ~cap_mask  # Zero out if capped
 
+            # Fire event update (vectorized)
+            fire_mask = self.t_fire_vec[:, t_i] & valid_pops
+            if np.any(fire_mask):
+                fecundities = rho_a * epsilon_rho_vec  # Shape: (pop, age)
+                num_births = rng.poisson(fecundities * N_vec)  # Shape: (pop, age)
+                N_vec[fire_mask, 0] = num_births.sum(axis=1)[fire_mask]  # Seedling recruitment
+                N_vec[fire_mask, 1:] = np.roll(N_vec[fire_mask, 1:] * 0.0025, shift=1, axis=1)  # post-fire survival
+
+            # Mortality update (vectorized) - Only applied where fire **does not** occur
+            mortality_mask = ~fire_mask & valid_pops  # Populations without fire
+            if np.any(mortality_mask):
+                survival_probs = np.exp(-m_a * epsilon_m_vec * self.delta_t)  # Shape: (pop, age)
+                prob_check = np.all(survival_probs >= 0) and np.all(survival_probs <= 1)
+                if not prob_check: print("FUCK")
+                num_survivors = rng.binomial(N_vec, survival_probs)  # Binomial survival draw
+                N_vec[mortality_mask, :] = np.roll(num_survivors[mortality_mask], shift=1, axis=1)  # Age shift
+
+            # Census update (vectorized)
+            if self.t_vec[t_i + 1] in self.census_t:
+                self.N_tot_vec[:, t_i + 1] = N_vec.sum(axis=1)
 
     def _simulate_nint(self, progress):
         # Instantaneous mortality for numerical integration

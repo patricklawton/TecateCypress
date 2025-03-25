@@ -13,15 +13,14 @@ from tqdm import tqdm
 import signac as sg
 
 # Read in map parameters
-#params = {}
-#for pr in ['mortality', 'fecundity']:
-#    with open('../model_fitting/{}/map.json'.format(pr), 'r') as handle:
-#        params.update(json.load(handle))
+params = {}
+for pr in ['mortality', 'fecundity']:
+    with open('../model_fitting/{}/map.json'.format(pr), 'r') as handle:
+        params.update(json.load(handle))
 # Read in parameters from a specific sample
-project = sg.get_project()
-#job = project.get_job('workspace/a0b3e8eb9b6aab04c5c5f02bd5718f21')
-job = project.get_job('workspace/a1c4d78b08a78b045e0f257a8b496f75')
-params = job.sp.params
+#project = sg.get_project()
+#job = project.get_job('workspace/a1c4d78b08a78b045e0f257a8b496f75')
+#params = job.sp.params
 
 # Constants
 overwrite_discrete = True
@@ -33,7 +32,6 @@ Aeff = 7.29
 #fri = 40
 c = 1.42
 b = 40 #fri / gamma(1+1/c)
-t_final = 300
 ## Get the average habitat suitability within the Otay Mtn Wilderness area
 sdmfn = "../shared_maps/SDM_1995.asc"
 sdm = np.loadtxt(sdmfn,skiprows=6)
@@ -42,11 +40,15 @@ sdm_otay = sdm[otay==1] #index "1" indicates the specific part where study was d
 h_o = np.mean(sdm_otay[sdm_otay!=0]) #excluding zero, would be better to use SDM w/o threshold
 A_o = 0.1 #area of observed sites in Ha
 delta_t = 1
+t_final = 300
 num_reps = 1_000
-N_0_1 = Aeff*params['K_adult']
-N_0_1_vec = np.repeat(N_0_1, num_reps)
 init_age = params['a_mature'] - (np.log((1/0.90)-1) / params['eta_rho']) # Age where 90% of reproductive capacity reached
 init_age = int(init_age + 0.5) # Round to nearest integer
+#t_final = 10
+#num_reps = 2
+#init_age = 1
+N_0_1 = Aeff*params['K_adult']
+N_0_1_vec = np.repeat(N_0_1, num_reps)
 t_vec = np.arange(delta_t, t_final+delta_t, delta_t)
 
 # Set up model instance shared by discrete and nint sims
