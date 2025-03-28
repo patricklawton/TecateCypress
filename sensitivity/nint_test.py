@@ -31,7 +31,7 @@ Aeff = 7.29
 #Aeff = np.round(4*A_cell*sdm_mean)
 #fri = 40
 c = 1.42
-b = 40 #fri / gamma(1+1/c)
+b =  220 #fri / gamma(1+1/c)
 ## Get the average habitat suitability within the Otay Mtn Wilderness area
 sdmfn = "../shared_maps/SDM_1995.asc"
 sdm = np.loadtxt(sdmfn,skiprows=6)
@@ -40,8 +40,8 @@ sdm_otay = sdm[otay==1] #index "1" indicates the specific part where study was d
 h_o = np.mean(sdm_otay[sdm_otay!=0]) #excluding zero, would be better to use SDM w/o threshold
 A_o = 0.1 #area of observed sites in Ha
 delta_t = 1
-t_final = 300
-num_reps = 6_000
+t_final = 5_000
+num_reps = 1_000
 init_age = params['a_mature'] - (np.log((1/0.90)-1) / params['eta_rho']) # Age where 90% of reproductive capacity reached
 init_age = int(init_age + 0.5) # Round to nearest integer
 #t_final = 10

@@ -36,3 +36,5 @@ model_fitting/*/lc2st_data/*.pkl
 model_fitting/*/*.pkl
 *.svg
 final_figs
+metric_evals.npy
+ranges.pkl

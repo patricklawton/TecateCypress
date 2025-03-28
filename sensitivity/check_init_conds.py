@@ -9,7 +9,17 @@ from tqdm import tqdm
 import signac as sg
 import itertools
 from global_functions import lambda_s
+from mpi4py import MPI
+import pickle
 
+# Initialize MPI stuff
+comm = MPI.COMM_WORLD
+rank = comm.Get_rank()
+num_procs = comm.Get_size()
+root = 0
+if rank==root: print(f'num_procs={num_procs}')
+
+# Function to return parameter combinations as dicts
 def product_dict(**kwargs):
     keys = kwargs.keys()
     for instance in itertools.product(*kwargs.values()):
@@ -23,10 +33,6 @@ params = {}
 for pr in ['mortality', 'fecundity']:
     with open('../model_fitting/{}/map.json'.format(pr), 'r') as handle:
         params.update(json.load(handle))
-# Read in parameters from a specific sample
-#project = sg.get_project()
-#job = project.get_job('workspace/a1c4d78b08a78b045e0f257a8b496f75')
-#params = job.sp.params
 
 # Constants
 c = 1.42
@@ -49,10 +55,18 @@ minima = {
 }
 maxima = {
     'Aeff': np.nan, 
-    'b': 120, 
-    't_final': np.nan,
+    'b': 60, 
+    't_final': 600,
     'q': 0.99 
 }
+# Samples for each parameter range within bounds
+num_samples = {
+    'Aeff': 8,
+    'b': 20,
+    't_final': 11,
+    'q': 8
+}
+
 # Ranges of parameters we're checking sensitivity to
 ranges = {}
 for i, (key, nominal_val) in enumerate(nominals.items()):
@@ -60,22 +74,44 @@ for i, (key, nominal_val) in enumerate(nominals.items()):
         lower = 0.1 * nominal_val
     else:
         lower = minima[key]
+
     if np.isnan(maxima[key]):
         upper = 10*nominal_val
     else:
         upper = maxima[key]
+    
+    ranges[key] = np.linspace(lower, upper, num_samples[key]).astype(type(nominal_val))
+# Add some samples to b's range
+ranges['b'] = np.append(ranges['b'], np.arange(120, 360, 60))
+# Save ranges to file
+if rank == root:
+    with open('ranges.pkl', 'wb') as handle:
+        pickle.dump(ranges, handle)
 
-    ranges[key] = np.linspace(lower, upper, 11).astype(type(nominal_val))
-print(ranges)
+if rank == root:
+    # Use ordering of ranges to initialize results matrix metric_evals
+    sizes = []
+    for key in ranges.keys():
+        sizes.append(ranges[key].size)
+    metric_evals = np.full(sizes, np.nan)
 
-# Use ordering of ranges to initialize results matrix metric_evals
-sizes = []
-for key in ranges.keys():
-    sizes.append(ranges[key].size)
-metric_evals = np.full(sizes, np.nan)
+    # Get all initial condition combinations
+    combinations = list(product_dict(**ranges))
+    np.random.shuffle(combinations)
+else:
+    metric_evals = None
+    combinations = None
+combinations = comm.bcast(combinations, root=root)
 
-combinations = list(product_dict(**ranges))
-for comb in tqdm(combinations):
+# Separate data for this rank
+rank_combinations = np.array_split(combinations, num_procs)[rank] 
+if rank == root:
+    pbar = tqdm(total=len(rank_combinations), position=0)
+rank_metric_evals = np.full((rank_combinations.size, len(ranges.keys()) + 1), np.nan)
+rank_progress = 0
+
+# Loop over combinations
+for comb_i, comb in enumerate(rank_combinations):
     N_0_1 = comb['Aeff']*params['K_adult']
     N_0_1_vec = np.repeat(N_0_1, num_reps)
     t_vec = np.arange(delta_t, comb['t_final']+delta_t, delta_t)
@@ -91,12 +127,36 @@ for comb in tqdm(combinations):
     model.generate_fires()
 
     # Run the simulation
-    #model.simulate(method="discrete", census_every=1, progress=False)
+    model.simulate(method="discrete", census_every=1, progress=False)
 
-    ## Get the metric value
-    #lam_s_all = lambda_s(model.N_tot)
-    #lam = np.mean(lam_s_all)
+    # Get the metric value
+    lam_s_all = lambda_s(model.N_tot_vec, compressed=False)
+    metric_val = np.mean(lam_s_all)
  
     # Get the relevant indices in results matrix for this combination
+    indices = []
+    for key, val in comb.items():
+        index = np.argwhere(ranges[key] == val)[0][0]
+        indices.append(index)
+
     # Store results
-    print(comb)
+    rank_metric_evals[comb_i, :] = indices + [metric_val]
+
+    rank_progress += 1
+    #print(f'rank {rank} run {rank_progress} times, just ran t={comb["t_final"]}')
+
+    # Update progress (root only)
+    if rank == root:
+        pbar.update(1)
+        print()
+
+# Gather results across all ranks
+gathered_metric_evals = comm.gather(rank_metric_evals, root=root)
+if rank == root:
+    # Store data in final results array
+    for rank_metric_evals in gathered_metric_evals:
+        for data in rank_metric_evals:
+            indices = tuple(data[:-1].astype(int))
+            metric_evals[indices] = data[-1]
+    # Save to file
+    np.save('metric_evals', metric_evals)

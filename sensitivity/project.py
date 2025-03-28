@@ -44,7 +44,7 @@ def run_sims(job):
     params.update(fec_fixed)
     Aeff = job.sp['Aeff'] #ha
     delta_t = 1
-    num_reps = 100
+    num_reps = 5_000
     N_0_1 = Aeff*params['K_adult']
     N_0_1_vec = np.repeat(N_0_1, num_reps)
     init_age = params['a_mature'] - (np.log((1/0.90)-1) / params['eta_rho']) # Age where 90% of reproductive capacity reached

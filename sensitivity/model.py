@@ -58,7 +58,8 @@ class Model:
 
     def generate_fires(self):
         # Get initial age time indices
-        init_age_i_vec = [np.nonzero(self.t_vec == a)[0][0] for a in self.init_age]
+        #init_age_i_vec = [np.nonzero(self.t_vec == a)[0][0] for a in self.init_age]
+        init_age_i_vec = np.searchsorted(self.t_vec, self.init_age)
         # Get timesteps of fire occurances
         if hasattr(self, 'fire_probs'):
             if not hasattr(self.fire_probs, '__len__'):
@@ -74,20 +75,39 @@ class Model:
             term1 = 1/b_eff**self.weibull_c
             term2 = (self.t_vec + self.delta_t)**self.weibull_c - self.t_vec**self.weibull_c
             frequency_vec =  term1 * term2 
-            t_star_vec = init_age_i_vec.copy() #Time since last fire indices
-            t_fire_vec = np.zeros((len(self.N_0_1), len(self.t_vec))).astype(int)
+        #    t_star_vec = init_age_i_vec.copy() #Time since last fire indices
+        #    t_fire_vec = np.zeros((len(self.N_0_1), len(self.t_vec))).astype(int)
+        #    if self.weibull_b > 0:
+        #        for pop_i in range(len(self.N_0_1)):
+        #            for t_i in range(len(self.t_vec)):
+        #                frequency = frequency_vec[t_star_vec[pop_i]]
+        #                fire = rng.poisson(lam=frequency, size=1)
+        #                if fire:
+        #                    t_fire_vec[pop_i, t_i] = 1
+        #                    t_star_vec[pop_i] = 0
+        #                else:
+        #                    if t_star_vec[pop_i] < len(self.t_vec)-1:
+        #                        t_star_vec[pop_i] += 1
+        #self.t_fire_vec = t_fire_vec.astype(bool)
+            # Initialize fire occurrence tracking
+            num_pops = len(self.N_0_1)
+            num_times = len(self.t_vec)
+            t_star_vec = np.array(init_age_i_vec, dtype=int)  # Time since last fire (index)
+            t_fire_vec = np.zeros((num_pops, num_times), dtype=bool)  # Fire occurrence matrix
+
             if self.weibull_b > 0:
-                for pop_i in range(len(self.N_0_1)):
-                    for t_i in range(len(self.t_vec)):
-                        frequency = frequency_vec[t_star_vec[pop_i]]
-                        fire = rng.poisson(lam=frequency, size=1)
-                        if fire:
-                            t_fire_vec[pop_i, t_i] = 1
-                            t_star_vec[pop_i] = 0
-                        else:
-                            if t_star_vec[pop_i] < len(self.t_vec)-1:
-                                t_star_vec[pop_i] += 1
-        self.t_fire_vec = t_fire_vec.astype(bool)
+                for t_i in range(num_times):  # Loop over time steps
+                    frequencies = frequency_vec[t_star_vec]  # Get hazard rates dynamically
+                    fires = np.random.poisson(lam=frequencies) > 0  # Vectorized Poisson sampling
+
+                    # Store fire occurrences
+                    t_fire_vec[:, t_i] = fires
+
+                    # Reset `t_star_vec` where fires occurred, otherwise increment
+                    t_star_vec[fires] = 0
+                    t_star_vec[~fires] = np.minimum(t_star_vec[~fires] + 1, num_times - 1)
+
+            self.t_fire_vec = t_fire_vec
     
     def _simulate_discrete(self, N_vec, progress):
         # Age-dependent mortality functions
