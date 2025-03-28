@@ -18,8 +18,8 @@ import os
 
 # Define/load things non-specific to a given set of results
 #metric = "P_s"
-metric = 'lambda_s'
-#metric = 's'
+#metric = 'lambda_s'
+metric = 's'
 Aeff = 7.29
 t_final = 300
 ncell_tot = 87_993

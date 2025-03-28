@@ -38,8 +38,8 @@ constants['meta_metric'] = 'gte_thresh'
 # Define metrics and tauc methods to run analysis on
 #metrics = ["lambda_s", "mu_s", "r"]
 #metrics = ["P_s"]
-metrics = ["lambda_s"]
-#metrics = ["s"]
+#metrics = ["lambda_s"]
+metrics = ["s"]
 #tauc_methods = ["flat", "initlinear", "initinverse"]
 tauc_methods = ["flat"]
 

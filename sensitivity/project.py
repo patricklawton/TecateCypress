@@ -21,7 +21,7 @@ import sys
 import itertools
 from itertools import product
 import h5py
-from global_functions import adjustmaps, lambda_s
+from global_functions import adjustmaps, lambda_s, s
 MPI.COMM_WORLD.Set_errhandler(MPI.ERRORS_RETURN)
 
 # Open up signac project
@@ -172,7 +172,6 @@ def compute_mu_s(job):
 @FlowProject.post(lambda job: job.doc.get('lambda_s_computed'))
 @FlowProject.operation
 def compute_lambda_s(job):
-    #print(job.id)
     compressed = True
     with job.data:
         census_t = np.array(job.data["census_t"])
@@ -202,43 +201,20 @@ def compute_lambda_s(job):
 @FlowProject.operation
 def compute_s(job):
     with job.data:
-        census_t = np.array(job.data["census_t"])
-        burn_in_end_i = 0
+        compressed = True
         for b in b_vec:
-            N_tot = np.array(job.data[f"N_tot/{b}"])
-            # Indices for slicing
-            start_i = burn_in_end_i  # Start after burn-in
-            final_i = N_tot.shape[1]  # Last valid timestep
-            N_slice = N_tot[:, start_i:final_i]  # Slice N_tot by all post burn in timesteps
-
-            # Mask where N_slice > 0 (avoiding inf values)
-            valid_mask = N_slice > 0
-            #masked_N_slice = np.where(valid_mask, N_slice, np.nan)  # Replace zeros with NaN (ignored in np.nanprod)
-
-            # Just use the first and final timesteps
-            valid_timesteps = np.sum(valid_mask, axis=1)
-            final_N = np.take_along_axis(N_slice, valid_timesteps[..., None] - 1, axis=1)[:, 0]
-
-            ## Add extinction threshold
-            #eps = 1
-            #ext_mask = valid_timesteps < (N_slice.shape[1] - 1)
-            #valid_timesteps[ext_mask] = valid_timesteps[ext_mask] + 1
-            #final_N[ext_mask] = eps 
-
-            fractional_change = (final_N / N_slice[:, 0]) - 1
-            # Compute s
-            # Take abs bc we only want the real part of the following root
-            s_all = np.abs(fractional_change) ** (1 / valid_timesteps) 
-            # Put signs back in
-            s_all = s_all * np.sign(fractional_change)
-            #print(valid_timesteps[:10])
-            #print(final_N[:10])
-            #print(N_slice[:, 0][:10])
-            #print(s_all[:10])
+            if compressed:
+                valid_timesteps = np.array(job.data[f"valid_timesteps/{b}"])
+                ext_mask = np.array(job.data[f"ext_mask/{b}"])
+                N_tot = np.array(job.data[f"first_and_final/{b}"])
+            else:
+                valid_timesteps = None
+                ext_mask = None
+                N_tot = np.array(job.data[f"N_tot/{b}"])
+            s_all = s(N_tot, compressed=compressed, valid_timesteps=valid_timesteps, ext_mask=ext_mask)
             if np.any(np.isnan(s_all)): print('theres nans')
             job.data[f's/{b}'] = np.nanmean(s_all) 
             job.data[f's_all/{b}'] = s_all
-            #job.data[f'lambda_s_std/{b}'] = np.std(lam_s_all[valid_exponent_mask], ddof=1)
 
     job.doc['s_computed'] = True
 
