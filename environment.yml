@@ -1,6 +1,7 @@
 name: sbi_env
 channels:
   - conda-forge
+  - soumith
   - defaults
 dependencies:
   - anyio=4.2.0=py311hca03da5_0
