@@ -4,7 +4,12 @@ import torch.optim as optim
 from botorch.models.model import Model
 from botorch.acquisition import ExpectedImprovement
 from botorch.optim import optimize_acqf
+from botorch.acquisition.analytic import _log_ei_helper
 import torch.distributions as dist
+import numpy as np
+from scipy.optimize import minimize
+
+verbose = True
 
 # Bayesian Linear Layer (Replaces nn.Linear)
 class BayesianLinear(nn.Module):
@@ -68,27 +73,20 @@ class BayesianNN(Model):
 def expensive_function(x, eps=2):
     """Noisy function with uniform noise."""
     x = torch.tensor(x, dtype=torch.float32).reshape(-1, 1)
-    #true_value = torch.sin(5 * x) * (1 - torch.tanh(x ** 2))
-    #noise = torch.rand_like(true_value) * 0.2 - 0.1  # Uniform noise in [-0.1, 0.1]
-    #return true_value + noise
-    #true_value = torch.where(x >= 0, torch.sqrt(x), -x)
     noise = torch.empty_like(x).uniform_(-1,1) * eps
     noised_x = x + noise
     noised_value = torch.where(noised_x >= 0, torch.sqrt(noised_x), -noised_x)
     return noised_value
 
-def objective(x, num_samples=100):
+def robust_measure(x, num_samples=50):
     samples = torch.stack([expensive_function(x) for _ in range(num_samples)])
     maxima = torch.max(samples, axis=0).values
     return -maxima # Negate bc botorch maximizes by default, we're looking for min
 
 # Generate Training Data
-#train_x = torch.linspace(-2, 2, 10).reshape(-1, 1)
-#train_x = torch.linspace(-2, 2, 1000).reshape(-1, 1)
-train_x = torch.empty(500, 1)
+train_x = torch.empty(40, 1)
 train_x.uniform_(-2,2)
-#train_y = expensive_function(train_x)
-train_y  = objective(train_x)
+train_y  = robust_measure(train_x)
 
 # Define Variational Inference Loss (ELBO)
 def elbo_loss(bnn, X, Y, num_samples=10):
@@ -105,13 +103,12 @@ def elbo_loss(bnn, X, Y, num_samples=10):
         kl += torch.sum(0.5 * (layer.b_mu**2 + torch.exp(layer.b_logvar) - layer.b_logvar - 1))
 
     return -likelihood + 0.001 * kl  # Regularize with KL term
-    #return -likelihood + 0.0005 * kl  # Regularize with KL term
 
 # Train Bayesian Neural Network
 bnn = BayesianNN(input_dim=1)
 optimizer = optim.Adam(bnn.parameters(), lr=0.01)
 
-for epoch in range(1000):
+for epoch in range(2000):
     optimizer.zero_grad()
     loss = elbo_loss(bnn, train_x, train_y)
     loss.backward()
@@ -119,26 +116,61 @@ for epoch in range(1000):
     if epoch % 100 == 0:
         print(f"Epoch {epoch}: ELBO Loss = {loss.item():.4f}")
 
-# Define Acquisition Function (Expected Improvement)
+# Define acquisition function (Log Expected Improvement)
 def acquisition(X):
+    if verbose: print(f'design point:\n{X}')
     mean, std = bnn.posterior(X)
+    if verbose: print(f'posterior mean:\n{mean}')
+    if verbose: print(f'posterior std:\n{std}')
+    std = std.clamp(1e-6)
     best_f = train_y.max()
-    #improvement = (mean - best_f).clamp(min=0)
-    improvement = (best_f - mean).clamp(min=0)
-    #print(f'X shape: {X.shape}')
-    #print(X)
-    #print(f'improvement shape: {improvement.shape}')
-    #improvement = improvement.reshape(-1,1)
-    #print(f'new improvement shape: {improvement.shape}')
-    result = improvement / (std + 1e-6)
-    result = result.reshape(-1,1)
-    #return improvement / (std + 1e-6)
-    print(result.shape)
-    return result
+    u = (mean - best_f) / (std)
+    log_ei = _log_ei_helper(u)
+    if verbose: print(f'log_ei:\n{log_ei}')
+    return log_ei + std.log()
+print('test acq:\n', acquisition(torch.tensor([[[0.45]]])),'\n')
+print('test acq:\n', acquisition(torch.tensor([[[-1.]]])),'\n')
+print('test acq:\n', acquisition(torch.tensor([[[-2.]]])),'\n')
+import sys; sys.exit()
 
-for _ in range(10):
+def optimize_acqf_custom(acq_func, bounds, num_restarts=10, raw_samples=100):
+    dim = bounds.shape[1]
+
+    # Generate raw samples using uniform sampling
+    raw_candidates = torch.rand((raw_samples, dim)) * (bounds[1] - bounds[0]) + bounds[0]
+    raw_values = acq_func(raw_candidates).detach().numpy()
+
+    # Select the best raw candidate as a starting point
+    best_raw_idx = np.argmax(raw_values)
+    best_x = raw_candidates[best_raw_idx].clone()
+
+    def objective(x):
+        """Objective function for scipy.optimize (negate log-EI for maximization)."""
+        x_torch = torch.tensor(x, dtype=torch.float32).unsqueeze(0)
+        return -acq_func(x_torch).item()  # Negative since scipy minimizes
+
+    # Bounds for scipy optimizer
+    scipy_bounds = [(bounds[0, i].item(), bounds[1, i].item()) for i in range(dim)]
+
+    # Optimize using L-BFGS-B
+    res = minimize(
+        fun=objective,
+        x0=best_x.numpy(),
+        bounds=scipy_bounds,
+        method="L-BFGS-B",
+    )
+
+    # Convert result back to tensor
+    best_x_optimized = torch.tensor(res.x, dtype=torch.float32)
+
+    return best_x_optimized
+
+for _ in range(1):
     # Optimize Acquisition Function to Propose Next Query Point
     bounds = torch.tensor([[-2.0], [2.0]])
-    candidate, _ = optimize_acqf(acquisition, bounds=bounds, q=1, num_restarts=5, raw_samples=20)
+    #candidate, _ = optimize_acqf(acquisition, bounds=bounds, q=1, num_restarts=5, raw_samples=20)
 
+    #print(f"Next query point: {candidate.item()}")
+
+    candidate = optimize_acqf_custom(acquisition, bounds, num_restarts=10, raw_samples=100)
     print(f"Next query point: {candidate.item()}")

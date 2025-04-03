@@ -9,6 +9,8 @@ from gpytorch.mlls import ExactMarginalLogLikelihood
 import numpy as np
 from scipy.optimize import minimize
 
+verbose = False
+
 # Define a Bayesian Neural Network (BNN) model
 class BayesianNN(Model):
     def __init__(self, input_dim):
@@ -16,16 +18,19 @@ class BayesianNN(Model):
         self.hidden = nn.Linear(input_dim, 50)
         self.out = nn.Linear(50, 1)
         self.relu = nn.ReLU()
-        self.log_noise = nn.Parameter(torch.tensor([0.1]))
 
     def forward(self, X):
         h = self.relu(self.hidden(X))
         return self.out(h)
 
-    def posterior(self, X, observation_noise=False):
-        mean = self.forward(X)
-        noise = self.log_noise.exp()
-        return mean, noise
+    def posterior(self, X, num_samples=50):
+        """
+        Approximate posterior by Monte Carlo sampling.
+        """
+        outputs = torch.stack([self.forward(X) for _ in range(num_samples)])
+        mean = outputs.mean(dim=0)
+        std = outputs.std(dim=0)
+        return mean, std
 
 # Define noisy objective function
 def expensive_function(x, eps=2):
@@ -36,15 +41,15 @@ def expensive_function(x, eps=2):
     noised_value = torch.where(noised_x >= 0, torch.sqrt(noised_x), -noised_x)
     return noised_value
 
-def objective(x, num_samples=100):
+def robust_measure(x, num_samples=50):
     samples = torch.stack([expensive_function(x) for _ in range(num_samples)])
     maxima = torch.max(samples, axis=0).values
     return -maxima # Negate bc botorch maximizes by default, we're looking for min
 
 # Generate initial training data
-train_x = torch.empty(20, 1)
+train_x = torch.empty(100, 1)
 train_x.uniform_(-2,2)
-train_y  = objective(train_x)
+train_y  = robust_measure(train_x)
 
 # Define and train Bayesian Neural Network
 bnn = BayesianNN(input_dim=1)
@@ -60,42 +65,22 @@ for epoch in range(1000):
     if epoch % 100 == 0:
         print(f"Epoch {epoch}: Loss = {loss.item():.4f}")
 
-# Define acquisition function (Expected Improvement)
+# Define acquisition function (Log Expected Improvement)
 def acquisition(X):
-    print(f'input to acqf:\n{X}')
-    mean, noise = bnn.posterior(X)
-    print(f'posterior mean:\n{mean}')
-    print(f'posterior noise:\n{noise}')
+    mean, std = bnn.posterior(X)
+    if verbose: print(f'posterior mean:\n{mean}')
+    if verbose: print(f'posterior std:\n{std}')
+    std = std.clamp(1e-6)
     best_f = train_y.max()
-    print(f'best_f:\n{best_f}')
-    improvement = (mean - best_f).clamp(min=0)
-    print(f'improvement:\n{improvement}')
-    return improvement / (noise + 1e-6)
-def acquisition(X):
-    mean, noise = bnn.posterior(X)
-    best_f = train_y.max()
-    u = (mean - best_f) / (noise + 1e-6)
+    u = (mean - best_f) / (std)
     log_ei = _log_ei_helper(u)
-    print(f'log_ei:\n{log_ei}')
-    return log_ei + noise.log()
+    if verbose: print(f'log_ei:\n{log_ei}')
+    return log_ei + std.log()
 print('test acq:\n', acquisition(torch.tensor([[[0.45]]])),'\n')
 print('test acq:\n', acquisition(torch.tensor([[[-1.]]])),'\n')
 #import sys; sys.exit()
 
 def optimize_acqf_custom(acq_func, bounds, num_restarts=10, raw_samples=100):
-    """
-    Custom implementation of acquisition function optimization.
-
-    Args:
-        acq_func: The acquisition function to optimize (returns log-EI values).
-        bounds: A tensor of shape (2, d) specifying the search space bounds.
-        num_restarts: Number of optimization restarts.
-        raw_samples: Number of initial raw samples.
-
-    Returns:
-        best_x: The best candidate found.
-    """
-
     dim = bounds.shape[1]
 
     # Generate raw samples using uniform sampling
@@ -127,11 +112,8 @@ def optimize_acqf_custom(acq_func, bounds, num_restarts=10, raw_samples=100):
 
     return best_x_optimized
 
-for _ in range(1):
+for _ in range(10):
     # Optimize acquisition function to propose next query point
     bounds = torch.tensor([[-2.0], [2.0]])
-    #candidate, _ = optimize_acqf(acquisition, bounds=bounds, q=1, num_restarts=1, raw_samples=20)
-    #print(f"Next query point: {candidate.item()}")
-
     candidate = optimize_acqf_custom(acquisition, bounds, num_restarts=10, raw_samples=100)
     print(f"Next query point: {candidate.item()}")
