@@ -9,6 +9,7 @@ from scipy.optimize import minimize
 import sys
 import pickle
 from matplotlib import pyplot as plt
+import nevergrad as ng
 
 verbose = False
 ROBUST_SAMPLES = 10
@@ -110,13 +111,15 @@ def robust_measure(x, num_samples=100):
     return -maxima # Negate bc botorch maximizes by default, we're looking for min
 
 # Generate Training Data
-train_x = torch.empty(NUM_TRAIN, 1)
-train_x.uniform_(-2,2)
-#train_x.uniform_(-3,3)
-#train_x = torch.vstack([torch.empty(10,1).uniform_(-2,2), torch.empty(100,1).uniform_(0,1)])
-train_y  = robust_measure(train_x, num_samples=ROBUST_SAMPLES)
-torch.save(train_x, 'train_x_1')
-torch.save(train_y, 'train_y_1')
+#train_x = torch.empty(NUM_TRAIN, 1)
+#train_x.uniform_(-2,2)
+##train_x.uniform_(-3,3)
+##train_x = torch.vstack([torch.empty(10,1).uniform_(-2,2), torch.empty(100,1).uniform_(0,1)])
+#train_y  = robust_measure(train_x, num_samples=ROBUST_SAMPLES)
+#torch.save(train_x, 'train_x_1')
+#torch.save(train_y, 'train_y_1')
+train_x = torch.load('train_x_1', weights_only=True)
+train_y = torch.load('train_y_1', weights_only=True)
 
 def gaussian_nll(y_pred_mean, y_pred_logvar, y_true):
     # Gaussian negative log-likelihood (per element)
@@ -187,39 +190,40 @@ print('test acq:\n', acquisition(torch.tensor([[[0.45]]])),'\n')
 print('test acq:\n', acquisition(torch.tensor([[[-2.]]])),'\n')
 #sys.exit()
 
-def optimize_acqf_custom(acq_func, bounds, raw_samples=100):
+def optimize_acqf_custom(acq_func, bounds, budget=100, num_workers=1):
+    """
+    Optimizes a (potentially noisy) acquisition function using Nevergrad.
+
+    Args:
+        acq_func: Callable acquisition function (returns torch tensor of shape [1])
+        bounds: torch.tensor of shape [2, dim] representing lower and upper bounds
+        budget: Total number of function evaluations allowed
+        num_workers: Number of workers (evaluations can be parallelized)
+
+    Returns:
+        best_x_optimized: torch.tensor of shape [dim] with best found candidate
+    """
     dim = bounds.shape[1]
 
-    # Generate raw samples using uniform sampling
-    raw_candidates = torch.rand((raw_samples, dim)) * (bounds[1] - bounds[0]) + bounds[0]
-    raw_values = acq_func(raw_candidates).detach().numpy()
-    #print(f'raw_candidates:\n{raw_candidates}')
-
-    # Select the best raw candidate as a starting point
-    best_raw_idx = np.argmax(raw_values)
-    best_x = raw_candidates[best_raw_idx].clone()
-    #print(f"max approx f(x) = {np.max(raw_values)} at x = {best_x}")
+    # Convert bounds to numpy arrays for Nevergrad
+    lower = bounds[0].numpy()
+    upper = bounds[1].numpy()
 
     def objective(x):
-        """Objective function for scipy.optimize (negate log-EI for maximization)."""
         x_torch = torch.tensor(x, dtype=torch.float32).unsqueeze(0)
-        return -acq_func(x_torch).item()  # Negative since scipy minimizes
+        return -acq_func(x_torch).item()  # Negate since we minimize
 
-    # Bounds for scipy optimizer
-    scipy_bounds = [(bounds[0, i].item(), bounds[1, i].item()) for i in range(dim)]
+    # Set up Nevergrad instrumentation
+    parametrization = ng.p.Array(shape=(dim,)).set_bounds(lower, upper)
 
-    # Optimize using L-BFGS-B
-    res = minimize(
-        fun=objective,
-        x0=best_x.numpy(),
-        bounds=scipy_bounds,
-        #method="L-BFGS-B",
-        method="Powell",
-    )
-    #print(res)
+    # Choose a noise-friendly optimizer (TwoPointsDE works well)
+    optimizer = ng.optimizers.TwoPointsDE(parametrization=parametrization, budget=budget, num_workers=num_workers)
 
-    # Convert result back to tensor
-    best_x_optimized = torch.tensor(res.x, dtype=torch.float32)
+    # Run the optimization
+    recommendation = optimizer.minimize(objective)
+
+    # Convert best result to torch tensor
+    best_x_optimized = torch.tensor(recommendation.value, dtype=torch.float32)
 
     return best_x_optimized
 
@@ -228,8 +232,7 @@ all_candidates = torch.empty(num_candidates)
 for i, _ in enumerate(range(num_candidates)):
     # Optimize Acquisition Function to Propose Next Query Point
     bounds = torch.tensor([[-2.0], [2.0]])
-    candidate = optimize_acqf_custom(acquisition, bounds,  raw_samples=RAW_SAMPLES)
+    candidate = optimize_acqf_custom(acquisition, bounds)
     print(f"candidate optimum: {candidate.item()}")
     all_candidates[i] = candidate
-print(all_candidates)
 print(f'mean candidate: {torch.mean(all_candidates)}')
