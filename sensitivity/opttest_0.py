@@ -8,6 +8,9 @@ from botorch.optim import optimize_acqf
 from gpytorch.mlls import ExactMarginalLogLikelihood
 import numpy as np
 from scipy.optimize import minimize
+import sys
+import pickle
+from matplotlib import pyplot as plt
 
 verbose = False
 
@@ -50,6 +53,8 @@ def robust_measure(x, num_samples=50):
 train_x = torch.empty(100, 1)
 train_x.uniform_(-2,2)
 train_y  = robust_measure(train_x)
+torch.save(train_x, 'train_x_0')
+torch.save(train_y, 'train_y_0')
 
 # Define and train Bayesian Neural Network
 bnn = BayesianNN(input_dim=1)
@@ -65,8 +70,22 @@ for epoch in range(1000):
     if epoch % 100 == 0:
         print(f"Epoch {epoch}: Loss = {loss.item():.4f}")
 
+# Save/plot trained posterior
+with open('model_0.pkl', 'wb') as handle:
+    pickle.dump(bnn, handle)
+x = torch.empty(100, 1).uniform_(-2,2)
+mean, std = bnn.posterior(x)
+std = std.squeeze(1).detach()
+mean = mean.squeeze(1).detach()
+plt.errorbar(x.squeeze(1), mean, yerr=std, fmt='o')
+plt.ylabel('robust measure')
+plt.xlabel('x')
+plt.savefig('trainedmodel0.png')
+#sys.exit()
+
 # Define acquisition function (Log Expected Improvement)
 def acquisition(X):
+    if verbose: print(f'design point:\n{X}')
     mean, std = bnn.posterior(X)
     if verbose: print(f'posterior mean:\n{mean}')
     if verbose: print(f'posterior std:\n{std}')
@@ -78,7 +97,7 @@ def acquisition(X):
     return log_ei + std.log()
 print('test acq:\n', acquisition(torch.tensor([[[0.45]]])),'\n')
 print('test acq:\n', acquisition(torch.tensor([[[-1.]]])),'\n')
-#import sys; sys.exit()
+#sys.exit()
 
 def optimize_acqf_custom(acq_func, bounds, num_restarts=10, raw_samples=100):
     dim = bounds.shape[1]

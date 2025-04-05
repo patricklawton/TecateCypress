@@ -37,3 +37,5 @@ model_fitting/*/*.pkl
 *.svg
 final_figs
 checkinits_data
+train_*
+model*.pkl
