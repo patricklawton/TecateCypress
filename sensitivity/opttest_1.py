@@ -231,5 +231,4 @@ for i, _ in enumerate(range(num_candidates)):
     candidate = optimize_acqf_custom(acquisition, bounds,  raw_samples=RAW_SAMPLES)
     print(f"candidate optimum: {candidate.item()}")
     all_candidates[i] = candidate
-print(all_candidates)
 print(f'mean candidate: {torch.mean(all_candidates)}')
