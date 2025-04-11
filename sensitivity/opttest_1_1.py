@@ -13,15 +13,15 @@ import nevergrad as ng
 
 verbose = False
 ROBUST_SAMPLES = 10
-NUM_TRAIN = 20
+NUM_TRAIN = 15
 NUM_EPOCHS = 2_000
 RAW_SAMPLES = 10
 #MU_INIT = 0.0
 #LOGVAR_INIT = -20
-MU_INIT = 0.01
-LOGVAR_INIT = -7
-#MU_INIT = 0.1
-#LOGVAR_INIT = -3
+#MU_INIT = 0.01
+#LOGVAR_INIT = -7
+MU_INIT = 0.02
+LOGVAR_INIT = -5
 
 class BayesianLinear(nn.Module):
     def __init__(self, in_features, out_features):

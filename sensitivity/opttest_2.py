@@ -12,7 +12,7 @@ def expensive_function(x, eps=2):
     noised_value = np.sqrt(newx) if newx >= 0 else -newx
     return noised_value
 
-def objective(x, num_samples=100):
+def objective(x, num_samples=20):
     samples = np.stack([expensive_function(x) for _ in range(num_samples)])
     maxima = np.max(samples, axis=0)
     return maxima

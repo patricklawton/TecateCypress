@@ -12,15 +12,15 @@ from matplotlib import pyplot as plt
 
 verbose = False
 ROBUST_SAMPLES = 10
-NUM_TRAIN = 20
+NUM_TRAIN = 15
 NUM_EPOCHS = 2_000
 RAW_SAMPLES = 10
 #MU_INIT = 0.0
 #LOGVAR_INIT = -20
 MU_INIT = 0.01
 LOGVAR_INIT = -7
-#MU_INIT = 0.1
-#LOGVAR_INIT = -3
+#MU_INIT = 0.02
+#LOGVAR_INIT = -5
 
 class BayesianLinear(nn.Module):
     def __init__(self, in_features, out_features):
@@ -110,13 +110,15 @@ def robust_measure(x, num_samples=100):
     return -maxima # Negate bc botorch maximizes by default, we're looking for min
 
 # Generate Training Data
-train_x = torch.empty(NUM_TRAIN, 1)
-train_x.uniform_(-2,2)
-#train_x.uniform_(-3,3)
-#train_x = torch.vstack([torch.empty(10,1).uniform_(-2,2), torch.empty(100,1).uniform_(0,1)])
-train_y  = robust_measure(train_x, num_samples=ROBUST_SAMPLES)
-torch.save(train_x, 'train_x_1')
-torch.save(train_y, 'train_y_1')
+#train_x = torch.empty(NUM_TRAIN, 1)
+#train_x.uniform_(-2,2)
+##train_x.uniform_(-3,3)
+##train_x = torch.vstack([torch.empty(10,1).uniform_(-2,2), torch.empty(100,1).uniform_(0,1)])
+#train_y  = robust_measure(train_x, num_samples=ROBUST_SAMPLES)
+#torch.save(train_x, 'train_x_1')
+#torch.save(train_y, 'train_y_1')
+train_x = torch.load('train_x_1', weights_only=True)
+train_y = torch.load('train_y_1', weights_only=True)
 
 def gaussian_nll(y_pred_mean, y_pred_logvar, y_true):
     # Gaussian negative log-likelihood (per element)
