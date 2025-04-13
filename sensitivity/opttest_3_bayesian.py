@@ -11,22 +11,61 @@ import pickle
 from matplotlib import pyplot as plt
 
 verbose = False
-NUM_TRAIN = 100
+NUM_TRAIN = 200
 NUM_EPOCHS = 5_000
 RAW_SAMPLES = 20
 NUM_EPS_SAMPLES = 200
 EPS = 2
+MU_INIT = 0.01
+LOGVAR_INIT = -7
+
+class BayesianLinear(nn.Module):
+    def __init__(self, in_features, out_features):
+        super().__init__()
+        # Mean and log variance for weights
+        self.weight_mu = nn.Parameter(torch.Tensor(out_features, in_features).normal_(0, MU_INIT))
+        self.weight_logvar = nn.Parameter(torch.Tensor(out_features, in_features).fill_(LOGVAR_INIT))
+
+        # Mean and log variance for biases
+        self.bias_mu = nn.Parameter(torch.Tensor(out_features).normal_(0, MU_INIT))
+        self.bias_logvar = nn.Parameter(torch.Tensor(out_features).fill_(LOGVAR_INIT))
+
+        self.in_features = in_features
+        self.out_features = out_features
+
+    def forward(self, x):
+        # Sample weights using reparameterization trick
+        weight_std = torch.exp(0.5 * self.weight_logvar)
+        bias_std = torch.exp(0.5 * self.bias_logvar)
+
+        eps_w = torch.randn_like(self.weight_mu)
+        eps_b = torch.randn_like(self.bias_mu)
+
+        weight = self.weight_mu + weight_std * eps_w
+        bias = self.bias_mu + bias_std * eps_b
+
+        return F.linear(x, weight, bias)
+
+    def kl_loss(self):
+        # KL divergence between q(w|θ) ~ N(μ,σ²) and p(w) ~ N(0,1)
+        # KL(N(μ,σ²) || N(0,1)) = log(1/σ) + (σ² + μ² - 1)/2
+
+        def kl_term(mu, logvar):
+            return 0.5 * torch.sum(-logvar + torch.exp(logvar) + mu**2 - 1)
+
+        kl_w = kl_term(self.weight_mu, self.weight_logvar)
+        kl_b = kl_term(self.bias_mu, self.bias_logvar)
+        return kl_w + kl_b
 
 class NN(Model):
     def __init__(self, input_dim):
         super().__init__()
-        self.hidden = nn.Linear(input_dim, 50)
-        self.out = nn.Linear(50, 1)
+        self.fc1 = BayesianLinear(input_dim, 50)
+        self.fc2 = BayesianLinear(50, 1)
         self.relu = nn.ReLU()
 
     def forward(self, X):
-        h = self.relu(self.hidden(X))
-        return self.out(h)
+        return self.fc2(self.relu(self.fc1(X)))
 
     def posterior(self, X, num_samples=1):
         """
@@ -53,11 +92,10 @@ def expensive_function(x):
     """The 1st column of x gives the nominal inputs, 2nd column gives the noise"""
     noised_x = torch.sum(x, dim=1)
     noised_value = torch.where(noised_x >= 0, torch.sqrt(noised_x), -noised_x)
-    #return noised_value 
-    # Add some additional noise we want to capture
+    # Add some additional noise we want to capture via Bayesian layers
     std = torch.where(x[:,0] >= 0, torch.sqrt(x[:,0]), 0.001)
     extra_noise = torch.normal(mean=torch.zeros(x.shape[0]), std=std)
-    #extra_noise = torch.where(extra_noise < 0, -extra_noise, extra_noise)
+    extra_noise = torch.where(extra_noise < 0, -extra_noise, extra_noise)
     return noised_value + extra_noise
 
 # Generate Training Data
@@ -70,25 +108,44 @@ torch.save(train_y, 'train_y_3')
 #train_x = torch.load('train_x_3', weights_only=True)
 #train_y = torch.load('train_y_3', weights_only=True)
 
+def sample_elbo(model, x, y, criterion, sample_nbr=3, complexity_cost_weight=1e-6):
+    total_nll = 0.0
+    total_kl = 0.0
+
+    for _ in range(sample_nbr):
+        preds = model(x)
+        preds = preds.squeeze(1)
+        total_nll += criterion(preds, y)
+
+    # Average over samples
+    nll = total_nll / sample_nbr
+
+    # Sum KL from all Bayesian layers
+    for module in model.modules():
+        if hasattr(module, 'kl_loss'):
+            total_kl += module.kl_loss()
+
+    loss = nll + complexity_cost_weight * total_kl
+    return loss
+
 # Train Neural Network
-bnn = NN(input_dim=train_x.shape[1])
-optimizer = optim.Adam(bnn.parameters(), lr=0.001)
-loss_fn = nn.MSELoss()
+model = NN(input_dim=train_x.shape[1])
+optimizer = optim.Adam(model.parameters(), lr=0.001)
 
 for epoch in range(NUM_EPOCHS):
     optimizer.zero_grad()
-    output, _ = bnn.posterior(train_x)
-    loss = loss_fn(output.squeeze(1), train_y)
+    #output, _ = model.posterior(train_x)
+    loss = sample_elbo(model, train_x, train_y, criterion=nn.MSELoss(), sample_nbr=3)
     loss.backward()
     optimizer.step()
     if epoch % (int(NUM_EPOCHS/10)) == 0:
         print(f"Epoch {epoch}: ELBO Loss = {loss.item():.4f}")
 with open('model_3.pkl', 'wb') as handle:
-    pickle.dump(bnn, handle)
+    pickle.dump(model, handle)
 test_x = torch.empty(500, 2)
 test_x[:,0].uniform_(-2, 2)
 test_x[:,1].uniform_(-EPS, EPS);
-mean, std = bnn.posterior(test_x)
+mean, std = model.posterior(test_x)
 mean = mean.squeeze(1).detach()
 plt.scatter(test_x[:,0], mean)
 plt.ylabel('f(x)')
@@ -100,7 +157,7 @@ def optimize_nn(bounds, raw_samples = 10):
 
     # Generate raw samples using uniform sampling
     raw_candidates = torch.rand((raw_samples, dim)) * (bounds[1] - bounds[0]) + bounds[0]
-    raw_values = bnn.posterior_robust(raw_candidates, eps=EPS).detach().numpy()
+    raw_values = model.posterior_robust(raw_candidates, eps=EPS).detach().numpy()
     if verbose: print(f'raw_candidates:\n{raw_candidates}')
     if verbose: print(f'raw_values:\n{raw_values}')
 
@@ -113,7 +170,7 @@ def optimize_nn(bounds, raw_samples = 10):
         """Objective function for scipy.optimize (negate log-EI for maximization)."""
         x_torch = torch.tensor(x, dtype=torch.float32).unsqueeze(0)
         #return -acq_func(x_torch).item()  # Negative since scipy minimizes
-        return bnn.posterior_robust(x_torch, num_eps_samples=NUM_EPS_SAMPLES, eps=EPS).item()
+        return model.posterior_robust(x_torch, num_eps_samples=NUM_EPS_SAMPLES, eps=EPS).item()
     if verbose: print(objective(best_x.numpy()))
 
     # Bounds for scipy optimizer
@@ -143,7 +200,7 @@ print(f'mean candidate: {torch.mean(all_candidates)}, std: {torch.std(all_candid
 ## Define acquisition function (Log Expected Improvement)
 #def acquisition(X):
 #    if verbose: print(f'design point:\n{X}')
-#    mean, std = bnn.posterior(X)
+#    mean, std = model.posterior(X)
 #    if verbose: print(f'posterior mean:\n{mean}')
 #    if verbose: print(f'posterior std:\n{std}')
 #    std = std.clamp(1e-6)
