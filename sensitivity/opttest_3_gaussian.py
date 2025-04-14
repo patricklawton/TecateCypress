@@ -1,9 +1,7 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 import torch.optim as optim
 from botorch.models.model import Model
-from botorch.acquisition.analytic import _log_ei_helper
 import numpy as np
 from scipy.optimize import minimize
 import sys
@@ -12,14 +10,15 @@ from matplotlib import pyplot as plt
 
 verbose = False
 NUM_TRAIN = 50
-NUM_TRAIN_REPEATS = 1
+NUM_TRAIN_REPEATS = 3
 #NUM_X0 = 100  # Number of unique x0s
 #NUM_SAMPLES_PER_X0 = 5  # Samples per x0
 NUM_X0 = 20  # Number of unique x0s
 NUM_SAMPLES_PER_X0 = 20  # Samples per x0
 #NUM_EPOCHS = 5_000
 WARMUP_EPOCHS = 100
-TOTAL_EPOCHS = 3000
+#TOTAL_EPOCHS = 3000
+TOTAL_EPOCHS = 7000
 RAW_SAMPLES = 20
 NUM_EPS_SAMPLES = 200
 EPS = 2
@@ -77,7 +76,7 @@ def expensive_function(x):
     extra_noise = torch.normal(mean=torch.zeros(x.shape[0]), std=std)
     #extra_noise = torch.where(extra_noise < 0, -extra_noise, extra_noise)
     #extra_noise = torch.empty_like(noised_value).uniform_(-0.1, 0.1)
-    return noised_value #+ extra_noise
+    return noised_value + extra_noise
 
 # Generate Training Data
 train_x = torch.empty(NUM_TRAIN, 2)
@@ -96,47 +95,40 @@ torch.save(train_y, 'train_y_3')
 #train_y = torch.load('train_y_3', weights_only=True)
 
 # Train Neural Network
-model = NN(input_dim=train_x.shape[1], hidden_dim=64)
+model = NN(input_dim=train_x.shape[1], hidden_dim=30)
 optimizer = optim.Adam(model.parameters(), lr=0.001)
 
-#def gaussian_nll(mu, log_var, y_true):
-#    var = torch.exp(log_var)
-#    return 0.5 * ((y_true - mu)**2 / var + log_var).mean()
-#
-#for epoch in range(NUM_EPOCHS):
+## Stage 1: Train only on MSE to get a decent mean
+#mse_loss = nn.MSELoss()
+#for epoch in range(WARMUP_EPOCHS):
+#    model.train()
 #    optimizer.zero_grad()
-#    output, _ = model.posterior(train_x)
-#    loss_fn = nn.MSELoss()
-#    loss = loss_fn(output.squeeze(1), train_y)
-#    #mu_pred, log_var_pred = model(train_x)
-#    #loss = gaussian_nll(mu_pred, log_var_pred, train_y)
-#    #loss_fn = torch.nn.GaussianNLLLoss(full=True, reduction='mean', eps=1e-6)
-#    #mu_pred, var_pred = model(train_x)
-#    #loss = loss_fn(mu_pred, train_y, var_pred)
+#    mu_pred, _ = model(train_x)
+#    loss = mse_loss(mu_pred.squeeze(), train_y)
 #    loss.backward()
 #    optimizer.step()
-#    if epoch % (int(NUM_EPOCHS/10)) == 0:
-#        print(f"Epoch {epoch}: ELBO Loss = {loss.item():.4f}")
-
-# Stage 1: Train only on MSE to get a decent mean
-mse_loss = nn.MSELoss()
-for epoch in range(WARMUP_EPOCHS):
-    model.train()
-    optimizer.zero_grad()
-    mu_pred, _ = model(train_x)
-    loss = mse_loss(mu_pred.squeeze(), train_y)
-    loss.backward()
-    optimizer.step()
 
 # Stage 2: Train with Gaussian NLL to learn variance
+optimizer = optim.Adam(model.parameters(), lr=0.001)
 gll = nn.GaussianNLLLoss(full=True, reduction='mean', eps=1e-6)
+def tempered_nll(y, mean, var, alpha=0.7, eps=1e-6):
+    #var = var + eps  # ensure numerical stability
+    var = torch.clamp(var, min=eps)
+    loss = ((y - mean)**2) / (2 * var**alpha) + (alpha / 2) * torch.log(var)
+    return loss.mean()
+def nll_with_min_variance_penalty(y, mean, var, penalty_weight=1e-3, eps=1e-6):
+    #var = var + eps  # stability again
+    var = torch.clamp(var, min=eps)
+    nll = ((y - mean)**2) / (2 * var) + 0.5 * torch.log(var)
+    penalty = penalty_weight * (1 / var).mean()
+    return nll.mean() + penalty
 for epoch in range(WARMUP_EPOCHS, TOTAL_EPOCHS):
     model.train()
     optimizer.zero_grad()
     mu_pred, var_pred = model(train_x)
-    ## Optional: clamp or penalize high variances
-    #var_pred = torch.clamp(var_pred, min=1e-4, max=5.0)
-    loss = gll(mu_pred.squeeze(), train_y, var_pred.squeeze())
+    #loss = gll(mu_pred.squeeze(), train_y, var_pred.squeeze())
+    #loss = tempered_nll(train_y, mu_pred.squeeze(), var_pred.squeeze(), alpha=0.95)
+    loss = nll_with_min_variance_penalty(train_y, mu_pred.squeeze(), var_pred.squeeze(), penalty_weight=2.5e-3)
     loss.backward()
     optimizer.step()
     if epoch % (int(TOTAL_EPOCHS/10)) == 0:
