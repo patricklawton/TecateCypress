@@ -10,7 +10,7 @@ from matplotlib import pyplot as plt
 
 verbose = False
 NUM_TRAIN = 50
-NUM_TRAIN_REPEATS = 3
+NUM_TRAIN_REPEATS = 3 
 #NUM_X0 = 100  # Number of unique x0s
 #NUM_SAMPLES_PER_X0 = 5  # Samples per x0
 NUM_X0 = 20  # Number of unique x0s
@@ -33,7 +33,7 @@ class NN(Model):
             nn.ReLU()
         )
         self.mean_head = nn.Linear(hidden_dim, 1)
-        self.var_head = nn.Linear(hidden_dim, 1)  # Output will be exponentiated to ensure positivity
+        self.var_head = nn.Linear(hidden_dim, 1)  # Output will be transformed to ensure positivity
 
     def forward(self, x):
         h = self.net(x)
@@ -136,7 +136,7 @@ for epoch in range(WARMUP_EPOCHS, TOTAL_EPOCHS):
 
 with open('model_3.pkl', 'wb') as handle:
     pickle.dump(model, handle)
-test_x = torch.empty(500, 2)
+test_x = torch.empty(1000, 2)
 test_x[:,0].uniform_(-2, 2)
 test_x[:,1].uniform_(-EPS, EPS);
 mean, std = model.posterior(test_x)

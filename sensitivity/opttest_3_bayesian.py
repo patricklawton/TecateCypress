@@ -11,12 +11,13 @@ import pickle
 from matplotlib import pyplot as plt
 
 verbose = False
-NUM_TRAIN = 200
+NUM_TRAIN = 150
+NUM_TRAIN_REPEATS = 1
 NUM_EPOCHS = 5_000
 RAW_SAMPLES = 20
 NUM_EPS_SAMPLES = 200
 EPS = 2
-MU_INIT = 0.01
+MU_INIT = 0.0
 LOGVAR_INIT = -7
 
 class BayesianLinear(nn.Module):
@@ -58,10 +59,10 @@ class BayesianLinear(nn.Module):
         return kl_w + kl_b
 
 class NN(Model):
-    def __init__(self, input_dim):
+    def __init__(self, input_dim, hidden_dim):
         super().__init__()
-        self.fc1 = BayesianLinear(input_dim, 50)
-        self.fc2 = BayesianLinear(50, 1)
+        self.fc1 = BayesianLinear(input_dim, hidden_dim)
+        self.fc2 = BayesianLinear(hidden_dim, 1)
         self.relu = nn.ReLU()
 
     def forward(self, X):
@@ -93,15 +94,16 @@ def expensive_function(x):
     noised_x = torch.sum(x, dim=1)
     noised_value = torch.where(noised_x >= 0, torch.sqrt(noised_x), -noised_x)
     # Add some additional noise we want to capture via Bayesian layers
-    std = torch.where(x[:,0] >= 0, torch.sqrt(x[:,0]), 0.001)
+    #std = torch.where(x[:,0] >= 0, torch.sqrt(x[:,0]), 0.001)
+    std = 0.1
     extra_noise = torch.normal(mean=torch.zeros(x.shape[0]), std=std)
-    extra_noise = torch.where(extra_noise < 0, -extra_noise, extra_noise)
     return noised_value + extra_noise
 
 # Generate Training Data
 train_x = torch.empty(NUM_TRAIN, 2)
 train_x[:,0].uniform_(-2,2)
 train_x[:,1].uniform_(-EPS, EPS)
+train_x = train_x.repeat((NUM_TRAIN_REPEATS,1)) # Generate repeats of the initial points to help learn variance
 train_y  = expensive_function(train_x)
 torch.save(train_x, 'train_x_3')
 torch.save(train_y, 'train_y_3')
@@ -129,13 +131,14 @@ def sample_elbo(model, x, y, criterion, sample_nbr=3, complexity_cost_weight=1e-
     return loss
 
 # Train Neural Network
-model = NN(input_dim=train_x.shape[1])
+model = NN(input_dim=train_x.shape[1], hidden_dim = 50)
 optimizer = optim.Adam(model.parameters(), lr=0.001)
 
 for epoch in range(NUM_EPOCHS):
     optimizer.zero_grad()
     #output, _ = model.posterior(train_x)
     loss = sample_elbo(model, train_x, train_y, criterion=nn.MSELoss(), sample_nbr=3)
+    #loss = sample_elbo(model, train_x, train_y, criterion=nn.GaussianNLLLoss(full=True, reduction='mean', eps=1e-6), sample_nbr=3)
     loss.backward()
     optimizer.step()
     if epoch % (int(NUM_EPOCHS/10)) == 0:
@@ -181,7 +184,6 @@ def optimize_nn(bounds, raw_samples = 10):
         fun=objective,
         x0=best_x.numpy(),
         bounds=scipy_bounds,
-        #method="L-BFGS-B",
         method="Powell",
     )
     if verbose: print(res)
@@ -196,66 +198,3 @@ for i, _ in enumerate(range(num_candidates)):
     print(f"candidate optimum: {candidate.item()}")
     all_candidates[i] = candidate
 print(f'mean candidate: {torch.mean(all_candidates)}, std: {torch.std(all_candidates)}')
-
-## Define acquisition function (Log Expected Improvement)
-#def acquisition(X):
-#    if verbose: print(f'design point:\n{X}')
-#    mean, std = model.posterior(X)
-#    if verbose: print(f'posterior mean:\n{mean}')
-#    if verbose: print(f'posterior std:\n{std}')
-#    std = std.clamp(1e-6)
-#    best_f = train_y.max()
-#    u = (mean - best_f) / (std)
-#    log_ei = _log_ei_helper(u)
-#    if verbose: print(f'log_ei:\n{log_ei}')
-#    return log_ei + std.log()
-#print('test acq:\n', acquisition(torch.tensor([[[-2.]]])),'\n')
-#print('test acq:\n', acquisition(torch.tensor([[[-1.]]])),'\n')
-#print('test acq:\n', acquisition(torch.tensor([[[0.45]]])),'\n')
-#print('test acq:\n', acquisition(torch.tensor([[[-2.]]])),'\n')
-#
-#def optimize_acqf_custom(acq_func, bounds, raw_samples=100):
-#    dim = bounds.shape[1]
-#
-#    # Generate raw samples using uniform sampling
-#    raw_candidates = torch.rand((raw_samples, dim)) * (bounds[1] - bounds[0]) + bounds[0]
-#    raw_values = acq_func(raw_candidates).detach().numpy()
-#    #print(f'raw_candidates:\n{raw_candidates}')
-#
-#    # Select the best raw candidate as a starting point
-#    best_raw_idx = np.argmax(raw_values)
-#    best_x = raw_candidates[best_raw_idx].clone()
-#    #print(f"max approx f(x) = {np.max(raw_values)} at x = {best_x}")
-#
-#    def objective(x):
-#        """Objective function for scipy.optimize (negate log-EI for maximization)."""
-#        x_torch = torch.tensor(x, dtype=torch.float32).unsqueeze(0)
-#        return -acq_func(x_torch).item()  # Negative since scipy minimizes
-#
-#    # Bounds for scipy optimizer
-#    scipy_bounds = [(bounds[0, i].item(), bounds[1, i].item()) for i in range(dim)]
-#
-#    # Optimize using L-BFGS-B
-#    res = minimize(
-#        fun=objective,
-#        x0=best_x.numpy(),
-#        bounds=scipy_bounds,
-#        #method="L-BFGS-B",
-#        method="Powell",
-#    )
-#    #print(res)
-#
-#    # Convert result back to tensor
-#    best_x_optimized = torch.tensor(res.x, dtype=torch.float32)
-#
-#    return best_x_optimized
-#
-#num_candidates = 10
-#all_candidates = torch.empty(num_candidates)
-#for i, _ in enumerate(range(num_candidates)):
-#    # Optimize Acquisition Function to Propose Next Query Point
-#    bounds = torch.tensor([[-2.0], [2.0]])
-#    candidate = optimize_acqf_custom(acquisition, bounds,  raw_samples=RAW_SAMPLES)
-#    print(f"candidate optimum: {candidate.item()}")
-#    all_candidates[i] = candidate
-#print(f'mean candidate: {torch.mean(all_candidates)}')
