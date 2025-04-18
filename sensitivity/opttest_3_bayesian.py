@@ -11,9 +11,9 @@ import pickle
 from matplotlib import pyplot as plt
 
 verbose = False
-NUM_TRAIN = 150
+NUM_TRAIN = 50
 NUM_TRAIN_REPEATS = 1
-NUM_EPOCHS = 5_000
+NUM_EPOCHS = 2_000
 RAW_SAMPLES = 20
 NUM_EPS_SAMPLES = 200
 EPS = 2
@@ -24,11 +24,13 @@ class BayesianLinear(nn.Module):
     def __init__(self, in_features, out_features):
         super().__init__()
         # Mean and log variance for weights
-        self.weight_mu = nn.Parameter(torch.Tensor(out_features, in_features).normal_(0, MU_INIT))
+        #self.weight_mu = nn.Parameter(torch.Tensor(out_features, in_features).normal_(0, MU_INIT))
+        self.weight_mu = nn.Parameter(torch.Tensor(out_features, in_features).fill_(MU_INIT))
         self.weight_logvar = nn.Parameter(torch.Tensor(out_features, in_features).fill_(LOGVAR_INIT))
 
         # Mean and log variance for biases
-        self.bias_mu = nn.Parameter(torch.Tensor(out_features).normal_(0, MU_INIT))
+        #self.bias_mu = nn.Parameter(torch.Tensor(out_features).normal_(0, MU_INIT))
+        self.bias_mu = nn.Parameter(torch.Tensor(out_features).fill_(MU_INIT))
         self.bias_logvar = nn.Parameter(torch.Tensor(out_features).fill_(LOGVAR_INIT))
 
         self.in_features = in_features
@@ -90,13 +92,22 @@ class NN(Model):
 
 # Define Noisy Objective Function
 def expensive_function(x):
-    """The 1st column of x gives the nominal inputs, 2nd column gives the noise"""
+    """The 1st column of x gives the nominal inputs, 2nd column gives the input noise"""
     noised_x = torch.sum(x, dim=1)
     noised_value = torch.where(noised_x >= 0, torch.sqrt(noised_x), -noised_x)
     # Add some additional noise we want to capture via Bayesian layers
     #std = torch.where(x[:,0] >= 0, torch.sqrt(x[:,0]), 0.001)
+    #std = torch.sqrt(torch.abs(x[:,0]))
     std = 0.1
-    extra_noise = torch.normal(mean=torch.zeros(x.shape[0]), std=std)
+    #std_slope = 0.2
+    #std = torch.abs(x[:,0])*std_slope
+    #mu = torch.ones(x.shape[0]) * -0.3
+    #mu = torch.where(x[:,0] < 0.3, mu, -mu)
+    mu = torch.zeros(x.shape[0])
+    #mu_slope = 0.05
+    #mu = (x[:,0]-2)*mu_slope
+    extra_noise = torch.normal(mean=mu, std=std)
+    #extra_noise = torch.empty_like(noised_value).log_normal_(-2, 0.5)
     return noised_value + extra_noise
 
 # Generate Training Data
@@ -131,14 +142,12 @@ def sample_elbo(model, x, y, criterion, sample_nbr=3, complexity_cost_weight=1e-
     return loss
 
 # Train Neural Network
-model = NN(input_dim=train_x.shape[1], hidden_dim = 50)
+model = NN(input_dim=train_x.shape[1], hidden_dim = 15)
 optimizer = optim.Adam(model.parameters(), lr=0.001)
 
 for epoch in range(NUM_EPOCHS):
     optimizer.zero_grad()
-    #output, _ = model.posterior(train_x)
-    loss = sample_elbo(model, train_x, train_y, criterion=nn.MSELoss(), sample_nbr=3)
-    #loss = sample_elbo(model, train_x, train_y, criterion=nn.GaussianNLLLoss(full=True, reduction='mean', eps=1e-6), sample_nbr=3)
+    loss = sample_elbo(model, train_x, train_y, criterion=nn.MSELoss(), sample_nbr=1, complexity_cost_weight=1e-6)
     loss.backward()
     optimizer.step()
     if epoch % (int(NUM_EPOCHS/10)) == 0:
@@ -195,6 +204,6 @@ all_candidates = torch.empty(num_candidates)
 for i, _ in enumerate(range(num_candidates)):
     bounds = torch.tensor([[-2.0], [2.0]])
     candidate = optimize_nn(bounds,  raw_samples=RAW_SAMPLES)
-    print(f"candidate optimum: {candidate.item()}")
+    #print(f"candidate optimum: {candidate.item()}")
     all_candidates[i] = candidate
 print(f'mean candidate: {torch.mean(all_candidates)}, std: {torch.std(all_candidates)}')

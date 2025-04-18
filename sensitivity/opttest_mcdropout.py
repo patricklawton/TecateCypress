@@ -12,30 +12,51 @@ from matplotlib import pyplot as plt
 
 verbose = False
 NUM_TRAIN = 50
-NUM_EPOCHS = 5_000
+NUM_TRAIN_REPEATS = 1
+NUM_EPOCHS = 3_000
 RAW_SAMPLES = 20
 NUM_EPS_SAMPLES = 200
 EPS = 2
+MU_INIT = 0.0
+LOGVAR_INIT = -7
 
-class NN(Model):
-    def __init__(self, input_dim):
+class NN(nn.Module):
+    def __init__(self, input_dim=2, hidden_dim=64, dropout_p=0.1):
         super().__init__()
-        self.hidden = nn.Linear(input_dim, 50)
-        self.out = nn.Linear(50, 1)
-        self.relu = nn.ReLU()
+        self.net = nn.Sequential(
+            nn.Linear(input_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Dropout(p=dropout_p),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Dropout(p=dropout_p),
+            nn.Linear(hidden_dim, 2)  # output: mean and variance
+        )
 
-    def forward(self, X):
-        h = self.relu(self.hidden(X))
-        return self.out(h)
+    def forward(self, x):
+        out = self.net(x)
+        mean = out[:, 0:1]
+        raw_var = out[:, 1:2]
+        var = F.softplus(raw_var) + 1e-6  # ensure positivity
+        return mean, var
 
     def posterior(self, X, num_samples=1):
         """
         Approximate posterior by Monte Carlo sampling.
         """
-        outputs = torch.stack([self.forward(X) for _ in range(num_samples)])
+        outputs = torch.stack([self.forward(X)[0] for _ in range(num_samples)])
         mean = outputs.mean(dim=0)
         std = outputs.std(dim=0)
         return mean, std
+
+    def predict_with_uncertainty(self, X, n_samples=20):
+        model.train()  # Important: keep dropout active during test
+        preds = []
+        for _ in range(n_samples):
+            mean, _ = self.forward(X)
+            preds.append(mean)
+        preds = torch.stack(preds)
+        return preds.mean(dim=0), preds.var(dim=0)
 
     def posterior_robust(self, X_design, num_eps_samples=10, eps=0.1):
         """ Estimate robustness measure at each design point """
@@ -44,7 +65,8 @@ class NN(Model):
             X = torch.empty((num_eps_samples, 2))
             X[:,0] = X_d.repeat(num_eps_samples)
             X[:,1].uniform_(-eps, eps)
-            outputs = self.forward(X)
+            #outputs, _ = self.forward(X)
+            outputs, _ = self.predict_with_uncertainty(X)
             robust_measures[i] = torch.max(outputs, axis=0).values
         return robust_measures
 
@@ -53,8 +75,7 @@ def expensive_function(x):
     """The 1st column of x gives the nominal inputs, 2nd column gives the noise"""
     noised_x = torch.sum(x, dim=1)
     noised_value = torch.where(noised_x >= 0, torch.sqrt(noised_x), -noised_x)
-    #return noised_value 
-    # Add some additional noise we want to capture
+    # Add some additional noise we want to capture via Bayesian layers
     #std = torch.where(x[:,0] >= 0, torch.sqrt(x[:,0]), 0.001)
     std = 0.1
     extra_noise = torch.normal(mean=torch.zeros(x.shape[0]), std=std)
@@ -64,21 +85,55 @@ def expensive_function(x):
 train_x = torch.empty(NUM_TRAIN, 2)
 train_x[:,0].uniform_(-2,2)
 train_x[:,1].uniform_(-EPS, EPS)
+train_x = train_x.repeat((NUM_TRAIN_REPEATS,1)) # Generate repeats of the initial points to help learn variance
 train_y  = expensive_function(train_x)
 torch.save(train_x, 'train_x_3')
 torch.save(train_y, 'train_y_3')
 #train_x = torch.load('train_x_3', weights_only=True)
 #train_y = torch.load('train_y_3', weights_only=True)
 
+def nll_with_min_variance_penalty(y, mean, var, penalty_weight=1e-3, eps=1e-6):
+    var = torch.clamp(var, min=eps)
+    nll = ((y - mean)**2) / (2 * var) + 0.5 * torch.log(var)
+    penalty = penalty_weight * (1 / var).mean()
+    return nll.mean() + penalty
+
+def sample_elbo(model, x, y, criterion=None, sample_nbr=3, complexity_cost_weight=1e-6):
+    total_nll = 0.0
+    total_kl = 0.0
+
+    for _ in range(sample_nbr):
+        mean, var = model(x)
+        mean = mean.squeeze(1)
+        if criterion != None:
+            total_nll += criterion(mean, y)
+        else:
+            total_nll += nll_with_min_variance_penalty(y, mean, var)
+
+    # Average over samples
+    nll = total_nll / sample_nbr
+
+    # Sum KL from all Bayesian layers
+    for module in model.modules():
+        if hasattr(module, 'kl_loss'):
+            total_kl += module.kl_loss()
+
+    loss = nll + complexity_cost_weight * total_kl
+    return loss
+
+def nll_loss(pred_mean, pred_var, target):
+    return 0.5 * torch.mean(torch.log(pred_var) + (target - pred_mean) ** 2 / pred_var)
+
 # Train Neural Network
-model = NN(input_dim=train_x.shape[1])
+model = NN(input_dim=train_x.shape[1], hidden_dim=50, dropout_p=0.25)
 optimizer = optim.Adam(model.parameters(), lr=0.001)
-loss_fn = nn.MSELoss()
 
 for epoch in range(NUM_EPOCHS):
     optimizer.zero_grad()
-    output, _ = model.posterior(train_x)
-    loss = loss_fn(output.squeeze(1), train_y)
+    #loss = sample_elbo(model, train_x, train_y, criterion=nn.MSELoss(), sample_nbr=3)
+    loss = sample_elbo(model, train_x, train_y, sample_nbr=6)
+    #pred_mean, pred_var = model(train_x)
+    #loss = nll_loss(pred_mean, pred_var, train_y)
     loss.backward()
     optimizer.step()
     if epoch % (int(NUM_EPOCHS/10)) == 0:
@@ -124,7 +179,6 @@ def optimize_nn(bounds, raw_samples = 10):
         fun=objective,
         x0=best_x.numpy(),
         bounds=scipy_bounds,
-        #method="L-BFGS-B",
         method="Powell",
     )
     if verbose: print(res)
