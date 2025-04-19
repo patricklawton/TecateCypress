@@ -9,11 +9,11 @@ import pickle
 from matplotlib import pyplot as plt
 
 verbose = False
-NUM_TRAIN = 65
+NUM_TRAIN = 150
 NUM_TRAIN_REPEATS = 1
-NUM_EPOCHS = 3_000
+NUM_EPOCHS = 5_000
 RAW_SAMPLES = 20
-NUM_EPS_SAMPLES = 400
+NUM_EPS_SAMPLES = 200
 EPS = 2
 MU_INIT = 0.0
 LOGVAR_INIT = -5
@@ -44,13 +44,19 @@ class BayesianLinear(nn.Module):
 
         return F.linear(x, weight, bias)
 
+    #def kl_loss(self):
+    #    std_weight = torch.log1p(torch.exp(self.rho_weight))
+    #    std_bias = torch.log1p(torch.exp(self.rho_bias))
+
+    #    kl_weight = 0.5 * (std_weight.pow(2) + self.mu_weight.pow(2) - 1 - torch.log(std_weight.pow(2) + 1e-8)).sum()
+    #    kl_bias = 0.5 * (std_bias.pow(2) + self.mu_bias.pow(2) - 1 - torch.log(std_bias.pow(2) + 1e-8)).sum()
+
+    #    return kl_weight + kl_bias
     def kl_loss(self):
-        std_weight = torch.log1p(torch.exp(self.rho_weight))
-        std_bias = torch.log1p(torch.exp(self.rho_bias))
-
-        kl_weight = 0.5 * (std_weight.pow(2) + self.mu_weight.pow(2) - 1 - torch.log(std_weight.pow(2) + 1e-8)).sum()
-        kl_bias = 0.5 * (std_bias.pow(2) + self.mu_bias.pow(2) - 1 - torch.log(std_bias.pow(2) + 1e-8)).sum()
-
+        std_weight = F.softplus(self.rho_weight)
+        std_bias = F.softplus(self.rho_bias)
+        kl_weight = torch.sum(-torch.log(std_weight) + 0.5 * (std_weight ** 2 + self.mu_weight ** 2) - 0.5)
+        kl_bias = torch.sum(-torch.log(std_bias) + 0.5 * (std_bias ** 2 + self.mu_bias ** 2) - 0.5)
         return kl_weight + kl_bias
 
 # Define full model
@@ -58,20 +64,26 @@ class NN(nn.Module):
     def __init__(self, input_dim=2, hidden_dim=50):
         super().__init__()
         self.blinear1 = BayesianLinear(input_dim, hidden_dim)
-        self.blinear2 = BayesianLinear(hidden_dim, 1)
+        self.blinear2 = BayesianLinear(hidden_dim, 2)
 
     def forward(self, x):
-        x = F.relu(self.blinear1(x))
-        return self.blinear2(x)
+        #x = F.relu(self.blinear1(x))
+        #return self.blinear2(x)
+        hidden = F.relu(self.blinear1(x))
+        output = self.blinear2(hidden)
+        mean = output[:, 0]
+        raw_log_var = output[:, 1]
+        var = F.softplus(raw_log_var) + 1e-6
+        return mean, var
 
     def kl_loss(self):
         return self.blinear1.kl_loss() + self.blinear2.kl_loss()
 
-    def posterior(self, X, num_samples=1):
-        outputs = torch.stack([self.forward(X) for _ in range(num_samples)])
-        mean = outputs.mean(dim=0)
-        std = outputs.std(dim=0)
-        return mean, std
+    #def posterior(self, X, num_samples=1):
+    #    outputs = torch.stack([self.forward(X) for _ in range(num_samples)])
+    #    mean = outputs.mean(dim=0)
+    #    std = outputs.std(dim=0)
+    #    return mean, std
     
     def posterior_robust(self, X_design, num_eps_samples=10, eps=0.1):
         """ Estimate robustness measure at each design point """
@@ -80,18 +92,33 @@ class NN(nn.Module):
             X = torch.empty((num_eps_samples, 2))
             X[:,0] = X_d.repeat(num_eps_samples)
             X[:,1].uniform_(-eps, eps)
-            outputs = self.forward(X)
-            robust_measures[i] = torch.max(outputs, axis=0).values
+            means, _ = self.forward(X)
+            robust_measures[i] = torch.max(means, axis=0).values
         return robust_measures
 
+def nll_with_min_variance_penalty(y, mean, var, penalty_weight=1e-3, eps=1e-6):
+    var = torch.clamp(var, min=eps)
+    nll = ((y - mean)**2) / (2 * var) + 0.5 * torch.log(var)
+    penalty = penalty_weight * (1 / var).mean()
+    return nll.mean() + penalty
+
+def nll_with_variance_penalty(mean, target, variance, penalty_weight=1e-6, eps=1e-6):
+    #base_nll = F.gaussian_nll_loss(mean, target, variance, full=True)
+    variance = torch.clamp(variance, min=eps)
+    base_nll = ((target - mean)**2) / (2 * variance) + 0.5 * torch.log(variance)
+    penalty = penalty_weight * torch.mean(variance)
+    return base_nll + penalty
+
 # Loss function
-def sample_elbo(model, x, y, criterion, sample_nbr=3, complexity_cost_weight=1e-6):
+def sample_elbo(model, x, y, sample_nbr=3, complexity_cost_weight=1e-6):
     total_nll = 0.0
     total_kl = 0.0
 
     for _ in range(sample_nbr):
-        preds = model(x).squeeze(1)
-        total_nll += criterion(preds, y)
+        mean, var = model(x)
+        #loss = F.gaussian_nll_loss(mean, y, var, full=True)
+        #loss = nll_with_min_variance_penalty(y, mean, var)
+        loss = nll_with_variance_penalty(y, mean, var)
 
     nll = total_nll / sample_nbr
     total_kl = model.kl_loss()
@@ -104,8 +131,6 @@ def expensive_function(x):
     noised_x = torch.sum(x, dim=1)
     noised_value = torch.where(noised_x >= 0, torch.sqrt(noised_x), -noised_x)
     # Add some additional noise we want to capture via Bayesian layers
-    #std = torch.where(x[:,0] >= 0, torch.sqrt(x[:,0]), 0.001)
-    #std = torch.sqrt(torch.abs(x[:,0])) / 2
     std = 0.1
     #std_slope = 0.2
     #std = torch.abs(x[:,0])*std_slope
@@ -135,7 +160,7 @@ optimizer = optim.Adam(model.parameters(), lr=0.001)
 
 for epoch in range(NUM_EPOCHS):
     optimizer.zero_grad()
-    loss = sample_elbo(model, train_x, train_y, criterion=nn.MSELoss(), sample_nbr=3, complexity_cost_weight=1e-6)
+    loss = sample_elbo(model, train_x, train_y, sample_nbr=3, complexity_cost_weight=1e-6)
     loss.backward()
     optimizer.step()
     if epoch % (int(NUM_EPOCHS/10)) == 0:
@@ -145,8 +170,8 @@ with open('model_3.pkl', 'wb') as handle:
 test_x = torch.empty(500, 2)
 test_x[:,0].uniform_(-2, 2)
 test_x[:,1].uniform_(-EPS, EPS);
-mean, std = model.posterior(test_x)
-mean = mean.squeeze(1).detach()
+mean, var = model.forward(test_x)
+mean = mean.detach()
 plt.scatter(test_x[:,0], mean)
 plt.ylabel('f(x)')
 plt.xlabel('x')

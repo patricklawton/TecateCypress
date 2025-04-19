@@ -193,13 +193,14 @@ if metric == 'P_s':
     ax3.set_ylabel(rf'simulated survival probability $S$')
 elif metric == 'lambda_s':
     cbar.set_label(rf'frequency of $\lambda$ given ${{\tau}}$', rotation=-90, labelpad=cbar_lpad)
-    ax3.set_ylabel(rf'simulated stochastic growth rate $\lambda$')
+    ax3.set_ylabel(rf'simulated growth rate $\lambda$')
 elif metric == 's':
     ax3.set_ylabel(rf's')
 ax3.plot([], [], marker='o', color='k', label=mean_metric_lab)
 ax3.legend(bbox_to_anchor=(0.2, -0.05, 0.5, 0.5), fontsize=21)
 ax3.set_ylim(metric_edges[np.nonzero(im[0][min_edge_i])[0].min()], max(metric_edges))
 ax3.set_xlim(tau_edges[min_edge_i], max(tau_edges))
+ax3.set_xlabel(r'average fire return interval $\tau$')
 ########
 
 #### INITIAL TAU DISTRIBUTION ####

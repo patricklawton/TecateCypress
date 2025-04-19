@@ -10,7 +10,7 @@ from matplotlib import pyplot as plt
 
 verbose = False
 NUM_TRAIN = 50
-NUM_TRAIN_REPEATS = 3 
+NUM_TRAIN_REPEATS = 1 
 #NUM_X0 = 100  # Number of unique x0s
 #NUM_SAMPLES_PER_X0 = 5  # Samples per x0
 NUM_X0 = 20  # Number of unique x0s

@@ -18,61 +18,24 @@ EPS = 2
 MU_INIT = 0.0
 LOGVAR_INIT = -5
 
-# Define Bayesian Linear Layer
-class BayesianLinear(nn.Module):
-    def __init__(self, in_features, out_features):
-        super().__init__()
-        self.in_features = in_features
-        self.out_features = out_features
-
-        # Variational parameters for weights
-        self.mu_weight = nn.Parameter(torch.Tensor(out_features, in_features).normal_(MU_INIT, 0.1))
-        self.rho_weight = nn.Parameter(torch.Tensor(out_features, in_features).normal_(LOGVAR_INIT, 0.1))
-
-        self.mu_bias = nn.Parameter(torch.Tensor(out_features).normal_(MU_INIT, 0.1))
-        self.rho_bias = nn.Parameter(torch.Tensor(out_features).normal_(LOGVAR_INIT, 0.1))
-
-    def forward(self, x):
-        std_weight = F.softplus(self.rho_weight)
-        std_bias = F.softplus(self.rho_bias)
-
-        weight_eps = torch.randn_like(std_weight)
-        bias_eps = torch.randn_like(std_bias)
-
-        weight = self.mu_weight + std_weight * weight_eps
-        bias = self.mu_bias + std_bias * bias_eps
-
-        return F.linear(x, weight, bias)
-
-    def kl_loss(self):
-        std_weight = torch.log1p(torch.exp(self.rho_weight))
-        std_bias = torch.log1p(torch.exp(self.rho_bias))
-
-        kl_weight = 0.5 * (std_weight.pow(2) + self.mu_weight.pow(2) - 1 - torch.log(std_weight.pow(2) + 1e-8)).sum()
-        kl_bias = 0.5 * (std_bias.pow(2) + self.mu_bias.pow(2) - 1 - torch.log(std_bias.pow(2) + 1e-8)).sum()
-
-        return kl_weight + kl_bias
-
 # Define full model
 class NN(nn.Module):
     def __init__(self, input_dim=2, hidden_dim=50):
         super().__init__()
-        self.blinear1 = BayesianLinear(input_dim, hidden_dim)
-        self.blinear2 = BayesianLinear(hidden_dim, 1)
+        self.fc1 = nn.Linear(input_dim, hidden_dim)
+        self.relu = nn.ReLU()
+        self.out_mean = nn.Linear(hidden_dim, 1)
+        self.out_var = nn.Linear(hidden_dim, 1)
+
+        # Init: Encourage small initial variance via softplus
+        nn.init.constant_(self.out_var.bias, -5.0)  # softplus(-5) ≈ 0.0067
 
     def forward(self, x):
-        x = F.relu(self.blinear1(x))
-        return self.blinear2(x)
+        x = self.relu(self.fc1(x))
+        mean = self.out_mean(x)
+        variance = F.softplus(self.out_var(x)) + 1e-4  # small floor to avoid 0
+        return mean.squeeze(-1), variance.squeeze(-1)
 
-    def kl_loss(self):
-        return self.blinear1.kl_loss() + self.blinear2.kl_loss()
-
-    def posterior(self, X, num_samples=1):
-        outputs = torch.stack([self.forward(X) for _ in range(num_samples)])
-        mean = outputs.mean(dim=0)
-        std = outputs.std(dim=0)
-        return mean, std
-    
     def posterior_robust(self, X_design, num_eps_samples=10, eps=0.1):
         """ Estimate robustness measure at each design point """
         robust_measures = torch.empty((X_design.shape[0], 1))
@@ -80,23 +43,28 @@ class NN(nn.Module):
             X = torch.empty((num_eps_samples, 2))
             X[:,0] = X_d.repeat(num_eps_samples)
             X[:,1].uniform_(-eps, eps)
-            outputs = self.forward(X)
-            robust_measures[i] = torch.max(outputs, axis=0).values
+            means, _ = self.forward(X)
+            robust_measures[i] = torch.max(means, axis=0).values
         return robust_measures
 
-# Loss function
-def sample_elbo(model, x, y, criterion, sample_nbr=3, complexity_cost_weight=1e-6):
-    total_nll = 0.0
-    total_kl = 0.0
+# -----------------------------
+# Loss Function
+# -----------------------------
+def gaussian_nll_with_variance_penalty(mean, target, variance, penalty_weight=1e-3):
+    base_nll = F.gaussian_nll_loss(mean, target, variance, full=True)
+    penalty = penalty_weight * torch.mean(variance)
+    return base_nll + penalty
 
+# -----------------------------
+# ELBO-style Wrapper
+# -----------------------------
+def sample_elbo(model, x, y, sample_nbr=3, complexity_cost_weight=1e-6):
+    total_loss = 0.0
     for _ in range(sample_nbr):
-        preds = model(x).squeeze(1)
-        total_nll += criterion(preds, y)
-
-    nll = total_nll / sample_nbr
-    total_kl = model.kl_loss()
-    loss = nll + complexity_cost_weight * total_kl
-    return loss
+        mean, var = model(x)
+        loss = gaussian_nll_with_variance_penalty(mean, y, var)
+        total_loss += loss
+    return total_loss / sample_nbr
 
 # Define Noisy Objective Function
 def expensive_function(x):
@@ -104,8 +72,6 @@ def expensive_function(x):
     noised_x = torch.sum(x, dim=1)
     noised_value = torch.where(noised_x >= 0, torch.sqrt(noised_x), -noised_x)
     # Add some additional noise we want to capture via Bayesian layers
-    #std = torch.where(x[:,0] >= 0, torch.sqrt(x[:,0]), 0.001)
-    #std = torch.sqrt(torch.abs(x[:,0])) / 2
     std = 0.1
     #std_slope = 0.2
     #std = torch.abs(x[:,0])*std_slope
@@ -130,12 +96,12 @@ torch.save(train_y, 'train_y_3')
 #train_y = torch.load('train_y_3', weights_only=True)
 
 # Train Neural Network
-model = NN(input_dim=train_x.shape[1], hidden_dim = 30)
+model = NN(input_dim=train_x.shape[1], hidden_dim = 50)
 optimizer = optim.Adam(model.parameters(), lr=0.001)
 
 for epoch in range(NUM_EPOCHS):
     optimizer.zero_grad()
-    loss = sample_elbo(model, train_x, train_y, criterion=nn.MSELoss(), sample_nbr=3, complexity_cost_weight=1e-6)
+    loss = sample_elbo(model, train_x, train_y, sample_nbr=6, complexity_cost_weight=1e-6)
     loss.backward()
     optimizer.step()
     if epoch % (int(NUM_EPOCHS/10)) == 0:
@@ -145,8 +111,8 @@ with open('model_3.pkl', 'wb') as handle:
 test_x = torch.empty(500, 2)
 test_x[:,0].uniform_(-2, 2)
 test_x[:,1].uniform_(-EPS, EPS);
-mean, std = model.posterior(test_x)
-mean = mean.squeeze(1).detach()
+mean, var = model.forward(test_x)
+mean = mean.detach()
 plt.scatter(test_x[:,0], mean)
 plt.ylabel('f(x)')
 plt.xlabel('x')
