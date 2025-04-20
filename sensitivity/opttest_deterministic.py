@@ -9,7 +9,7 @@ import pickle
 from matplotlib import pyplot as plt
 
 verbose = False
-NUM_TRAIN = 65
+NUM_TRAIN = 60
 NUM_TRAIN_REPEATS = 1
 NUM_EPOCHS = 3_000
 RAW_SAMPLES = 20
