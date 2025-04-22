@@ -29,8 +29,11 @@ class NN(nn.Module):
             x = torch.empty((num_eps_samples, 2))
             x[:,0] = x_d.repeat(num_eps_samples)
             x[:,1].uniform_(-eps, eps)
-            means, _ = self.forward(x)
+            means, _vars = self.forward(x)
             robust_measure = torch.sum(means > robustness_thresh) / len(x)
+            ## Add uncertainty based on variance
+            #noised_vals = torch.normal(means, _vars)
+            #robust_measure = torch.sum(noised_vals > robustness_thresh) / len(x)
             robust_measures[i] = robust_measure
         return robust_measures
 
@@ -40,11 +43,11 @@ def gaussian_nll_with_variance_penalty(mean, target, variance, penalty_weight=1e
     penalty = penalty_weight * torch.mean(variance)
     return base_nll + penalty
 
-def loss_fn(model, x, y, sample_nbr=3, complexity_cost_weight=1e-6):
+def loss_fn(model, x, y, sample_nbr=3, complexity_cost_weight=None, penalty_weight=1e-3):
     """ Sample ELBO """
     total_loss = 0.0
     for _ in range(sample_nbr):
         mean, var = model(x)
-        loss = gaussian_nll_with_variance_penalty(mean, y, var)
+        loss = gaussian_nll_with_variance_penalty(mean, y, var, penalty_weight)
         total_loss += loss
     return total_loss / sample_nbr

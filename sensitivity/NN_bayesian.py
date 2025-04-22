@@ -13,30 +13,43 @@ class BayesianLinear(nn.Module):
         self.out_features = out_features
 
         # Variational parameters for weights
-        self.mu_weight = nn.Parameter(torch.Tensor(out_features, in_features).normal_(MU_INIT, 0.1))
-        self.rho_weight = nn.Parameter(torch.Tensor(out_features, in_features).normal_(LOGVAR_INIT, 0.1))
+        self.weight_mu = nn.Parameter(torch.Tensor(out_features, in_features).normal_(MU_INIT, 0.1))
+        self.weight_logvar = nn.Parameter(torch.Tensor(out_features, in_features).normal_(LOGVAR_INIT, 0.1))
 
-        self.mu_bias = nn.Parameter(torch.Tensor(out_features).normal_(MU_INIT, 0.1))
-        self.rho_bias = nn.Parameter(torch.Tensor(out_features).normal_(LOGVAR_INIT, 0.1))
+        self.bias_mu = nn.Parameter(torch.Tensor(out_features).normal_(MU_INIT, 0.1))
+        self.bias_logvar = nn.Parameter(torch.Tensor(out_features).normal_(LOGVAR_INIT, 0.1))
 
     def forward(self, x):
-        std_weight = F.softplus(self.rho_weight)
-        std_bias = F.softplus(self.rho_bias)
+        batch_size = x.size(0)
 
-        weight_eps = torch.randn_like(std_weight)
-        bias_eps = torch.randn_like(std_bias)
+        # Sample weight and bias epsilons per input in the batch
+        eps_w = torch.randn(batch_size, self.out_features, self.in_features, device=x.device)
+        eps_b = torch.randn(batch_size, self.out_features, device=x.device)
 
-        weight = self.mu_weight + std_weight * weight_eps
-        bias = self.mu_bias + std_bias * bias_eps
+        weight_std = torch.exp(0.5 * self.weight_logvar)
+        bias_std = torch.exp(0.5 * self.bias_logvar)
 
-        return F.linear(x, weight, bias)
+        # Broadcast sampled weights: shape [batch_size, out_features, in_features]
+        weights = self.weight_mu.unsqueeze(0) + weight_std.unsqueeze(0) * eps_w
+        biases = self.bias_mu.unsqueeze(0) + bias_std.unsqueeze(0) * eps_b
+
+        # x: [batch_size, in_features] → [batch_size, 1, in_features]
+        x_expanded = x.unsqueeze(1)  # [B, 1, I]
+
+        # Batched matmul: [B, O, I] x [B, I, 1] → [B, O, 1] → squeeze → [B, O]
+        out = torch.bmm(weights, x_expanded.transpose(1, 2)).squeeze(-1)
+
+        # Add bias: [B, O]
+        out = out + biases
+
+        return out
 
     def kl_loss(self):
-        std_weight = torch.log1p(torch.exp(self.rho_weight))
-        std_bias = torch.log1p(torch.exp(self.rho_bias))
+        std_weight = torch.log1p(torch.exp(self.weight_logvar))
+        std_bias = torch.log1p(torch.exp(self.bias_logvar))
 
-        kl_weight = 0.5 * (std_weight.pow(2) + self.mu_weight.pow(2) - 1 - torch.log(std_weight.pow(2) + 1e-8)).sum()
-        kl_bias = 0.5 * (std_bias.pow(2) + self.mu_bias.pow(2) - 1 - torch.log(std_bias.pow(2) + 1e-8)).sum()
+        kl_weight = 0.5 * (std_weight.pow(2) + self.weight_mu.pow(2) - 1 - torch.log(std_weight.pow(2) + 1e-8)).sum()
+        kl_bias = 0.5 * (std_bias.pow(2) + self.bias_mu.pow(2) - 1 - torch.log(std_bias.pow(2) + 1e-8)).sum()
 
         return kl_weight + kl_bias
 
@@ -49,16 +62,11 @@ class NN(nn.Module):
 
     def forward(self, x):
         x = F.relu(self.blinear1(x))
-        return self.blinear2(x)
+        preds = self.blinear2(x).squeeze(-1)
+        return preds, torch.zeros_like(preds).squeeze(-1)
 
     def kl_loss(self):
         return self.blinear1.kl_loss() + self.blinear2.kl_loss()
-
-    def posterior(self, X, num_samples=1):
-        outputs = torch.stack([self.forward(X) for _ in range(num_samples)])
-        mean = outputs.mean(dim=0)
-        std = outputs.std(dim=0)
-        return mean, std
 
     def posterior_robust(self, x_design, robustness_thresh, num_eps_samples=10, eps=0.1):
         """ Estimate robustness measure at each design point """
@@ -67,23 +75,22 @@ class NN(nn.Module):
             x = torch.empty((num_eps_samples, 2))
             x[:,0] = x_d.repeat(num_eps_samples)
             x[:,1].uniform_(-eps, eps)
-            means = self.forward(x)
+            means, _ = self.forward(x)
             robust_measure = torch.sum(means > robustness_thresh) / len(x)
             robust_measures[i] = robust_measure
         return robust_measures
 
 # Loss function
-def loss_fn(model, x, y, sample_nbr=3, complexity_cost_weight=1e-6):
+def loss_fn(model, x, y, sample_nbr=3, complexity_cost_weight=1e-6, penalty_weight=None):
     loss = nn.MSELoss()
     total_nll = 0.0
     total_kl = 0.0
 
     for _ in range(sample_nbr):
-        preds = model(x).squeeze(1)
+        preds, _ = model(x)
         total_nll += loss(preds, y)
 
     nll = total_nll / sample_nbr
     total_kl = model.kl_loss()
     loss = nll + complexity_cost_weight * total_kl
     return loss
-
