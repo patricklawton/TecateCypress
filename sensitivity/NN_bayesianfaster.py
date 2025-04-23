@@ -12,37 +12,40 @@ class BayesianLinear(nn.Module):
         self.in_features = in_features
         self.out_features = out_features
 
-        # Variational parameters for weights
         self.weight_mu = nn.Parameter(torch.Tensor(out_features, in_features).normal_(MU_INIT, 0.1))
         self.weight_logvar = nn.Parameter(torch.Tensor(out_features, in_features).normal_(LOGVAR_INIT, 0.1))
 
         self.bias_mu = nn.Parameter(torch.Tensor(out_features).normal_(MU_INIT, 0.1))
         self.bias_logvar = nn.Parameter(torch.Tensor(out_features).normal_(LOGVAR_INIT, 0.1))
 
+        self.efficient = False  # If True, share same weights across entire batch
+
     def forward(self, x):
         batch_size = x.size(0)
-
-        # Sample weight and bias epsilons per input in the batch
-        eps_w = torch.randn(batch_size, self.out_features, self.in_features, device=x.device)
-        eps_b = torch.randn(batch_size, self.out_features, device=x.device)
 
         weight_std = torch.exp(0.5 * self.weight_logvar)
         bias_std = torch.exp(0.5 * self.bias_logvar)
 
-        # Broadcast sampled weights: shape [batch_size, out_features, in_features]
-        weights = self.weight_mu.unsqueeze(0) + weight_std.unsqueeze(0) * eps_w
-        biases = self.bias_mu.unsqueeze(0) + bias_std.unsqueeze(0) * eps_b
+        if self.efficient:
+            # Sample once per layer (shared across batch)
+            eps_w = torch.randn_like(self.weight_mu)
+            eps_b = torch.randn_like(self.bias_mu)
 
-        # x: [batch_size, in_features] → [batch_size, 1, in_features]
-        x_expanded = x.unsqueeze(1)  # [B, 1, I]
+            weight = self.weight_mu + weight_std * eps_w
+            bias = self.bias_mu + bias_std * eps_b
 
-        # Batched matmul: [B, O, I] x [B, I, 1] → [B, O, 1] → squeeze → [B, O]
-        out = torch.bmm(weights, x_expanded.transpose(1, 2)).squeeze(-1)
+            return F.linear(x, weight, bias)
+        else:
+            # Sample per input
+            eps_w = torch.randn(batch_size, self.out_features, self.in_features, device=x.device)
+            eps_b = torch.randn(batch_size, self.out_features, device=x.device)
 
-        # Add bias: [B, O]
-        out = out + biases
+            weights = self.weight_mu.unsqueeze(0) + weight_std.unsqueeze(0) * eps_w
+            biases = self.bias_mu.unsqueeze(0) + bias_std.unsqueeze(0) * eps_b
 
-        return out
+            x_exp = x.unsqueeze(1)  # [B, 1, I]
+            out = torch.bmm(weights, x_exp.transpose(1, 2)).squeeze(-1)
+            return out + biases
 
     def kl_loss(self):
         std_weight = torch.log1p(torch.exp(self.weight_logvar))
@@ -53,7 +56,8 @@ class BayesianLinear(nn.Module):
 
         return kl_weight + kl_bias
 
-# Define full model
+
+# Full Bayesian Network
 class NN(nn.Module):
     def __init__(self, input_dim=2, hidden_dim=50):
         super().__init__()
@@ -71,19 +75,35 @@ class NN(nn.Module):
     def kl_loss(self):
         return self.blinear1.kl_loss() + self.blinear2.kl_loss()
 
-    def posterior_robust(self, x_design, robustness_thresh, num_eps_samples=10, eps=0.1, n_mc_samples=None):
-        """ Estimate robustness measure at each design point """
+    def set_efficient(self, mode=True):
+        """Toggle efficient sampling mode for all BayesianLinear layers."""
+        for m in self.modules():
+            if isinstance(m, BayesianLinear):
+                m.efficient = mode
+
+    def posterior_robust(self, x_design, robustness_thresh, num_eps_samples=10, eps=0.1, n_mc_samples=20):
+        """Estimate robustness measure at each design point using MC + predictive variance."""
+        self.set_efficient(True)  # Enable efficient sampling for speed
+
         robust_measures = torch.empty((x_design.shape[0], 1))
         for i, x_d in enumerate(x_design):
+            # Sample noisy inputs
             x = torch.empty((num_eps_samples, 2))
-            x[:,0] = x_d.repeat(num_eps_samples)
-            x[:,1].uniform_(-eps, eps)
-            means, _vars = self.forward(x)
-            #robust_measure = torch.sum(means > robustness_thresh) / len(x)
-            # Add uncertainty based on variance
-            noised_vals = torch.normal(means, torch.sqrt(_vars))
-            robust_measure = torch.sum(noised_vals > robustness_thresh) / len(x)
+            x[:, 0] = x_d.repeat(num_eps_samples)
+            x[:, 1].uniform_(-eps, eps)
+
+            # MC sampling from posterior predictive
+            all_preds = []
+            for _ in range(n_mc_samples):
+                means, vars = self.forward(x)
+                samples = torch.normal(means, torch.sqrt(vars))
+                all_preds.append(samples)
+
+            all_preds = torch.stack(all_preds)  # [n_mc_samples, num_eps_samples]
+            robust_measure = torch.mean((all_preds > robustness_thresh).float()).item()
             robust_measures[i] = robust_measure
+
+        self.set_efficient(False)  # Restore default for future training
         return robust_measures
 
 # Loss function

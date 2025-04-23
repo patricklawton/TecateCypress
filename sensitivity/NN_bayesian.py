@@ -58,37 +58,56 @@ class NN(nn.Module):
     def __init__(self, input_dim=2, hidden_dim=50):
         super().__init__()
         self.blinear1 = BayesianLinear(input_dim, hidden_dim)
-        self.blinear2 = BayesianLinear(hidden_dim, 1)
+        self.blinear2 = BayesianLinear(hidden_dim, 2)
 
     def forward(self, x):
         x = F.relu(self.blinear1(x))
-        preds = self.blinear2(x).squeeze(-1)
-        return preds, torch.zeros_like(preds).squeeze(-1)
+        out = self.blinear2(x).squeeze(-1)
+        mean = out[:, 0]
+        log_var = out[:, 1]
+        var = torch.exp(log_var).clamp(min=1e-6)
+        return mean, var
 
     def kl_loss(self):
         return self.blinear1.kl_loss() + self.blinear2.kl_loss()
 
-    def posterior_robust(self, x_design, robustness_thresh, num_eps_samples=10, eps=0.1):
+    def posterior_robust(self, x_design, robustness_thresh, num_eps_samples=10, eps=0.1, n_mc_samples=10):
         """ Estimate robustness measure at each design point """
         robust_measures = torch.empty((x_design.shape[0], 1))
         for i, x_d in enumerate(x_design):
             x = torch.empty((num_eps_samples, 2))
             x[:,0] = x_d.repeat(num_eps_samples)
             x[:,1].uniform_(-eps, eps)
-            means, _ = self.forward(x)
-            robust_measure = torch.sum(means > robustness_thresh) / len(x)
+
+            #means, _vars = self.forward(x)
+            ## Add uncertainty based on variance
+            #noised_vals = torch.normal(means, torch.sqrt(_vars))
+            #robust_measure = torch.sum(noised_vals > robustness_thresh) / len(x)
+            # MC sampling from posterior predictive
+            all_preds = []
+            for _ in range(n_mc_samples):
+                means, _vars = self.forward(x)
+                samples = torch.normal(means, torch.sqrt(_vars))
+                all_preds.append(samples)
+
+            all_preds = torch.stack(all_preds)  # [n_mc_samples, num_eps_samples]
+            robust_measure = torch.mean((all_preds > robustness_thresh).float()).item()
             robust_measures[i] = robust_measure
         return robust_measures
 
 # Loss function
+def gaussian_nll_loss(y_pred_mean, y_pred_var, y_true):
+    # Avoid exploding exponentials
+    return torch.mean(0.5 * torch.log(y_pred_var) + 0.5 * ((y_true - y_pred_mean)**2 / y_pred_var))
+
 def loss_fn(model, x, y, sample_nbr=3, complexity_cost_weight=1e-6, penalty_weight=None):
-    loss = nn.MSELoss()
     total_nll = 0.0
     total_kl = 0.0
 
     for _ in range(sample_nbr):
-        preds, _ = model(x)
-        total_nll += loss(preds, y)
+        means, variances = model(x)
+        loss = gaussian_nll_loss(means, variances, y)
+        total_nll += loss
 
     nll = total_nll / sample_nbr
     total_kl = model.kl_loss()

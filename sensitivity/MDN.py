@@ -51,10 +51,6 @@ class NN(nn.Module):
             x[:, 0] = x_d.repeat(num_eps_samples)
             x[:, 1].uniform_(-eps, eps)
 
-            #gmm = self.get_mixture_distribution(x)
-            #probs = 1.0 - gmm.cdf(robustness_thresh)  # Prob(y > thresh | x)
-            #robust_measures[i] = probs.mean()
-
             samples = self.sample_predictions(x, n_samples=n_mc_samples)  # shape: (n_mc_samples, num_eps_samples)
             prob_estimate = (samples > robustness_thresh).float().mean()
             robust_measures[i] = prob_estimate

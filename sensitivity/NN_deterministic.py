@@ -22,18 +22,23 @@ class NN(nn.Module):
         variance = F.softplus(self.out_var(x)) + 1e-4  # small floor to avoid 0
         return mean.squeeze(-1), variance.squeeze(-1)
 
-    def posterior_robust(self, x_design, robustness_thresh, num_eps_samples=10, eps=0.1, n_mc_samples=None):
+    def posterior_robust(self, x_design, robustness_thresh, num_eps_samples=10, eps=0.1, n_mc_samples=1):
         """ Estimate robustness measure at each design point """
         robust_measures = torch.empty((x_design.shape[0], 1))
         for i, x_d in enumerate(x_design):
             x = torch.empty((num_eps_samples, 2))
             x[:,0] = x_d.repeat(num_eps_samples)
             x[:,1].uniform_(-eps, eps)
-            means, _vars = self.forward(x)
-            #robust_measure = torch.sum(means > robustness_thresh) / len(x)
-            # Add uncertainty based on variance
-            noised_vals = torch.normal(means, torch.sqrt(_vars))
-            robust_measure = torch.sum(noised_vals > robustness_thresh) / len(x)
+
+            # MC sampling from posterior predictive
+            all_preds = []
+            for _ in range(n_mc_samples):
+                means, _vars = self.forward(x)
+                samples = torch.normal(means, torch.sqrt(_vars))
+                all_preds.append(samples)
+
+            all_preds = torch.stack(all_preds)  # [n_mc_samples, num_eps_samples]
+            robust_measure = torch.mean((all_preds > robustness_thresh).float()).item()
             robust_measures[i] = robust_measure
         return robust_measures
 
