@@ -45,14 +45,14 @@ metrics = ["lambda_s"]
 tauc_methods = ["flat"]
 
 # Define uncertainty axes (and save under metric folder later)
-mu_tau_vec = np.arange(-10, 8, 2).astype(float)
-sigm_tau_vec = np.linspace(0, 10, 5)
-mu_tauc_vec = np.arange(-10, 8, 2).astype(float)
-sigm_tauc_vec = np.linspace(0, 10, 5)
-#mu_tau_vec = np.linspace(-10, 0, 4)
-#sigm_tau_vec = np.linspace(0, 10, 3)
-#mu_tauc_vec = np.linspace(-10, 0, 4)
-#sigm_tauc_vec = np.linspace(0, 10, 3)
+#mu_tau_vec = np.arange(-10, 8, 2).astype(float)
+#sigm_tau_vec = np.linspace(0, 10, 5)
+#mu_tauc_vec = np.arange(-10, 8, 2).astype(float)
+#sigm_tauc_vec = np.linspace(0, 10, 5)
+mu_tau_vec = np.arange(-9, 6, 3).astype(float)
+sigm_tau_vec = np.linspace(0, 10, 3)
+mu_tauc_vec = np.arange(-9, 6, 3).astype(float)
+sigm_tauc_vec = np.linspace(0, 10, 3)
 #mu_tau_vec = np.linspace(0, 0, 1)
 #sigm_tau_vec = np.linspace(0, 0, 1)
 #mu_tauc_vec = np.linspace(0, 0, 1)
@@ -106,7 +106,7 @@ with tqdm(total=total_computations) as pbar:
                     # Calculate <metric> at sampled resource constraint values and alteration slice sizes
                     if pproc.rank == pproc.root: start_time = timeit.default_timer()
                     for (C_i, C), (ncell_i, ncell) in product(enumerate(pproc.C_vec), enumerate(pproc.ncell_vec)):
-                        pproc.prep_rank_samples(ncell)
+                        pproc.prep_rank_samples(ncell=ncell)
                         pproc.process_samples(C, ncell)
                     if pproc.rank == pproc.root:
                         elapsed = timeit.default_timer() - start_time

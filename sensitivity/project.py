@@ -383,12 +383,13 @@ class Phase:
         self.tau_flat = self.comm.bcast(self.tau_flat, root=self.root)
         self.data_dir = self.comm.bcast(self.data_dir, root=self.root)
         self.metric_exp_spl = self.comm.bcast(self.metric_exp_spl, root=self.root)
-        
-    def init_strategy_variables(self): 
-        # Generate samples of remaining state variables
+
+        # Store the total number of cells as an instance variable
         self.ncell_tot = len(self.tau_flat)
-        # Get samples of total shift to fire regime (C)  
-        self.C_vec = self.tauc_min_samples * self.ncell_tot
+
+        # Initialize tau_expect with tau_flat
+        self.tau_expect = self.tau_flat
+
         # Use the max post alteration tau to get an upper bound on right hand of initial tau slices
         self.tau_argsort_ref = np.argsort(self.tau_flat)
         tau_sorted = self.tau_flat[self.tau_argsort_ref] 
@@ -396,6 +397,11 @@ class Phase:
             self.slice_right_max = min(np.nonzero(tau_sorted >= self.final_max_tau)[0])
         else:
             self.slice_right_max = len(tau_sorted) - 1
+        
+    def init_strategy_variables(self): 
+        # Generate samples of remaining state variables
+        # Get samples of total shift to fire regime (C)  
+        self.C_vec = self.tauc_min_samples * self.ncell_tot
         # Min left bound set by user-defined constant
         slice_left_min = np.nonzero(tau_sorted > self.min_tau)[0][0]
         # Generate slice sizes of the tau distribution
@@ -543,10 +549,7 @@ class Phase:
             result = scipy.optimize.differential_evolution(penalized_objective, bounds=bounds)
         return result
 
-    def change_tau_expect(self, C_i, ncell_i, slice_left_i):
-        C = self.C_vec[C_i]
-        ncell = self.ncell_vec[ncell_i]
-        slice_left = self.slice_left_all[slice_left_i]
+    def change_tau_expect(self, C, ncell, slice_left):
         slice_indices = self.tau_argsort_ref[slice_left:slice_left + ncell]
         tau_slice = self.tau_expect[slice_indices]
         # Set max tauc per cell
@@ -558,6 +561,9 @@ class Phase:
             tauc = C / ncell
             tauc_slice = np.repeat(tauc, ncell)
         else:
+            C_i = np.nonzero(self.C_vec == C)[0][0]
+            ncell_i = np.nonzero(self.ncell_vec == ncell)[0][0]
+            slice_left_i = np.nonzero(self.slice_left_all == slice_left)[0][0]
             v = self.v_all[C_i, ncell_i, slice_left_i]
             w = self.w_all[C_i, ncell_i, slice_left_i]
             tau_slice_ref = self.tau_flat[slice_indices]
@@ -565,11 +571,6 @@ class Phase:
             tauc_slice = self.compute_tauc_slice([v,w], self.tauc_method, tau_slice_ref)
         
         # Add uncertainty to tauc slice
-        '''Would be most rigorous to generate these each time, but the shuffling should prevent the 
-           results from changing (because ncell_tot is so large)'''
-        #random_indices = self.rng.integers(0, len(self.tau_flat), ncell)
-        #eps_tauc_slice = self.eps_tauc[random_indices]
-        #tauc_slice = tauc_slice + eps_tauc_slice
         self.generate_eps_tauc(self.mu_tauc, self.sigm_tauc, ncell)
         tauc_slice = tauc_slice + self.eps_tauc
 
@@ -583,8 +584,8 @@ class Phase:
         self.tau_expect = np.where(self.tau_expect < self.min_tau, self.min_tau, self.tau_expect)
         # Store the mean value of excess resources, keep at nan if no excess
         xsresources = (tauc_slice - final_max_tauc)[xs_filt]
-        if len(xsresources) > 0:
-            self.xs_means_rank[slice_left_i-self.rank_start] = np.sum(xsresources) / C
+        if hasattr(self, 'xs_means_rank') and (len(xsresources) > 0):
+            self.xs_means_rank[self.global_sample_i-self.rank_start] = np.sum(xsresources) / C
 
     def generate_eps_tau(self, mu_tau, sigm_tau):
         self.mu_tau = mu_tau
@@ -594,12 +595,17 @@ class Phase:
     def generate_eps_tauc(self, mu_tauc, sigm_tauc, ncell):
         self.mu_tauc = mu_tauc
         self.sigm_tauc = sigm_tauc
-        #self.eps_tauc = self.rng.normal(loc=self.mu_tauc, scale=self.sigm_tauc, size=len(self.tau_flat)) 
         self.eps_tauc = self.rng.normal(loc=self.mu_tauc, scale=self.sigm_tauc, size=ncell) 
 
-    def prep_rank_samples(self, ncell): 
-        self.slice_left_max = self.slice_right_max - ncell #slice needs to fit
-        num_samples = len(self.slice_left_all)
+    def prep_rank_samples(self, ncell=None): 
+        # Determine the number of samples to parallelize based on some instance variable
+        if hasattr(self, 'slice_left_all'):
+            # Handle case where we're doing brute force calculations
+            self.slice_left_max = self.slice_right_max - ncell #slice needs to fit
+            num_samples = len(self.slice_left_all)
+        else:
+            # Handle case where we're generating training data for NN
+            ... 
 
         # Get size and position of sample chunk for this rank
         self.rank_samples = num_samples // self.num_procs
@@ -618,7 +624,7 @@ class Phase:
         self.xs_means_rank = np.ones(self.rank_samples) * np.nan
 
         # Add one sample for computing the no change scenario
-        if (ncell==max(self.ncell_vec)) and (self.rank==self.root):
+        if (hasattr(self, 'slice_left_all')) and (ncell==max(self.ncell_vec)) and (self.rank==self.root):
             self.rank_samples += 1
 
     def calculate_metric_expect(self):
@@ -655,24 +661,28 @@ class Phase:
         self.slice_left_max = self.slice_right_max - ncell
         # Loop over sampled realizations of this fire alteration strategy
         for rank_sample_i, slice_left_i in enumerate(range(self.rank_start, self.rank_start + self.rank_samples)):
+            self.global_sample_i = slice_left_i # Referenced in change_tau_expect
+
             # First, reset tau with uncertainty
-            '''Should generate eps_tau each time, but again shuffling is probably enough'''
-            #np.random.shuffle(self.eps_tau)
             self.generate_eps_tau(self.mu_tau, self.sigm_tau)
             self.tau_expect = self.tau_flat + self.eps_tau
+
             # Check that we are not on the no change scenario
             if rank_sample_i < len(self.metric_expect_rank): 
                 slice_left = self.slice_left_all[slice_left_i]
                 # Also, check that slice is within allowed range
                 if slice_left > self.slice_left_max: continue
                 # Now, adjust the tau distribution at cells in slice
-                self.change_tau_expect(C_i, ncell_i, slice_left_i)
+                self.change_tau_expect(C, ncell, slice_left)
+
+            # Calculate the metric value
             if self.meta_metric == 'distribution_avg':
                 # Calculate <metric>
                 self.calculate_metric_expect()
             elif self.meta_metric == 'gte_thresh':
                 # Calculate <metric>_k density above some threshold
                 self.calculate_metric_gte()
+
             # Store sample if not computing no change scenario
             if rank_sample_i < len(self.metric_expect_rank): 
                 self.metric_expect_rank[slice_left_i-self.rank_start] = self.metric_expect
