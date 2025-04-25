@@ -273,7 +273,6 @@ class Phase:
 
             jobs = project.find_jobs({'doc.simulated': True, 'Aeff': self.Aeff, 
                                       't_final': self.t_final, 'method': self.sim_method})
-            print(len(jobs))
             self.data_dir = f"{self.meta_metric}/data/Aeff_{self.Aeff}/tfinal_{self.t_final}"
             fn = self.data_dir + "/all_tau.npy"
             if (not os.path.isfile(fn)) or self.overwrite_metrics:
@@ -345,15 +344,9 @@ class Phase:
                 tau_filt = (all_tau == tau)
                 metric_slice = self.metric_data["all_metric"][tau_filt]
                 metric_expect_vec[tau_i] = np.mean(metric_slice)
-            #if self.metric == 'P_s':
-            #    t = self.tau_vec[2:-2:1] 
-            #    k = 3
-            #    t = np.r_[(0,)*(k+1), t, (self.tau_vec[-1],)*(k+1)]
-            #else:
-            if True:
-                t = self.tau_vec[2:-2:2] 
-                k = 3
-                t = np.r_[(self.tau_vec[1],)*(k+1), t, (self.tau_vec[-1],)*(k+1)]
+            t = self.tau_vec[2:-2:2] 
+            k = 3
+            t = np.r_[(self.tau_vec[1],)*(k+1), t, (self.tau_vec[-1],)*(k+1)]
             self.metric_exp_spl = make_lsq_spline(self.tau_vec[1:], metric_expect_vec[1:], t, k)
 
             # Read in FDM
@@ -390,7 +383,8 @@ class Phase:
         self.tau_flat = self.comm.bcast(self.tau_flat, root=self.root)
         self.data_dir = self.comm.bcast(self.data_dir, root=self.root)
         self.metric_exp_spl = self.comm.bcast(self.metric_exp_spl, root=self.root)
-
+        
+    def init_strategy_variables(self): 
         # Generate samples of remaining state variables
         self.ncell_tot = len(self.tau_flat)
         # Get samples of total shift to fire regime (C)  
@@ -571,9 +565,13 @@ class Phase:
             tauc_slice = self.compute_tauc_slice([v,w], self.tauc_method, tau_slice_ref)
         
         # Add uncertainty to tauc slice
-        random_indices = self.rng.integers(0, len(self.tau_flat), ncell)
-        eps_tauc_slice = self.eps_tauc[random_indices]
-        tauc_slice = tauc_slice + eps_tauc_slice
+        '''Would be most rigorous to generate these each time, but the shuffling should prevent the 
+           results from changing (because ncell_tot is so large)'''
+        #random_indices = self.rng.integers(0, len(self.tau_flat), ncell)
+        #eps_tauc_slice = self.eps_tauc[random_indices]
+        #tauc_slice = tauc_slice + eps_tauc_slice
+        self.generate_eps_tauc(self.mu_tauc, self.sigm_tauc, ncell)
+        tauc_slice = tauc_slice + self.eps_tauc
 
         # Find where tauc will push tau beyond max
         xs_filt = (tauc_slice > final_max_tauc) 
@@ -593,10 +591,11 @@ class Phase:
         self.sigm_tau = sigm_tau
         self.eps_tau = self.rng.normal(loc=self.mu_tau, scale=self.sigm_tau, size=len(self.tau_flat)) 
 
-    def generate_eps_tauc(self, mu_tauc, sigm_tauc):
+    def generate_eps_tauc(self, mu_tauc, sigm_tauc, ncell):
         self.mu_tauc = mu_tauc
         self.sigm_tauc = sigm_tauc
-        self.eps_tauc = self.rng.normal(loc=self.mu_tauc, scale=self.sigm_tauc, size=len(self.tau_flat)) 
+        #self.eps_tauc = self.rng.normal(loc=self.mu_tauc, scale=self.sigm_tauc, size=len(self.tau_flat)) 
+        self.eps_tauc = self.rng.normal(loc=self.mu_tauc, scale=self.sigm_tauc, size=ncell) 
 
     def prep_rank_samples(self, ncell): 
         self.slice_left_max = self.slice_right_max - ncell #slice needs to fit
@@ -657,6 +656,9 @@ class Phase:
         # Loop over sampled realizations of this fire alteration strategy
         for rank_sample_i, slice_left_i in enumerate(range(self.rank_start, self.rank_start + self.rank_samples)):
             # First, reset tau with uncertainty
+            '''Should generate eps_tau each time, but again shuffling is probably enough'''
+            #np.random.shuffle(self.eps_tau)
+            self.generate_eps_tau(self.mu_tau, self.sigm_tau)
             self.tau_expect = self.tau_flat + self.eps_tau
             # Check that we are not on the no change scenario
             if rank_sample_i < len(self.metric_expect_rank): 

@@ -18,8 +18,8 @@ import os
 
 # Define/load things non-specific to a given set of results
 #metric = "P_s"
-#metric = 'lambda_s'
-metric = 's'
+metric = 'lambda_s'
+#metric = 's'
 Aeff = 7.29
 t_final = 300
 ncell_tot = 87_993
@@ -31,7 +31,8 @@ tau_vec = b_vec * gamma(1+1/c)
 #tau_edges = np.concatenate(([0], np.arange(tau_step/2, tau_vec[-1]+tau_step, tau_step)))
 tauc_methods = ["flat"]
 #C_i_vec = [0,1,2,4,6]
-C_i_vec = [0,2,4,6]
+#C_i_vec = [0,2,4,6]
+C_i_vec = [0]
 results_pre = 'gte_thresh' 
 #results_pre = 'distribution_avg' 
 
@@ -342,7 +343,6 @@ axes[0,1].set_xlabel(r"average fire return interval $\tau$")
 #axes[0,1].set_xlim(15, 81);
 axes[0,1].set_xlim(15, xmax);
 ########
-import sys; sys.exit('exiting after fig2b')
 
 #### RESULTS UNDER ZERO UNCERTAINTY ####
 width = 0.875
@@ -397,8 +397,8 @@ vmax = 1; vmin = 0
 normalize = colors.Normalize(vmin=vmin, vmax=vmax)
 all_markers = ['o','^','D','s','H','*']
 all_linestyles = ['dotted', 'dashdot', 'dashed', 'solid']
-C_i_samples = [0,2,4,6]
-#C_i_samples = C_i_vec.copy()
+#C_i_samples = [0,2,4,6]
+C_i_samples = C_i_vec.copy()
 #C_i_samples = [i for i in range(C_vec.size)][::1]
 for line_i, C_i in enumerate(C_i_samples):
     plot_vec = np.ones(len(rob_thresh_vec)) * np.nan

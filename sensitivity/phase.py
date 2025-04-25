@@ -23,23 +23,24 @@ constants['min_tau'] = 2
 constants['A_cell'] = 270**2 / 1e6 #km^2
 constants['plotting_tau_bw_ratio'] = 30 #For binning initial tau (with uncertainty) in phase slice plots
 constants['ncell_min'] = 2_500
-constants['ncell_samples'] = 30
-#constants['ncell_samples'] = 15
-constants['slice_samples'] = 60
-#constants['slice_samples'] = 30
+#constants['ncell_samples'] = 30
+constants['ncell_samples'] = 15
+#constants['slice_samples'] = 60
+constants['slice_samples'] = 30
 # Use the minimum tauc values (i.e. when spread over all cells) to determine C values
-constants['tauc_min_samples'] = np.arange(1, 17, 2) 
+#constants['tauc_min_samples'] = np.arange(1, 17, 2) 
+constants['tauc_min_samples'] = np.array([9.0]) 
 constants['root'] = 0 #For mpi
 constants.update({'final_max_tau': np.nan})
-constants['overwrite_results'] = False
+constants['overwrite_results'] = True
 #constants['meta_metric'] = 'distribution_avg'
 constants['meta_metric'] = 'gte_thresh'
 
 # Define metrics and tauc methods to run analysis on
 #metrics = ["lambda_s", "mu_s", "r"]
 #metrics = ["P_s"]
-#metrics = ["lambda_s"]
-metrics = ["s"]
+metrics = ["lambda_s"]
+#metrics = ["s"]
 #tauc_methods = ["flat", "initlinear", "initinverse"]
 tauc_methods = ["flat"]
 
@@ -74,6 +75,7 @@ with tqdm(total=total_computations) as pbar:
             pproc = Phase(**constants) 
             if pproc.rank == pproc.root: print(f"on {tauc_method} tauc_method")
             pproc.initialize()
+            pproc.init_strategy_variables()
 
             # Save uncertainty axes to file
             if (pproc.rank == pproc.root):
@@ -84,16 +86,23 @@ with tqdm(total=total_computations) as pbar:
                         handle['sigm_tau'] = sigm_tau_vec
                         handle['mu_tauc'] = mu_tauc_vec
                         handle['sigm_tauc'] = sigm_tauc_vec
-            import sys; sys.exit()
+            #import sys; sys.exit()
 
             # Process data over uncertainty space samples
             for mu_tau, sigm_tau in product(mu_tau_vec, sigm_tau_vec):
                 # Generate uncertainties on initial tau values
-                pproc.generate_eps_tau(mu_tau, sigm_tau)
+                #pproc.generate_eps_tau(mu_tau, sigm_tau)
+                pproc.mu_tau = mu_tau
+                pproc.sigm_tau = sigm_tau
+
                 for mu_tauc, sigm_tauc in product(mu_tauc_vec, sigm_tauc_vec):
                     #if pproc.rank == pproc.root: print(f"on (mu_tau, sigm_tau, mu_tauc, sigm_tauc)={mu_tau, sigm_tau, mu_tauc, sigm_tauc}")
+
                     # Generate uncertainties on alterations to tau values
-                    pproc.generate_eps_tauc(mu_tauc, sigm_tauc)
+                    #pproc.generate_eps_tauc(mu_tauc, sigm_tauc)
+                    pproc.mu_tauc = mu_tauc
+                    pproc.sigm_tauc = sigm_tauc
+
                     # Calculate <metric> at sampled resource constraint values and alteration slice sizes
                     if pproc.rank == pproc.root: start_time = timeit.default_timer()
                     for (C_i, C), (ncell_i, ncell) in product(enumerate(pproc.C_vec), enumerate(pproc.ncell_vec)):
