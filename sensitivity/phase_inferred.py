@@ -3,6 +3,8 @@ from project import Phase
 import torch
 import sys
 from matplotlib import pyplot as plt
+from mpi4py import MPI
+from tqdm import tqdm
 
 constants = {}
 constants['progress'] = False
@@ -23,13 +25,14 @@ constants.update({'metric': 'lambda_s'})
 constants.update({'tauc_method': 'flat'})
 constants.update({'overwrite_metrics': False}) 
 constants['overwrite_results'] = False
+constants['num_train'] = 2_000_000
+#constants['num_train'] = 8_000
 
 pproc = Phase(**constants)
 pproc.initialize()
 assert pproc.metric_exp_spl(pproc.min_tau) > 0
 
 #### Get samples of each parameter we want to train on ####
-NUM_TRAIN = 1000
 
 # Function to return parameter combinations as dicts
 def product_dict(**kwargs):
@@ -62,41 +65,54 @@ maxima = {
 }
 param_keys = np.array(list(minima.keys()))
 
-# Generate parameter values for training
-train_x = np.full((NUM_TRAIN, len(minima)), np.nan)
-for param_i, ((key1, _min), (key2, _max)) in enumerate(zip(minima.items(), maxima.items())):
-    assert(key1 == key2); key = key1 = key2
+if pproc.rank != pproc.root:
+    train_x = None
+else:
+    # Generate parameter values for training
+    train_x = np.full((pproc.num_train, len(minima)), np.nan)
+    for param_i, ((key1, _min), (key2, _max)) in enumerate(zip(minima.items(), maxima.items())):
+        assert(key1 == key2); key = key1 = key2
 
-    try:
-        assert (type(_min)==type(_min))
-        _type = type(_min)
-    except:
-        print('hey thats bad', type(_min), type(_min)); sys.exit()
+        try:
+            assert (type(_min)==type(_min))
+            _type = type(_min)
+        except:
+            print('hey thats bad', type(_min), type(_min)); sys.exit()
 
-    # Skip slice_left for now, sample after ncell has been sampled
-    if key == 'slice_left': continue
+        # Skip slice_left for now, sample after ncell has been sampled
+        if key == 'slice_left': continue
 
-    if _type == float:
-        param_samples = rng.uniform(_min, _max, len(train_x))
-    elif _type == int:
-        param_samples = rng.integers(_min, _max, len(train_x))
-    train_x[:, param_i] = param_samples
-# Sample slice_left only where feasible given ncell samples
-ncell_column = np.nonzero(param_keys == 'ncell')[0][0]
-slice_left_max_vec = pproc.slice_right_max - train_x[:,ncell_column]
-slice_left_column = np.nonzero(param_keys == 'slice_left')[0][0]
-train_x[:, slice_left_column] = rng.uniform(0, slice_left_max_vec)
+        if _type == float:
+            param_samples = rng.uniform(_min, _max, len(train_x))
+        elif _type == int:
+            param_samples = rng.integers(_min, _max, len(train_x))
+        train_x[:, param_i] = param_samples
+    # Sample slice_left only where feasible given ncell samples
+    ncell_column = np.nonzero(param_keys == 'ncell')[0][0]
+    slice_left_max_vec = pproc.slice_right_max - train_x[:,ncell_column]
+    slice_left_column = np.nonzero(param_keys == 'slice_left')[0][0]
+    train_x[:, slice_left_column] = rng.uniform(0, slice_left_max_vec)
+train_x = pproc.comm.bcast(train_x, root=pproc.root)
 
+# Initialze stuff for parallel processing
+pproc.prep_rank_samples()
+if pproc.rank == pproc.root:
+    print('here', pproc.rank_samples)
+    pbar = tqdm(total=pproc.rank_samples, position=0, dynamic_ncols=True, file=sys.stderr)
 
 # Generate metric values for training
-train_y = np.full((len(train_x), 1), np.nan)
-for x_i, x in enumerate(train_x):
+#train_y = np.full((len(train_x), 1), np.nan)
+#for x_i, x in enumerate(train_x):
+for rank_sample_i, x_i in enumerate(range(pproc.rank_start, pproc.rank_start + pproc.rank_samples)):
+    x = train_x[x_i] # Retrieve parameter sample
+    pproc.global_sample_i = x_i # Referenced in change_tau_expect
+
     for i, param in enumerate(param_keys):
         # Assign parameter values for this sample
         setattr(pproc, param, x[i].astype(type(minima[param])))
 
-    if pproc.slice_left > (pproc.slice_right_max - pproc.ncell):
-        continue # Skip bc slice start too high
+    #if pproc.slice_left > (pproc.slice_right_max - pproc.ncell):
+    #    continue # Skip bc slice start too high
 
     # Reset tau values to baseline
     pproc.tau_expect = pproc.tau_flat
@@ -110,7 +126,32 @@ for x_i, x in enumerate(train_x):
 
     # Compute and store metric value
     pproc.calculate_metric_expect()
-    train_y[x_i] = pproc.metric_expect
+    pproc.metric_expect_rank[rank_sample_i] = pproc.metric_expect
 
-plt.hist(train_y);
-plt.show()
+    # Update progress (root only)
+    if pproc.rank == pproc.root:
+        pbar.update(1); print()
+        pbar.refresh()
+        sys.stderr.flush()
+
+# Collect data across ranks
+# Initialize data to store sample means across all ranks
+sendcounts = np.array(pproc.comm.gather(len(pproc.metric_expect_rank), root=pproc.root))
+if pproc.rank == pproc.root:
+    sampled_metric_expect = np.empty(sum(sendcounts))        
+    sampled_xs_means = np.ones(sum(sendcounts)) * np.nan
+else:
+    sampled_metric_expect = None
+    sampled_xs_means = None
+# Now gather data
+pproc.comm.Gatherv(pproc.metric_expect_rank, sampled_metric_expect, root=pproc.root)
+pproc.comm.Gatherv(pproc.xs_means_rank, sampled_xs_means, root=pproc.root)
+
+if pproc.rank == pproc.root:
+    pbar.close()
+    train_y = sampled_metric_expect[:,None]
+    np.save('train_x.npy', train_x)
+    np.save('train_y.npy', train_y)
+    print(train_y.shape)
+    #plt.hist(train_y);
+    #plt.show()

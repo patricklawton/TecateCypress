@@ -605,7 +605,7 @@ class Phase:
             num_samples = len(self.slice_left_all)
         else:
             # Handle case where we're generating training data for NN
-            ... 
+            num_samples = self.num_train 
 
         # Get size and position of sample chunk for this rank
         self.rank_samples = num_samples // self.num_procs
