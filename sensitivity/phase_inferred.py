@@ -25,8 +25,8 @@ constants.update({'metric': 'lambda_s'})
 constants.update({'tauc_method': 'flat'})
 constants.update({'overwrite_metrics': False}) 
 constants['overwrite_results'] = False
-constants['num_train'] = 2_000_000
-#constants['num_train'] = 8_000
+#constants['num_train'] = 2_000_000
+constants['num_train'] = 100_000
 
 pproc = Phase(**constants)
 pproc.initialize()
@@ -49,19 +49,19 @@ minima = {
     'ncell': int(0.02*pproc.ncell_tot),
     # 'ncell': int(pproc.ncell_tot - pproc.slice_right_max),
     'slice_left': int(0.* pproc.ncell_tot),
-    'mu_tau': -10.,
+    'mu_tau': 0.,
     'sigm_tau': 0.,
-    'mu_tauc': -10.,
+    'mu_tauc': 0.,
     'sigm_tauc': 0.
 }
 maxima = {
     'C': 5.*pproc.ncell_tot,
     'ncell': int(1. * pproc.slice_right_max),
     'slice_left': int(1.*pproc.ncell_tot),
-    'mu_tau': 6.,
-    'sigm_tau': 10.,
-    'mu_tauc': 6.,
-    'sigm_tauc': 10.
+    'mu_tau': 0.,
+    'sigm_tau': 0.,
+    'mu_tauc': 0.,
+    'sigm_tauc': 0.
 }
 param_keys = np.array(list(minima.keys()))
 
