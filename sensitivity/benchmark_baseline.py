@@ -27,7 +27,7 @@ constants.update({'tauc_method': 'flat'})
 constants.update({'overwrite_metrics': False}) 
 constants['overwrite_results'] = False
 #constants['num_train'] = 2_000_000
-constants['num_train'] = 1_000
+constants['num_train'] = 1000
 
 pproc = Phase(**constants)
 pproc.initialize()
@@ -127,11 +127,11 @@ for rank_sample_i, x_i in enumerate(range(pproc.rank_start, pproc.rank_start + p
     pproc.calculate_metric_gte()
     pproc.metric_expect_rank[rank_sample_i] = pproc.metric_expect
 
-    # Update progress (root only)
-    if pproc.rank == pproc.root:
-        pbar.update(1); print()
-        pbar.refresh()
-        sys.stderr.flush()
+    ## Update progress (root only)
+    #if pproc.rank == pproc.root:
+    #    pbar.update(1); print()
+    #    pbar.refresh()
+    #    sys.stderr.flush()
 
 # Collect data across ranks
 # Initialize data to store sample means across all ranks

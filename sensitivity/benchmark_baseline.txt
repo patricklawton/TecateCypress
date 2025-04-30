@@ -1,0 +1,160 @@
+Timer unit: 1e-06 s
+
+Total time: 0.56292 s
+File: /Users/patrick/Research/Regan/TecateCypress/sensitivity/project.py
+Function: change_tau_expect at line 552
+
+Line #      Hits         Time  Per Hit   % Time  Line Contents
+==============================================================
+   552                                               @profile
+   553                                               def change_tau_expect(self, C, ncell, slice_left):
+   554      1000        311.0      0.3      0.1          slice_indices = self.tau_argsort_ref[slice_left:slice_left + ncell]
+   555      1000      31956.0     32.0      5.7          tau_slice = self.tau_expect[slice_indices]
+   556                                                   # Set max tauc per cell
+   557      1000       9895.0      9.9      1.8          final_max_tauc = self.final_max_tau - tau_slice
+   558                                                   # First create array of replacement tau
+   559      1000       9828.0      9.8      1.7          replacement_tau = np.ones(ncell) #Initialize
+   560      1000         49.0      0.0      0.0          '''could pre-generate tauc slices to speed up'''
+   561      1000        140.0      0.1      0.0          if self.tauc_method == "flat":
+   562      1000        206.0      0.2      0.0              tauc = C / ncell
+   563      1000      95805.0     95.8     17.0              tauc_slice = np.repeat(tauc, ncell)
+   564                                                   else:
+   565                                                       C_i = np.nonzero(self.C_vec == C)[0][0]
+   566                                                       ncell_i = np.nonzero(self.ncell_vec == ncell)[0][0]
+   567                                                       slice_left_i = np.nonzero(self.slice_left_all == slice_left)[0][0]
+   568                                                       v = self.v_all[C_i, ncell_i, slice_left_i]
+   569                                                       w = self.w_all[C_i, ncell_i, slice_left_i]
+   570                                                       tau_slice_ref = self.tau_flat[slice_indices]
+   571                                                       tau_slice_ref = tau_slice_ref - min(tau_slice_ref)
+   572                                                       tauc_slice = self.compute_tauc_slice([v,w], self.tauc_method, tau_slice_ref)
+   573                                                   
+   574                                                   # Add uncertainty to tauc slice
+   575      1000     203980.0    204.0     36.2          self.generate_eps_tauc(self.mu_tauc, self.sigm_tauc, ncell)
+   576      1000      19905.0     19.9      3.5          tauc_slice = tauc_slice + self.eps_tauc
+   577                                           
+   578                                                   # Find where tauc will push tau beyond max
+   579      1000       8689.0      8.7      1.5          xs_filt = (tauc_slice > final_max_tauc) 
+   580      1000       2069.0      2.1      0.4          replacement_tau[xs_filt] = self.final_max_tau
+   581      1000      60032.0     60.0     10.7          replacement_tau[xs_filt==False] = (tau_slice + tauc_slice)[xs_filt==False]
+   582                                           
+   583                                                   # Now replace them in the full array of tau
+   584      1000      45141.0     45.1      8.0          self.tau_expect[slice_indices] = replacement_tau 
+   585                                           
+   586                                                   # Replace any tau lt min with min
+   587      1000      59008.0     59.0     10.5          self.tau_expect = np.where(self.tau_expect < self.min_tau, self.min_tau, self.tau_expect)
+   588                                           
+   589                                                   # Store the mean value of excess resources, keep at nan if no excess
+   590      1000      15195.0     15.2      2.7          xsresources = (tauc_slice - final_max_tauc)[xs_filt]
+   591      1000        305.0      0.3      0.1          if hasattr(self, 'xs_means_rank') and (len(xsresources) > 0):
+   592        69        406.0      5.9      0.1              self.xs_means_rank[self.global_sample_i-self.rank_start] = np.sum(xsresources) / C
+
+Total time: 0 s
+File: /Users/patrick/Research/Regan/TecateCypress/sensitivity/project.py
+Function: change_tau_expect_vectorized at line 594
+
+Line #      Hits         Time  Per Hit   % Time  Line Contents
+==============================================================
+   594                                               @profile
+   595                                               def change_tau_expect_vectorized(self, C_vec, ncell_vec, slice_left_vec, mu_tauc_vec, sigm_tauc_vec):
+   596                                                   n_samples = len(C_vec)
+   597                                           
+   598                                                   for i in range(n_samples):
+   599                                                       C = C_vec[i]
+   600                                                       ncell = ncell_vec[i]
+   601                                                       slice_left = slice_left_vec[i]
+   602                                                       mu_tauc = mu_tauc_vec[i]
+   603                                                       sigm_tauc = sigm_tauc_vec[i]
+   604                                           
+   605                                                       # Get indices for this sample
+   606                                                       slice_indices = self.tau_argsort_ref[slice_left:slice_left + ncell]
+   607                                           
+   608                                                       # Extract current tau slice
+   609                                                       tau_slice = self.tau_expect[i, slice_indices]
+   610                                                       final_max_tauc = self.final_max_tau - tau_slice
+   611                                           
+   612                                                       # Compute tauc with noise
+   613                                                       tauc = C / ncell
+   614                                                       tauc_slice = np.full(ncell, tauc)
+   615                                                       eps_tauc = self.rng.normal(loc=mu_tauc, scale=sigm_tauc, size=ncell)
+   616                                                       tauc_slice += eps_tauc
+   617                                           
+   618                                                       # Apply capping logic
+   619                                                       replacement_tau = np.where(
+   620                                                           tauc_slice > final_max_tauc,
+   621                                                           self.final_max_tau,
+   622                                                           tau_slice + tauc_slice
+   623                                                       )
+   624                                           
+   625                                                       # Insert back into tau_expect
+   626                                                       self.tau_expect[i, slice_indices] = replacement_tau
+   627                                           
+   628                                                   # 6. Clip with min_tau
+   629                                                   self.tau_expect = np.where(self.tau_expect < self.min_tau, self.min_tau, self.tau_expect)
+
+Total time: 0.394024 s
+File: /Users/patrick/Research/Regan/TecateCypress/sensitivity/project.py
+Function: generate_eps_tau at line 632
+
+Line #      Hits         Time  Per Hit   % Time  Line Contents
+==============================================================
+   632                                               @profile
+   633                                               def generate_eps_tau(self):
+   634      1000     394024.0    394.0    100.0          self.eps_tau = self.rng.normal(loc=self.mu_tau, scale=self.sigm_tau, size=len(self.tau_flat)) 
+
+Total time: 0 s
+File: /Users/patrick/Research/Regan/TecateCypress/sensitivity/project.py
+Function: generate_eps_tau_vectorized at line 636
+
+Line #      Hits         Time  Per Hit   % Time  Line Contents
+==============================================================
+   636                                               @profile
+   637                                               def generate_eps_tau_vectorized(self):
+   638                                                   assert self.mu_tau.shape == self.sigm_tau.shape
+   639                                                   #self.eps_tau = self.rng.normal(
+   640                                                   #                               loc=np.tile(self.mu_tau, (len(self.tau_flat),1)).T, 
+   641                                                   #                               scale=np.tile(self.sigm_tau, (len(self.tau_flat),1)).T, 
+   642                                                   #                               size=(len(self.mu_tau), len(self.tau_flat))
+   643                                                   #                              )
+   644                                                   mu_tau = self.mu_tau[:, None]
+   645                                                   sigm_tau = self.sigm_tau[:, None]     # shape (n, 1)
+   646                                                   m = len(self.tau_flat)
+   647                                                   self.eps_tau = self.rng.normal(loc=mu_tau, scale=sigm_tau, size=(len(mu_tau), m))
+
+Total time: 0.202578 s
+File: /Users/patrick/Research/Regan/TecateCypress/sensitivity/project.py
+Function: generate_eps_tauc at line 649
+
+Line #      Hits         Time  Per Hit   % Time  Line Contents
+==============================================================
+   649                                               @profile
+   650                                               def generate_eps_tauc(self, mu_tauc, sigm_tauc, ncell):
+   651      1000        122.0      0.1      0.1          self.mu_tauc = mu_tauc
+   652      1000        112.0      0.1      0.1          self.sigm_tauc = sigm_tauc
+   653      1000     202344.0    202.3     99.9          self.eps_tauc = self.rng.normal(loc=self.mu_tauc, scale=self.sigm_tauc, size=ncell) 
+
+Total time: 2.35683 s
+File: /Users/patrick/Research/Regan/TecateCypress/sensitivity/project.py
+Function: calculate_metric_gte at line 696
+
+Line #      Hits         Time  Per Hit   % Time  Line Contents
+==============================================================
+   696                                               @profile
+   697                                               def calculate_metric_gte(self, vectorized=False):
+   698                                                   # Get density of metric_k values above some threshold
+   699                                                   '''Replace any tau > max simulated with max tau, similar approximation as before'''
+   700      1000      59769.0     59.8      2.5          tau_with_cutoff = np.where(self.tau_expect > self.tau_vec.max(), self.tau_vec.max(), self.tau_expect)
+   701      1000    2283549.0   2283.5     96.9          metric_exp_dist = self.metric_exp_spl(tau_with_cutoff)
+   702      1000        154.0      0.2      0.0          if self.metric == 'P_s':
+   703                                                       threshold = 0.5
+   704                                                       # Metric value is bounded by zero, anything lt zero is an interpolation error
+   705                                                       metric_exp_dist[metric_exp_dist < 0] = 0.0
+   706                                                       if np.any(metric_exp_dist < 0): sys.exit(f"metric_expect is negative ({self.metric_expect}), exiting!")
+   707      1000        108.0      0.1      0.0          elif self.metric == 'lambda_s':
+   708      1000         67.0      0.1      0.0              threshold = 0.975
+   709                                                       #threshold = 0.994
+   710      1000         78.0      0.1      0.0          '''Still calling this metric_expect for now but should change this to metapop_metric or something'''
+   711      1000         77.0      0.1      0.0          if vectorized:
+   712                                                       self.metric_expect = np.count_nonzero(metric_exp_dist >= threshold, axis=1) / self.ncell_tot
+   713                                                   else:
+   714      1000      13028.0     13.0      0.6              self.metric_expect = np.count_nonzero(metric_exp_dist >= threshold) / self.ncell_tot
+

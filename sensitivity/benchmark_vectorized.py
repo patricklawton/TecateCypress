@@ -28,7 +28,7 @@ constants.update({'tauc_method': 'flat'})
 constants.update({'overwrite_metrics': False}) 
 constants['overwrite_results'] = False
 #constants['num_train'] = 2_000_000
-constants['num_train'] = 1_000
+constants['num_train'] = 1000
 
 pproc = Phase(**constants)
 pproc.initialize()
@@ -97,36 +97,20 @@ train_x = pproc.comm.bcast(train_x, root=pproc.root)
 pproc.prep_rank_samples()
 
 # Initialze stuff for batch processing
-batch_size = 1
-#x_loader = numpy_dataloader(train_x, batch_size)
-#rank_indices = np.arange(pproc.rank_start, pproc.rank_start + pproc.rank_samples)
-#index_loader = numpy_dataloader(rank_indices, batch_size, shuffle=False)
+batch_size = 200
 batch_start_i = pproc.rank_start
-#num_batches = pproc.rank_samples // batch_size
-#if pproc.rank_samples % batch_size > 0:
-#    num_batches += 1
 batch_sizes = np.full(pproc.rank_samples // batch_size, batch_size)
 if pproc.rank_samples % batch_size > 0:
     batch_sizes = np.append(batch_sizes, pproc.rank_samples % batch_size)
 
 # Initialize progress bar
 if pproc.rank == pproc.root:
-    #print('here', pproc.rank_samples)
-    #total = len(train_x) // batch_size
-    #if len(train_x) % batch_size > 0:
-    #    total += 1
-    #pbar = tqdm(total=total, position=0, dynamic_ncols=True, file=sys.stderr)
-    #pbar = tqdm(total=num_batches, position=0, dynamic_ncols=True, file=sys.stderr)
     pbar = tqdm(total=len(batch_sizes), position=0, dynamic_ncols=True, file=sys.stderr)
 
-#for batch_x, start_i in zip(x_loader, np.arange(len(train_x))):
-#for batch_x in x_loader:
-#for batch_indices in index_loader:
-#for _ in range(num_batches):
 for batch_size in batch_sizes:
+    #print(f'batch size is {batch_size}')
     # Retrieve parameter samples for this batch
     batch_x = train_x[batch_start_i:batch_start_i+batch_size]
-    #batch_x = train_x[batch_indices, :]
     
     # Assign parameter values for this sample batch
     for i, param in enumerate(param_keys):
@@ -153,11 +137,11 @@ for batch_size in batch_sizes:
     pproc.metric_expect_rank[batch_start_i:batch_start_i+batch_size] = pproc.metric_expect
     batch_start_i += batch_size
 
-    # Update progress (root only)
-    if pproc.rank == pproc.root:
-        pbar.update(1); print()
-        pbar.refresh()
-        sys.stderr.flush()
+    ## Update progress (root only)
+    #if pproc.rank == pproc.root:
+    #    pbar.update(1); print()
+    #    pbar.refresh()
+    #    sys.stderr.flush()
 
 # Collect data across ranks
 # Initialize data to store sample means across all ranks
