@@ -549,7 +549,6 @@ class Phase:
             result = scipy.optimize.differential_evolution(penalized_objective, bounds=bounds)
         return result
 
-    @profile
     def change_tau_expect(self, C, ncell, slice_left):
         slice_indices = self.tau_argsort_ref[slice_left:slice_left + ncell]
         tau_slice = self.tau_expect[slice_indices]
@@ -591,7 +590,6 @@ class Phase:
         if hasattr(self, 'xs_means_rank') and (len(xsresources) > 0):
             self.xs_means_rank[self.global_sample_i-self.rank_start] = np.sum(xsresources) / C
 
-    @profile
     def change_tau_expect_vectorized(self, C_vec, ncell_vec, slice_left_vec, mu_tauc_vec, sigm_tauc_vec):
         n_samples = len(C_vec)
 
@@ -629,11 +627,9 @@ class Phase:
         self.tau_expect = np.where(self.tau_expect < self.min_tau, self.min_tau, self.tau_expect)
 
 
-    @profile
     def generate_eps_tau(self):
         self.eps_tau = self.rng.normal(loc=self.mu_tau, scale=self.sigm_tau, size=len(self.tau_flat)) 
 
-    @profile
     def generate_eps_tau_vectorized(self):
         assert self.mu_tau.shape == self.sigm_tau.shape
         #self.eps_tau = self.rng.normal(
@@ -646,7 +642,6 @@ class Phase:
         m = len(self.tau_flat)
         self.eps_tau = self.rng.normal(loc=mu_tau, scale=sigm_tau, size=(len(mu_tau), m))
 
-    @profile
     def generate_eps_tauc(self, mu_tauc, sigm_tauc, ncell):
         self.mu_tauc = mu_tauc
         self.sigm_tauc = sigm_tauc
@@ -693,7 +688,6 @@ class Phase:
             if np.any(metric_exp_dist < 0): sys.exit(f"metric_expect is negative ({self.metric_expect}), exiting!")
         self.metric_expect = np.mean(metric_exp_dist)
 
-    @profile
     def calculate_metric_gte(self, vectorized=False):
         # Get density of metric_k values above some threshold
         '''Replace any tau > max simulated with max tau, similar approximation as before'''
