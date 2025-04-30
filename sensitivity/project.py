@@ -578,19 +578,64 @@ class Phase:
         xs_filt = (tauc_slice > final_max_tauc) 
         replacement_tau[xs_filt] = self.final_max_tau
         replacement_tau[xs_filt==False] = (tau_slice + tauc_slice)[xs_filt==False]
+
         # Now replace them in the full array of tau
         self.tau_expect[slice_indices] = replacement_tau 
+
         # Replace any tau lt min with min
         self.tau_expect = np.where(self.tau_expect < self.min_tau, self.min_tau, self.tau_expect)
+
         # Store the mean value of excess resources, keep at nan if no excess
         xsresources = (tauc_slice - final_max_tauc)[xs_filt]
         if hasattr(self, 'xs_means_rank') and (len(xsresources) > 0):
             self.xs_means_rank[self.global_sample_i-self.rank_start] = np.sum(xsresources) / C
 
-    def generate_eps_tau(self, mu_tau, sigm_tau):
-        self.mu_tau = mu_tau
-        self.sigm_tau = sigm_tau
+    def change_tau_expect_vectorized(self, C_vec, ncell_vec, slice_left_vec, mu_tauc_vec, sigm_tauc_vec):
+        n_samples = len(C_vec)
+
+        for i in range(n_samples):
+            C = C_vec[i]
+            ncell = ncell_vec[i]
+            slice_left = slice_left_vec[i]
+            mu_tauc = mu_tauc_vec[i]
+            sigm_tauc = sigm_tauc_vec[i]
+
+            # Get indices for this sample
+            slice_indices = self.tau_argsort_ref[slice_left:slice_left + ncell]
+
+            # Extract current tau slice
+            tau_slice = self.tau_expect[i, slice_indices]
+            final_max_tauc = self.final_max_tau - tau_slice
+
+            # Compute tauc with noise
+            tauc = C / ncell
+            tauc_slice = np.full(ncell, tauc)
+            eps_tauc = self.rng.normal(loc=mu_tauc, scale=sigm_tauc, size=ncell)
+            tauc_slice += eps_tauc
+
+            # Apply capping logic
+            replacement_tau = np.where(
+                tauc_slice > final_max_tauc,
+                self.final_max_tau,
+                tau_slice + tauc_slice
+            )
+
+            # Insert back into tau_expect
+            self.tau_expect[i, slice_indices] = replacement_tau
+
+        # 6. Clip with min_tau
+        self.tau_expect = np.where(self.tau_expect < self.min_tau, self.min_tau, self.tau_expect)
+
+
+    def generate_eps_tau(self):
         self.eps_tau = self.rng.normal(loc=self.mu_tau, scale=self.sigm_tau, size=len(self.tau_flat)) 
+
+    def generate_eps_tau_vectorized(self):
+        assert self.mu_tau.shape == self.sigm_tau.shape
+        self.eps_tau = self.rng.normal(loc=np.tile(self.mu_tau, (len(self.tau_flat),1)).T, 
+                                       scale=np.tile(self.sigm_tau, (len(self.tau_flat),1)).T, 
+                                       size=(len(self.mu_tau), len(self.tau_flat))
+                                      )
 
     def generate_eps_tauc(self, mu_tauc, sigm_tauc, ncell):
         self.mu_tauc = mu_tauc
@@ -638,7 +683,7 @@ class Phase:
             if np.any(metric_exp_dist < 0): sys.exit(f"metric_expect is negative ({self.metric_expect}), exiting!")
         self.metric_expect = np.mean(metric_exp_dist)
 
-    def calculate_metric_gte(self):
+    def calculate_metric_gte(self, vectorized=False):
         # Get density of metric_k values above some threshold
         '''Replace any tau > max simulated with max tau, similar approximation as before'''
         tau_with_cutoff = np.where(self.tau_expect > self.tau_vec.max(), self.tau_vec.max(), self.tau_expect)
@@ -651,8 +696,11 @@ class Phase:
         elif self.metric == 'lambda_s':
             threshold = 0.975
             #threshold = 0.994
-        '''Still calling this metric_expect for now but should change this to metric_quantity or something'''
-        self.metric_expect = np.count_nonzero(metric_exp_dist >= threshold) / self.ncell_tot
+        '''Still calling this metric_expect for now but should change this to metapop_metric or something'''
+        if vectorized:
+            self.metric_expect = np.count_nonzero(metric_exp_dist >= threshold, axis=1) / self.ncell_tot
+        else:
+            self.metric_expect = np.count_nonzero(metric_exp_dist >= threshold) / self.ncell_tot
 
     def process_samples(self, C, ncell):
         '''is relocating these indicies significantly slowing things down?'''

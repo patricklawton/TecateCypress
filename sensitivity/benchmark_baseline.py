@@ -27,7 +27,7 @@ constants.update({'tauc_method': 'flat'})
 constants.update({'overwrite_metrics': False}) 
 constants['overwrite_results'] = False
 #constants['num_train'] = 2_000_000
-constants['num_train'] = 100_000
+constants['num_train'] = 1_000
 
 pproc = Phase(**constants)
 pproc.initialize()
@@ -50,9 +50,9 @@ minima = {
     'ncell': int(0.02*pproc.ncell_tot),
     # 'ncell': int(pproc.ncell_tot - pproc.slice_right_max),
     'slice_left': int(0.* pproc.ncell_tot),
-    'mu_tau': 0.,
+    'mu_tau': -10.,
     'sigm_tau': 0.,
-    'mu_tauc': 0.,
+    'mu_tauc': -10.,
     'sigm_tauc': 0.
 }
 maxima = {
@@ -60,9 +60,9 @@ maxima = {
     'ncell': int(1. * pproc.slice_right_max),
     'slice_left': int(1.*pproc.ncell_tot),
     'mu_tau': 0.,
-    'sigm_tau': 0.,
+    'sigm_tau': 6.,
     'mu_tauc': 0.,
-    'sigm_tauc': 0.
+    'sigm_tauc': 6.
 }
 param_keys = np.array(list(minima.keys()))
 
@@ -105,8 +105,6 @@ if pproc.rank == pproc.root:
     pbar = tqdm(total=pproc.rank_samples, position=0, dynamic_ncols=True, file=sys.stderr)
 
 # Generate metric values for training
-#train_y = np.full((len(train_x), 1), np.nan)
-#for x_i, x in enumerate(train_x):
 for rank_sample_i, x_i in enumerate(range(pproc.rank_start, pproc.rank_start + pproc.rank_samples)):
     x = train_x[x_i] # Retrieve parameter sample
     pproc.global_sample_i = x_i # Referenced in change_tau_expect
@@ -115,14 +113,11 @@ for rank_sample_i, x_i in enumerate(range(pproc.rank_start, pproc.rank_start + p
         # Assign parameter values for this sample
         setattr(pproc, param, x[i].astype(type(minima[param])))
 
-    #if pproc.slice_left > (pproc.slice_right_max - pproc.ncell):
-    #    continue # Skip bc slice start too high
-
     # Reset tau values to baseline
     pproc.tau_expect = pproc.tau_flat
 
     # Add in uncertainty on baseline tau values
-    pproc.generate_eps_tau(pproc.mu_tau, pproc.sigm_tau)
+    pproc.generate_eps_tau()
     pproc.tau_expect = pproc.tau_flat + pproc.eps_tau
 
     # Shift selected tau values (including uncertainty)
@@ -154,8 +149,9 @@ pproc.comm.Gatherv(pproc.xs_means_rank, sampled_xs_means, root=pproc.root)
 if pproc.rank == pproc.root:
     pbar.close()
     print(f"{timeit.default_timer() - start_time} seconds")
-    train_y = sampled_metric_expect[:,None]
-    np.save('train_x.npy', train_x)
-    np.save('train_y.npy', train_y)
-    plt.hist(train_y);
-    plt.show()
+    print("NOT SAVING DATA")
+    #train_y = sampled_metric_expect[:,None]
+    #np.save('train_x.npy', train_x)
+    #np.save('train_y.npy', train_y)
+    #plt.hist(train_y);
+    #plt.show()
