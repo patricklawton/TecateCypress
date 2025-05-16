@@ -95,7 +95,8 @@ for results_pre in results_pre_labs:
             # First, check that this result is feasible with zero uncertainty
             # Skip and keep at nan if not feasible
             metric_zero_eps = phase_full[tuple(zero_eps_i + [C_i, ncell_i, sl_i])]
-            if np.isnan(metric_zero_eps) or (metric_zero_eps < thresh): continue
+            #if np.isnan(metric_zero_eps) or (metric_zero_eps < thresh): continue
+            if np.isnan(metric_zero_eps): continue
             # Now, get the robstness at this (C,ncell,slice_left) coordinate and store
             counts = np.count_nonzero(phase_full[..., C_i, ncell_i, sl_i] >= thresh)
             robustness = counts / tot_eps_samples

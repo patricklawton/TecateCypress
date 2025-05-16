@@ -399,6 +399,7 @@ class Phase:
             self.slice_right_max = len(tau_sorted) - 1
         
     def init_strategy_variables(self): 
+        tau_sorted = self.tau_flat[self.tau_argsort_ref] 
         # Generate samples of remaining state variables
         # Get samples of total shift to fire regime (C)  
         self.C_vec = self.tauc_min_samples * self.ncell_tot
@@ -649,13 +650,15 @@ class Phase:
 
     def prep_rank_samples(self, ncell=None): 
         # Determine the number of samples to parallelize based on some instance variable
-        if hasattr(self, 'slice_left_all'):
+        if hasattr(self, 'num_train'):
+            # Handle case where we're generating training data for NN
+            # Or parallelizing more efficiently
+            num_samples = self.num_train 
+        #if hasattr(self, 'slice_left_all'):
+        else:
             # Handle case where we're doing brute force calculations
             self.slice_left_max = self.slice_right_max - ncell #slice needs to fit
             num_samples = len(self.slice_left_all)
-        else:
-            # Handle case where we're generating training data for NN
-            num_samples = self.num_train 
 
         # Get size and position of sample chunk for this rank
         self.rank_samples = num_samples // self.num_procs
@@ -717,7 +720,7 @@ class Phase:
             self.global_sample_i = slice_left_i # Referenced in change_tau_expect
 
             # First, reset tau with uncertainty
-            self.generate_eps_tau(self.mu_tau, self.sigm_tau)
+            self.generate_eps_tau()
             self.tau_expect = self.tau_flat + self.eps_tau
 
             # Check that we are not on the no change scenario
