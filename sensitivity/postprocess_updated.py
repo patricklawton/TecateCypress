@@ -57,41 +57,31 @@ for results_pre in results_pre_labs:
     x_all = np.load(fn_prefix + '/x_all.npy')
     meta_metric_all = np.load(fn_prefix + '/meta_metric_all.npy')
     meta_metric_all = meta_metric_all[:,0]
+    tot_eps_samples = np.cumprod([len(axis) for axis in eps_axes.values()])[-1]
 
     # Define range of threshold values for metapop metric
     rob_thresh_vec = np.linspace(min(meta_metric_all), max(meta_metric_all), 100)
     np.save(fn_prefix + "rob_thresh_vec.npy", rob_thresh_vec)
 
+    # Create a lookup table for parameter combinations
+    filter_dict = {}
+    for C_i, C in enumerate(C_vec):
+        for ncell_i, ncell in enumerate(ncell_vec):
+            for sl_i, slice_left in enumerate(slice_left_all):
+                filt = (x_all[:,0] == C) & (x_all[:,1] == ncell) & (x_all[:,2] == slice_left)
+                if np.count_nonzero(filt) > 0:
+                    filter_dict[(C_i, ncell_i, sl_i)] = np.where(filt)[0]  # store indices only
+
     # Calculate the robustness at each threshold and strategy combination
     allrob = np.full((rob_thresh_vec.size, C_vec.size, ncell_vec.size, slice_left_all.size), np.nan)
-    tot_eps_samples = np.cumprod([len(axis) for axis in eps_axes.values()])[-1]
-    for (thresh_i, thresh), (C_i, C), (ncell_i, ncell), (sl_i, slice_left) in product(
-                                                                                enumerate(rob_thresh_vec), 
-                                                                                enumerate(C_vec),
-                                                                                enumerate(ncell_vec), 
-                                                                                enumerate(slice_left_all)
-                                                                                ):
-            #if slice_left > (ncell_tot - ncell - 1): continue
-
-            # Filter for this parameter combination
-            filt = (x_all[:,0] == C) & (x_all[:,1] == ncell) & (x_all[:,2] == slice_left)
-
-            # Skip if paramter comb is invalid (happens if slice_left too large given ncell)
-            if np.count_nonzero(filt) < 1: continue
-
-            # Skip if threshold not met under no uncertainty
-            zeroeps_filt = filt & (np.all(x_all[:, 3:] == 0, axis=1))
-            if np.count_nonzero(zeroeps_filt) < 1:
-                print(C, ncell, slice_left)
-                print(np.count_nonzero(filt))
-                import sys; sys.exit()
-            #print(meta_metric_all[zeroeps_filt])
-            if meta_metric_all[zeroeps_filt] < thresh: continue
-            
-            # Calculate and store the robustness
-            counts = np.count_nonzero(meta_metric_all[filt] >= thresh)
-            robustness = counts / tot_eps_samples
-            allrob[thresh_i, C_i, ncell_i, sl_i] = robustness
+    zero_eps_mask = np.all(x_all[:, 3:] == 0, axis=1)
+    for thresh_i, thresh in enumerate(rob_thresh_vec):
+        for (C_i, ncell_i, sl_i), indices in filter_dict.items():
+            zeroeps_filt = zero_eps_mask[indices]
+            if np.any(meta_metric_all[indices][zeroeps_filt] >= thresh):
+                counts = np.count_nonzero(meta_metric_all[indices] >= thresh)
+                robustness = counts / tot_eps_samples
+                allrob[thresh_i, C_i, ncell_i, sl_i] = robustness
         
     # Now find the strategies which optimize robustness per threshold, C combination
     maxrob = np.full((len(rob_thresh_vec), len(C_vec)), np.nan)
