@@ -29,7 +29,7 @@ constants['ncell_samples'] = 15
 constants['slice_samples'] = 30
 # Use the minimum tauc values (i.e. when spread over all cells) to determine C values
 #constants['tauc_min_samples'] = np.arange(1, 17, 2) 
-constants['tauc_min_samples'] = np.array([9.0]) 
+constants['tauc_min_samples'] = np.array([5.0, 9.0]) 
 constants['root'] = 0 #For mpi
 constants.update({'final_max_tau': np.nan})
 constants['overwrite_results'] = True
@@ -73,9 +73,11 @@ with tqdm(total=total_computations) as pbar:
 
             # Init a phase processor based on above constants
             pproc = Phase(**constants) 
-            if pproc.rank == pproc.root: print(f"on {tauc_method} tauc_method")
             pproc.initialize()
             pproc.init_strategy_variables()
+            if pproc.rank == pproc.root: 
+                print(f"on {tauc_method} tauc_method")
+                total_time = 0
 
             # Save uncertainty axes to file
             if (pproc.rank == pproc.root):
@@ -112,9 +114,13 @@ with tqdm(total=total_computations) as pbar:
                         elapsed = timeit.default_timer() - start_time
                         print('{} seconds to run metric {}'.format(elapsed, metric))
                         pbar.update(1)
+                        total_time += elapsed
                     # Save phase matrix at this uncertainty parameterization
                     pproc.store_phase()
                     ## Plot slices of phase matricies
                     #for C in pproc.C_vec:
                     #    pproc.plot_phase_slice(C)
                     #    pproc.plot_phase_slice(C, xs=True)
+
+if pproc.rank == pproc.root:
+    print(f'{total_time} seconds')

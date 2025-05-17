@@ -32,7 +32,7 @@ tau_vec = b_vec * gamma(1+1/c)
 tauc_methods = ["flat"]
 #C_i_vec = [0,1,2,4,6]
 #C_i_vec = [0,2,4,6]
-C_i_vec = [0]
+C_i_vec = [0,1]
 results_pre = 'gte_thresh' 
 #results_pre = 'distribution_avg' 
 
@@ -345,33 +345,37 @@ axes[0,1].set_xlim(15, xmax);
 ########
 
 #### RESULTS UNDER ZERO UNCERTAINTY ####
-width = 0.875
+# Load all results
 set_globals(results_pre)
-with h5py.File(fn_prefix + "/phase_flat.h5", "r") as phase_handle:
-    data_key = "0.0/0.0/0.0/0.0/phase"
-    phase_slice_zeroeps = phase_handle[data_key][:]
-    nochange_zeroeps = phase_handle["0.0/0.0/0.0/0.0/metric_nochange"][()]
+x_all = np.load(fn_prefix + '/x_all.npy')
+meta_metric_all = np.load(fn_prefix + '/meta_metric_all.npy')
+meta_metric_all = meta_metric_all[:,0]
+meta_metric_nochange = float(np.load(fn_prefix + 'meta_metric_nochange.npy'))
 
 plot_vec = np.ones_like(C_vec) * np.nan
 c_vec = np.ones_like(C_vec) * np.nan
 for C_i, C in enumerate(C_vec):
-    argmax = np.nanargmax(phase_slice_zeroeps[C_i, :, :])
-    optimal_param_i = np.unravel_index(argmax, phase_slice_zeroeps.shape[1:])
-    plot_vec[C_i] = phase_slice_zeroeps[C_i, optimal_param_i[0], optimal_param_i[1]]
-    c_vec[C_i] = ncell_vec[optimal_param_i[0]]
+    #argmax = np.nanargmax(phase_slice_zeroeps[C_i, :, :])
+    #optimal_param_i = np.unravel_index(argmax, phase_slice_zeroeps.shape[1:])
+    #plot_vec[C_i] = phase_slice_zeroeps[C_i, optimal_param_i[0], optimal_param_i[1]]
+    #c_vec[C_i] = ncell_vec[optimal_param_i[0]]
+    zeroeps_filt = np.all(x_all[:, 3:] == 0, axis=1)
+    _filt = zeroeps_filt & (x_all[:,0] == C)
+    argmax = np.nanargmax(meta_metric_all[_filt])
+    plot_vec[C_i] = meta_metric_all[_filt][argmax]
+    c_vec[C_i] = x_all[_filt,:][argmax][1]
 c_vec = c_vec / ncell_tot
-print((plot_vec - nochange_zeroeps) / c_vec) 
-print((plot_vec - nochange_zeroeps) / (C_vec/ncell_tot)) 
 
+width = 0.875
 vmin = 0; vmax = 1
 norm = colors.Normalize(vmin=vmin, vmax=vmax)
 colormap = copy.copy(cm.RdPu_r)
 sm = cm.ScalarMappable(cmap=colormap, norm=norm)
 bar_colors = colormap(norm(c_vec))
 bar = axes[1,0].bar(np.arange(C_vec.size), plot_vec, color=bar_colors, width=width)
-axes[1,0].set_ylim(nochange_zeroeps, 1.02*np.max(plot_vec))
+axes[1,0].set_ylim(meta_metric_nochange, 1.02*np.max(plot_vec))
 yticks = np.arange(0., 1.2, 0.2)
-axes[1,0].set_yticks(yticks[yticks >= nochange_zeroeps])
+axes[1,0].set_yticks(yticks[yticks >= meta_metric_nochange])
 axes[1,0].set_ylabel(fr"maximum {metric_lab}")
 xtick_spacing = 2
 #xticks = np.arange(1, len(C_vec)+1, xtick_spacing)

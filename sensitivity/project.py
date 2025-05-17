@@ -652,9 +652,10 @@ class Phase:
         # Determine the number of samples to parallelize based on some instance variable
         if hasattr(self, 'num_train'):
             # Handle case where we're generating training data for NN
-            # Or parallelizing more efficiently
             num_samples = self.num_train 
         #if hasattr(self, 'slice_left_all'):
+        elif hasattr(self, 'total_samples'):
+            num_samples = self.total_samples
         else:
             # Handle case where we're doing brute force calculations
             self.slice_left_max = self.slice_right_max - ncell #slice needs to fit
