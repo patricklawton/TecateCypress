@@ -71,9 +71,7 @@ def set_globals(results_pre):
     #                                       'Google Drive', 'My Drive', 'Research', 'Regan', 'Figs/')
 
     # Load things saved specific to these results
-    with open(fn_prefix + 'metric_data.pkl', 'rb') as handle:
-        globals()['metric_data'] = pickle.load(handle)
-    globals()['all_metric'] = metric_data['all_metric']
+    globals()['all_metric'] = np.load(f"{results_pre}/data/Aeff_{Aeff}/tfinal_{t_final}/metric_{metric}/all_metric.npy")
     globals()['all_tau'] = np.load(f"{results_pre}/data/Aeff_{Aeff}/tfinal_{t_final}/all_tau.npy")
     globals()['C_vec'] = np.load(fn_prefix + "C_vec.npy")
     globals()['ncell_vec'] = np.load(fn_prefix + "ncell_vec.npy")

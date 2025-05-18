@@ -29,7 +29,7 @@ constants.update({'final_max_tau': np.nan})
 constants['meta_metric'] = 'gte_thresh'
 constants.update({'metric': 'lambda_s'})
 constants.update({'tauc_method': 'flat'})
-constants.update({'overwrite_metrics': False}) 
+constants.update({'overwrite_metrics': True}) 
 constants['overwrite_results'] = True
 
 constants['plotting_tau_bw_ratio'] = 30 #For binning initial tau (with uncertainty) in phase slice plots
@@ -50,6 +50,7 @@ param_keys = ['C', 'ncell', 'slice_left',
 pproc = Phase(**constants)
 pproc.initialize()
 pproc.init_strategy_variables()
+sys.exit('exiting')
 assert pproc.metric_exp_spl(pproc.min_tau) > 0
 
 if pproc.rank != pproc.root:
