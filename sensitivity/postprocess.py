@@ -1,4 +1,3 @@
-from matplotlib.gridspec import GridSpec
 from tqdm import tqdm
 import numpy as np
 import pickle
@@ -24,7 +23,7 @@ tau_step = np.diff(tau_vec)[0] / 2
 tau_edges = np.concatenate(([0], np.arange(tau_step/2, tau_vec[-1]+tau_step, tau_step)))
 tauc_methods = ["flat"]
 #C_i_vec = [0,1,2,4,6] # For generation of cell metric data
-C_i_vec = [0,1]
+C_i_vec = [0]
 results_pre_labs = ['gte_thresh']
 #results_pre_labs = ['distribution_avg']
 overwrite_robustness = True
@@ -55,59 +54,48 @@ for results_pre in results_pre_labs:
     if not overwrite_robustness: continue
     # Load things saved specific to these results
     set_globals(results_pre)
-
-    # Collect <metric> across all state variables and uncertainty parameterizations
-    shape = [len(eps_axes[key]) for key in eps_axes.keys()] 
-    shape += [len(C_vec), len(ncell_vec), len(slice_left_all)]
-    phase_full = np.ones((shape)) * np.nan
-    with h5py.File(fn_prefix + "phase_flat.h5", "r") as phase_handle:
-        for eps_params in product(*eps_axes.values()):
-            # Create a dictionary of indices along with values for the current combination
-            eps_params_dict = {
-                key: (index, np.round(value, 3)) for key, values in zip(eps_axes.keys(), eps_axes.values())
-                for index, value in enumerate(values) if value == eps_params[list(eps_axes.keys()).index(key)]
-            }
-
-            # Get phase slice at this epsilon parameterization
-            data_key = f"{eps_params_dict['mu_tau'][1]}/{eps_params_dict['sigm_tau'][1]}/"
-            data_key += f"{eps_params_dict['mu_tauc'][1]}/{eps_params_dict['sigm_tauc'][1]}/phase"
-            phase_slice = phase_handle[data_key][:]
-
-            # Add them to collective phase_all
-            eps_indices = [val[0] for val in eps_params_dict.values()]
-            index_tuple = tuple(eps_indices) + (slice(None), slice(None), slice(None))
-            phase_full[index_tuple] = phase_slice
-    # Save full phase matrix to file
-    np.save(fn_prefix + "phase_full.npy", phase_full)
-
-    rob_thresh_vec = np.linspace(min(phase_full.flatten()), max(phase_full.flatten()), 100)
-    np.save(fn_prefix + "rob_thresh_vec.npy", rob_thresh_vec)
-    allrob = np.ones((rob_thresh_vec.size, C_vec.size, ncell_vec.size, slice_left_all.size)) * np.nan
-    maxrob = np.ones((len(rob_thresh_vec), len(C_vec))) * np.nan
-    argmaxrob = np.ones((len(rob_thresh_vec), len(C_vec), 2)) * np.nan
+    x_all = np.load(fn_prefix + '/x_all.npy')
+    meta_metric_all = np.load(fn_prefix + '/meta_metric_all.npy')
+    meta_metric_all = meta_metric_all[:,0]
     tot_eps_samples = np.cumprod([len(axis) for axis in eps_axes.values()])[-1]
-    zero_eps_i = [np.argwhere(ax == 0)[0][0] for ax in eps_axes.values()]
-    for (thresh_i, thresh), (C_i, C) in product(enumerate(rob_thresh_vec), 
-                                                enumerate(C_vec)):
-        rob_slice = np.ones((len(ncell_vec), len(slice_left_all))) * np.nan
-        for (ncell_i, ncell), (sl_i, sl) in product(enumerate(ncell_vec),
-                                                    enumerate(slice_left_all)):
-            # First, check that this result is feasible with zero uncertainty
-            # Skip and keep at nan if not feasible
-            metric_zero_eps = phase_full[tuple(zero_eps_i + [C_i, ncell_i, sl_i])]
-            #if np.isnan(metric_zero_eps) or (metric_zero_eps < thresh): continue
-            if np.isnan(metric_zero_eps): continue
-            # Now, get the robstness at this (C,ncell,slice_left) coordinate and store
-            counts = np.count_nonzero(phase_full[..., C_i, ncell_i, sl_i] >= thresh)
-            robustness = counts / tot_eps_samples
-            rob_slice[ncell_i, sl_i] = robustness
-        allrob[thresh_i, C_i] = rob_slice
+
+    # Define range of threshold values for metapop metric
+    rob_thresh_vec = np.linspace(min(meta_metric_all), max(meta_metric_all), 100)
+    np.save(fn_prefix + "rob_thresh_vec.npy", rob_thresh_vec)
+
+    # Create a lookup table for parameter combinations
+    filter_dict = {}
+    for C_i, C in enumerate(C_vec):
+        for ncell_i, ncell in enumerate(ncell_vec):
+            for sl_i, slice_left in enumerate(slice_left_all):
+                filt = (x_all[:,0] == C) & (x_all[:,1] == ncell) & (x_all[:,2] == slice_left)
+                if np.count_nonzero(filt) > 0:
+                    filter_dict[(C_i, ncell_i, sl_i)] = np.where(filt)[0]  # store indices only
+
+    # Calculate the robustness at each threshold and strategy combination
+    allrob = np.full((rob_thresh_vec.size, C_vec.size, ncell_vec.size, slice_left_all.size), np.nan)
+    zero_eps_mask = np.all(x_all[:, 3:] == 0, axis=1)
+    for thresh_i, thresh in enumerate(rob_thresh_vec):
+        for (C_i, ncell_i, sl_i), indices in filter_dict.items():
+            zeroeps_filt = zero_eps_mask[indices]
+            if np.any(meta_metric_all[indices][zeroeps_filt] >= thresh):
+                counts = np.count_nonzero(meta_metric_all[indices] >= thresh)
+                robustness = counts / tot_eps_samples
+                allrob[thresh_i, C_i, ncell_i, sl_i] = robustness
+        
+    # Now find the strategies which optimize robustness per threshold, C combination
+    maxrob = np.full((len(rob_thresh_vec), len(C_vec)), np.nan)
+    argmaxrob = np.full((len(rob_thresh_vec), len(C_vec), 2), np.nan)
+    for (thresh_i, thresh), (C_i, C) in product(enumerate(rob_thresh_vec), enumerate(C_vec)):
+        rob_slice = allrob[thresh_i, C_i]
         if np.any(~np.isnan(rob_slice)):
             # Store the max robustness at this (thresh, C) coordinate
             maxrob[thresh_i, C_i] = np.nanmax(rob_slice)
+            
             # Also store the optimal param indices
             optimal_param_i = np.unravel_index(np.nanargmax(rob_slice, axis=None), rob_slice.shape)
             argmaxrob[thresh_i, C_i] = optimal_param_i
+
     # Save maxrob and argmaxrob to files
     np.save(fn_prefix + "maxrob.npy", maxrob)
     np.save(fn_prefix + "argmaxrob.npy", argmaxrob)
