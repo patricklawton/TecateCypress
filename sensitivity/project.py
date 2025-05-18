@@ -273,7 +273,6 @@ class Phase:
 
             jobs = project.find_jobs({'doc.simulated': True, 'Aeff': self.Aeff, 
                                       't_final': self.t_final, 'method': self.sim_method})
-            print(len(jobs))
             self.data_dir = f"{self.meta_metric}/data/Aeff_{self.Aeff}/tfinal_{self.t_final}"
             fn = self.data_dir + "/all_tau.npy"
             if (not os.path.isfile(fn)) or self.overwrite_metrics:
@@ -345,15 +344,9 @@ class Phase:
                 tau_filt = (all_tau == tau)
                 metric_slice = self.metric_data["all_metric"][tau_filt]
                 metric_expect_vec[tau_i] = np.mean(metric_slice)
-            #if self.metric == 'P_s':
-            #    t = self.tau_vec[2:-2:1] 
-            #    k = 3
-            #    t = np.r_[(0,)*(k+1), t, (self.tau_vec[-1],)*(k+1)]
-            #else:
-            if True:
-                t = self.tau_vec[2:-2:2] 
-                k = 3
-                t = np.r_[(self.tau_vec[1],)*(k+1), t, (self.tau_vec[-1],)*(k+1)]
+            t = self.tau_vec[2:-2:2] 
+            k = 3
+            t = np.r_[(self.tau_vec[1],)*(k+1), t, (self.tau_vec[-1],)*(k+1)]
             self.metric_exp_spl = make_lsq_spline(self.tau_vec[1:], metric_expect_vec[1:], t, k)
 
             # Read in FDM
@@ -391,10 +384,12 @@ class Phase:
         self.data_dir = self.comm.bcast(self.data_dir, root=self.root)
         self.metric_exp_spl = self.comm.bcast(self.metric_exp_spl, root=self.root)
 
-        # Generate samples of remaining state variables
+        # Store the total number of cells as an instance variable
         self.ncell_tot = len(self.tau_flat)
-        # Get samples of total shift to fire regime (C)  
-        self.C_vec = self.tauc_min_samples * self.ncell_tot
+
+        # Initialize tau_expect with tau_flat
+        self.tau_expect = self.tau_flat
+
         # Use the max post alteration tau to get an upper bound on right hand of initial tau slices
         self.tau_argsort_ref = np.argsort(self.tau_flat)
         tau_sorted = self.tau_flat[self.tau_argsort_ref] 
@@ -402,6 +397,12 @@ class Phase:
             self.slice_right_max = min(np.nonzero(tau_sorted >= self.final_max_tau)[0])
         else:
             self.slice_right_max = len(tau_sorted) - 1
+        
+    def init_strategy_variables(self): 
+        tau_sorted = self.tau_flat[self.tau_argsort_ref] 
+        # Generate samples of remaining state variables
+        # Get samples of total shift to fire regime (C)  
+        self.C_vec = self.tauc_min_samples * self.ncell_tot
         # Min left bound set by user-defined constant
         slice_left_min = np.nonzero(tau_sorted > self.min_tau)[0][0]
         # Generate slice sizes of the tau distribution
@@ -549,10 +550,7 @@ class Phase:
             result = scipy.optimize.differential_evolution(penalized_objective, bounds=bounds)
         return result
 
-    def change_tau_expect(self, C_i, ncell_i, slice_left_i):
-        C = self.C_vec[C_i]
-        ncell = self.ncell_vec[ncell_i]
-        slice_left = self.slice_left_all[slice_left_i]
+    def change_tau_expect(self, C, ncell, slice_left):
         slice_indices = self.tau_argsort_ref[slice_left:slice_left + ncell]
         tau_slice = self.tau_expect[slice_indices]
         # Set max tauc per cell
@@ -564,6 +562,9 @@ class Phase:
             tauc = C / ncell
             tauc_slice = np.repeat(tauc, ncell)
         else:
+            C_i = np.nonzero(self.C_vec == C)[0][0]
+            ncell_i = np.nonzero(self.ncell_vec == ncell)[0][0]
+            slice_left_i = np.nonzero(self.slice_left_all == slice_left)[0][0]
             v = self.v_all[C_i, ncell_i, slice_left_i]
             w = self.w_all[C_i, ncell_i, slice_left_i]
             tau_slice_ref = self.tau_flat[slice_indices]
@@ -571,36 +572,94 @@ class Phase:
             tauc_slice = self.compute_tauc_slice([v,w], self.tauc_method, tau_slice_ref)
         
         # Add uncertainty to tauc slice
-        random_indices = self.rng.integers(0, len(self.tau_flat), ncell)
-        eps_tauc_slice = self.eps_tauc[random_indices]
-        tauc_slice = tauc_slice + eps_tauc_slice
+        self.generate_eps_tauc(self.mu_tauc, self.sigm_tauc, ncell)
+        tauc_slice = tauc_slice + self.eps_tauc
 
         # Find where tauc will push tau beyond max
         xs_filt = (tauc_slice > final_max_tauc) 
         replacement_tau[xs_filt] = self.final_max_tau
         replacement_tau[xs_filt==False] = (tau_slice + tauc_slice)[xs_filt==False]
+
         # Now replace them in the full array of tau
         self.tau_expect[slice_indices] = replacement_tau 
+
         # Replace any tau lt min with min
         self.tau_expect = np.where(self.tau_expect < self.min_tau, self.min_tau, self.tau_expect)
+
         # Store the mean value of excess resources, keep at nan if no excess
         xsresources = (tauc_slice - final_max_tauc)[xs_filt]
-        if len(xsresources) > 0:
-            self.xs_means_rank[slice_left_i-self.rank_start] = np.sum(xsresources) / C
+        if hasattr(self, 'xs_means_rank') and (len(xsresources) > 0):
+            self.xs_means_rank[self.global_sample_i-self.rank_start] = np.sum(xsresources) / C
 
-    def generate_eps_tau(self, mu_tau, sigm_tau):
-        self.mu_tau = mu_tau
-        self.sigm_tau = sigm_tau
+    def change_tau_expect_vectorized(self, C_vec, ncell_vec, slice_left_vec, mu_tauc_vec, sigm_tauc_vec):
+        n_samples = len(C_vec)
+
+        for i in range(n_samples):
+            C = C_vec[i]
+            ncell = ncell_vec[i]
+            slice_left = slice_left_vec[i]
+            mu_tauc = mu_tauc_vec[i]
+            sigm_tauc = sigm_tauc_vec[i]
+
+            # Get indices for this sample
+            slice_indices = self.tau_argsort_ref[slice_left:slice_left + ncell]
+
+            # Extract current tau slice
+            tau_slice = self.tau_expect[i, slice_indices]
+            final_max_tauc = self.final_max_tau - tau_slice
+
+            # Compute tauc with noise
+            tauc = C / ncell
+            tauc_slice = np.full(ncell, tauc)
+            eps_tauc = self.rng.normal(loc=mu_tauc, scale=sigm_tauc, size=ncell)
+            tauc_slice += eps_tauc
+
+            # Apply capping logic
+            replacement_tau = np.where(
+                tauc_slice > final_max_tauc,
+                self.final_max_tau,
+                tau_slice + tauc_slice
+            )
+
+            # Insert back into tau_expect
+            self.tau_expect[i, slice_indices] = replacement_tau
+
+        # 6. Clip with min_tau
+        self.tau_expect = np.where(self.tau_expect < self.min_tau, self.min_tau, self.tau_expect)
+
+
+    def generate_eps_tau(self):
         self.eps_tau = self.rng.normal(loc=self.mu_tau, scale=self.sigm_tau, size=len(self.tau_flat)) 
 
-    def generate_eps_tauc(self, mu_tauc, sigm_tauc):
+    def generate_eps_tau_vectorized(self):
+        assert self.mu_tau.shape == self.sigm_tau.shape
+        #self.eps_tau = self.rng.normal(
+        #                               loc=np.tile(self.mu_tau, (len(self.tau_flat),1)).T, 
+        #                               scale=np.tile(self.sigm_tau, (len(self.tau_flat),1)).T, 
+        #                               size=(len(self.mu_tau), len(self.tau_flat))
+        #                              )
+        mu_tau = self.mu_tau[:, None]
+        sigm_tau = self.sigm_tau[:, None]     # shape (n, 1)
+        m = len(self.tau_flat)
+        self.eps_tau = self.rng.normal(loc=mu_tau, scale=sigm_tau, size=(len(mu_tau), m))
+
+    def generate_eps_tauc(self, mu_tauc, sigm_tauc, ncell):
         self.mu_tauc = mu_tauc
         self.sigm_tauc = sigm_tauc
-        self.eps_tauc = self.rng.normal(loc=self.mu_tauc, scale=self.sigm_tauc, size=len(self.tau_flat)) 
+        self.eps_tauc = self.rng.normal(loc=self.mu_tauc, scale=self.sigm_tauc, size=ncell) 
 
-    def prep_rank_samples(self, ncell): 
-        self.slice_left_max = self.slice_right_max - ncell #slice needs to fit
-        num_samples = len(self.slice_left_all)
+    def prep_rank_samples(self, ncell=None): 
+        # Determine the number of samples to parallelize based on some instance variable
+        if hasattr(self, 'num_train'):
+            # Handle case where we're generating training data for NN
+            num_samples = self.num_train 
+        #if hasattr(self, 'slice_left_all'):
+        elif hasattr(self, 'total_samples'):
+            num_samples = self.total_samples
+        else:
+            # Handle case where we're doing brute force calculations
+            self.slice_left_max = self.slice_right_max - ncell #slice needs to fit
+            num_samples = len(self.slice_left_all)
 
         # Get size and position of sample chunk for this rank
         self.rank_samples = num_samples // self.num_procs
@@ -619,7 +678,7 @@ class Phase:
         self.xs_means_rank = np.ones(self.rank_samples) * np.nan
 
         # Add one sample for computing the no change scenario
-        if (ncell==max(self.ncell_vec)) and (self.rank==self.root):
+        if (hasattr(self, 'slice_left_all')) and (ncell==max(self.ncell_vec)) and (self.rank==self.root):
             self.rank_samples += 1
 
     def calculate_metric_expect(self):
@@ -633,7 +692,7 @@ class Phase:
             if np.any(metric_exp_dist < 0): sys.exit(f"metric_expect is negative ({self.metric_expect}), exiting!")
         self.metric_expect = np.mean(metric_exp_dist)
 
-    def calculate_metric_gte(self):
+    def calculate_metric_gte(self, vectorized=False):
         # Get density of metric_k values above some threshold
         '''Replace any tau > max simulated with max tau, similar approximation as before'''
         tau_with_cutoff = np.where(self.tau_expect > self.tau_vec.max(), self.tau_vec.max(), self.tau_expect)
@@ -646,8 +705,11 @@ class Phase:
         elif self.metric == 'lambda_s':
             threshold = 0.975
             #threshold = 0.994
-        '''Still calling this metric_expect for now but should change this to metric_quantity or something'''
-        self.metric_expect = np.count_nonzero(metric_exp_dist >= threshold) / self.ncell_tot
+        '''Still calling this metric_expect for now but should change this to metapop_metric or something'''
+        if vectorized:
+            self.metric_expect = np.count_nonzero(metric_exp_dist >= threshold, axis=1) / self.ncell_tot
+        else:
+            self.metric_expect = np.count_nonzero(metric_exp_dist >= threshold) / self.ncell_tot
 
     def process_samples(self, C, ncell):
         '''is relocating these indicies significantly slowing things down?'''
@@ -656,21 +718,28 @@ class Phase:
         self.slice_left_max = self.slice_right_max - ncell
         # Loop over sampled realizations of this fire alteration strategy
         for rank_sample_i, slice_left_i in enumerate(range(self.rank_start, self.rank_start + self.rank_samples)):
+            self.global_sample_i = slice_left_i # Referenced in change_tau_expect
+
             # First, reset tau with uncertainty
+            self.generate_eps_tau()
             self.tau_expect = self.tau_flat + self.eps_tau
+
             # Check that we are not on the no change scenario
             if rank_sample_i < len(self.metric_expect_rank): 
                 slice_left = self.slice_left_all[slice_left_i]
                 # Also, check that slice is within allowed range
                 if slice_left > self.slice_left_max: continue
                 # Now, adjust the tau distribution at cells in slice
-                self.change_tau_expect(C_i, ncell_i, slice_left_i)
+                self.change_tau_expect(C, ncell, slice_left)
+
+            # Calculate the metric value
             if self.meta_metric == 'distribution_avg':
                 # Calculate <metric>
                 self.calculate_metric_expect()
             elif self.meta_metric == 'gte_thresh':
                 # Calculate <metric>_k density above some threshold
                 self.calculate_metric_gte()
+
             # Store sample if not computing no change scenario
             if rank_sample_i < len(self.metric_expect_rank): 
                 self.metric_expect_rank[slice_left_i-self.rank_start] = self.metric_expect

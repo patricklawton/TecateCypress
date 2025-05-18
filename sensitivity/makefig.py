@@ -18,8 +18,8 @@ import os
 
 # Define/load things non-specific to a given set of results
 #metric = "P_s"
-#metric = 'lambda_s'
-metric = 's'
+metric = 'lambda_s'
+#metric = 's'
 Aeff = 7.29
 t_final = 300
 ncell_tot = 87_993
@@ -31,7 +31,8 @@ tau_vec = b_vec * gamma(1+1/c)
 #tau_edges = np.concatenate(([0], np.arange(tau_step/2, tau_vec[-1]+tau_step, tau_step)))
 tauc_methods = ["flat"]
 #C_i_vec = [0,1,2,4,6]
-C_i_vec = [0,2,4,6]
+#C_i_vec = [0,2,4,6]
+C_i_vec = [0, 1]
 results_pre = 'gte_thresh' 
 #results_pre = 'distribution_avg' 
 
@@ -193,13 +194,14 @@ if metric == 'P_s':
     ax3.set_ylabel(rf'simulated survival probability $S$')
 elif metric == 'lambda_s':
     cbar.set_label(rf'frequency of $\lambda$ given ${{\tau}}$', rotation=-90, labelpad=cbar_lpad)
-    ax3.set_ylabel(rf'simulated stochastic growth rate $\lambda$')
+    ax3.set_ylabel(rf'simulated growth rate $\lambda$')
 elif metric == 's':
     ax3.set_ylabel(rf's')
 ax3.plot([], [], marker='o', color='k', label=mean_metric_lab)
 ax3.legend(bbox_to_anchor=(0.2, -0.05, 0.5, 0.5), fontsize=21)
 ax3.set_ylim(metric_edges[np.nonzero(im[0][min_edge_i])[0].min()], max(metric_edges))
 ax3.set_xlim(tau_edges[min_edge_i], max(tau_edges))
+ax3.set_xlabel(r'average fire return interval $\tau$')
 ########
 
 #### INITIAL TAU DISTRIBUTION ####
@@ -341,36 +343,39 @@ axes[0,1].set_xlabel(r"average fire return interval $\tau$")
 #axes[0,1].set_xlim(15, 81);
 axes[0,1].set_xlim(15, xmax);
 ########
-import sys; sys.exit('exiting after fig2b')
 
 #### RESULTS UNDER ZERO UNCERTAINTY ####
-width = 0.875
+# Load all results
 set_globals(results_pre)
-with h5py.File(fn_prefix + "/phase_flat.h5", "r") as phase_handle:
-    data_key = "0.0/0.0/0.0/0.0/phase"
-    phase_slice_zeroeps = phase_handle[data_key][:]
-    nochange_zeroeps = phase_handle["0.0/0.0/0.0/0.0/metric_nochange"][()]
+x_all = np.load(fn_prefix + '/x_all.npy')
+meta_metric_all = np.load(fn_prefix + '/meta_metric_all.npy')
+meta_metric_all = meta_metric_all[:,0]
+meta_metric_nochange = float(np.load(fn_prefix + 'meta_metric_nochange.npy'))
 
 plot_vec = np.ones_like(C_vec) * np.nan
 c_vec = np.ones_like(C_vec) * np.nan
 for C_i, C in enumerate(C_vec):
-    argmax = np.nanargmax(phase_slice_zeroeps[C_i, :, :])
-    optimal_param_i = np.unravel_index(argmax, phase_slice_zeroeps.shape[1:])
-    plot_vec[C_i] = phase_slice_zeroeps[C_i, optimal_param_i[0], optimal_param_i[1]]
-    c_vec[C_i] = ncell_vec[optimal_param_i[0]]
+    #argmax = np.nanargmax(phase_slice_zeroeps[C_i, :, :])
+    #optimal_param_i = np.unravel_index(argmax, phase_slice_zeroeps.shape[1:])
+    #plot_vec[C_i] = phase_slice_zeroeps[C_i, optimal_param_i[0], optimal_param_i[1]]
+    #c_vec[C_i] = ncell_vec[optimal_param_i[0]]
+    zeroeps_filt = np.all(x_all[:, 3:] == 0, axis=1)
+    _filt = zeroeps_filt & (x_all[:,0] == C)
+    argmax = np.nanargmax(meta_metric_all[_filt])
+    plot_vec[C_i] = meta_metric_all[_filt][argmax]
+    c_vec[C_i] = x_all[_filt,:][argmax][1]
 c_vec = c_vec / ncell_tot
-print((plot_vec - nochange_zeroeps) / c_vec) 
-print((plot_vec - nochange_zeroeps) / (C_vec/ncell_tot)) 
 
+width = 0.875
 vmin = 0; vmax = 1
 norm = colors.Normalize(vmin=vmin, vmax=vmax)
 colormap = copy.copy(cm.RdPu_r)
 sm = cm.ScalarMappable(cmap=colormap, norm=norm)
 bar_colors = colormap(norm(c_vec))
 bar = axes[1,0].bar(np.arange(C_vec.size), plot_vec, color=bar_colors, width=width)
-axes[1,0].set_ylim(nochange_zeroeps, 1.02*np.max(plot_vec))
+axes[1,0].set_ylim(meta_metric_nochange, 1.02*np.max(plot_vec))
 yticks = np.arange(0., 1.2, 0.2)
-axes[1,0].set_yticks(yticks[yticks >= nochange_zeroeps])
+axes[1,0].set_yticks(yticks[yticks >= meta_metric_nochange])
 axes[1,0].set_ylabel(fr"maximum {metric_lab}")
 xtick_spacing = 2
 #xticks = np.arange(1, len(C_vec)+1, xtick_spacing)
@@ -396,8 +401,8 @@ vmax = 1; vmin = 0
 normalize = colors.Normalize(vmin=vmin, vmax=vmax)
 all_markers = ['o','^','D','s','H','*']
 all_linestyles = ['dotted', 'dashdot', 'dashed', 'solid']
-C_i_samples = [0,2,4,6]
-#C_i_samples = C_i_vec.copy()
+#C_i_samples = [0,2,4,6]
+C_i_samples = C_i_vec.copy()
 #C_i_samples = [i for i in range(C_vec.size)][::1]
 for line_i, C_i in enumerate(C_i_samples):
     plot_vec = np.ones(len(rob_thresh_vec)) * np.nan

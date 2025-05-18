@@ -69,3 +69,28 @@ def s(N_tot, compressed, valid_timesteps=None, ext_mask=None,  burn_in_end_i=0):
     # Put signs back in
     s_all = s_all * np.sign(fractional_change)
     return s_all
+
+#class Numpy_dataloader()
+def batch_data(data, batch_size):
+    num_batches = (len(data) + batch_size - 1) // batch_size  # Ceiling division
+    for i in range(num_batches):
+        start = i * batch_size
+        end = min((i + 1) * batch_size, len(data))
+        yield data[start:end]
+
+def shuffle_data(data):
+    np.random.shuffle(data)
+    return data
+
+def transform_data(batch):
+    # Example: Scale data to range [0, 1]
+    return (batch - np.min(batch)) / (np.max(batch) - np.min(batch)) if np.max(batch) > np.min(batch) else batch
+ 
+'''Not handling remainder batches correctly''' 
+def numpy_dataloader(data, batch_size, shuffle=True, transform=None):
+    if shuffle:
+        data = shuffle_data(data.copy())
+    for batch in batch_data(data, batch_size):
+        if transform:
+            batch = transform_data(batch)
+        yield batch

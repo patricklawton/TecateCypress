@@ -23,7 +23,7 @@ tau_step = np.diff(tau_vec)[0] / 2
 tau_edges = np.concatenate(([0], np.arange(tau_step/2, tau_vec[-1]+tau_step, tau_step)))
 tauc_methods = ["flat"]
 #C_i_vec = [0,1,2,4,6] # For generation of cell metric data
-C_i_vec = [0]
+C_i_vec = [0, 1]
 results_pre_labs = ['gte_thresh']
 #results_pre_labs = ['distribution_avg']
 overwrite_robustness = True
@@ -57,7 +57,8 @@ for results_pre in results_pre_labs:
     x_all = np.load(fn_prefix + '/x_all.npy')
     meta_metric_all = np.load(fn_prefix + '/meta_metric_all.npy')
     meta_metric_all = meta_metric_all[:,0]
-    tot_eps_samples = np.cumprod([len(axis) for axis in eps_axes.values()])[-1]
+    #tot_eps_samples = np.cumprod([len(axis) for axis in eps_axes.values()])[-1]
+    tot_eps_samples = int(np.load(fn_prefix + 'num_eps_combs.npy'))
 
     # Define range of threshold values for metapop metric
     rob_thresh_vec = np.linspace(min(meta_metric_all), max(meta_metric_all), 100)
