@@ -32,7 +32,7 @@ tau_vec = b_vec * gamma(1+1/c)
 tauc_methods = ["flat"]
 #C_i_vec = [0,1,2,4,6]
 #C_i_vec = [0,2,4,6]
-C_i_vec = [0]
+C_i_vec = [0, 1]
 results_pre = 'gte_thresh' 
 #results_pre = 'distribution_avg' 
 

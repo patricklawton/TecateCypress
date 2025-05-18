@@ -35,15 +35,9 @@ constants['overwrite_results'] = True
 constants['plotting_tau_bw_ratio'] = 30 #For binning initial tau (with uncertainty) in phase slice plots
 
 # Get list of samples for each parameter
-constants['tauc_min_samples'] = np.array([9.0])
+constants['tauc_min_samples'] = np.array([5.0, 9.0])
 constants['ncell_samples'] = 15
 constants['slice_samples'] = 30
-#constants['ncell_samples'] = 5
-#constants['slice_samples'] = 10
-mu_tau_vec = np.arange(-9, 6, 3).astype(float)
-sigm_tau_vec = np.linspace(0, 10, 3)
-mu_tauc_vec = np.arange(-9, 6, 3).astype(float)
-sigm_tauc_vec = np.linspace(0, 10, 3)
 
 # Start timer to track runtime
 start_time = timeit.default_timer()
@@ -66,19 +60,19 @@ else:
         # 'C': 5.*pproc.ncell_tot,
         # 'ncell': int(0.02*pproc.ncell_tot),
         # 'slice_left': int(0.* pproc.ncell_tot),
-        'mu_tau': -9.,
+        'mu_tau': -10.,
         'sigm_tau': 0.,
-        'mu_tauc': -9.,
+        'mu_tauc': -10.,
         'sigm_tauc': 0.
     }
     maxima = {
         # 'C': 5.*pproc.ncell_tot,
         # 'ncell': int(1. * pproc.slice_right_max),
         # 'slice_left': int(1.*pproc.ncell_tot),
-        'mu_tau': 3.,
-        'sigm_tau': 7.,
-        'mu_tauc': 0.,
-        'sigm_tauc': 3.
+        'mu_tau': 6.,
+        'sigm_tau': 10.,
+        'mu_tauc': 6.,
+        'sigm_tauc': 10.
     }
 
     ### Initialize strategy combinations ### 
@@ -104,9 +98,10 @@ else:
 
     ### Add on samples of uncertain samples ###
     # First define the number of eps samples per strategy combination
-    num_eps_combs = 225
-    #num_eps_combs = 500
+    #num_eps_combs = 225
+    num_eps_combs = 500
     #num_eps_combs = 100
+    np.save(pproc.data_dir + '/num_eps_combs.npy', num_eps_combs)
     num_combs_tot = num_strategy_combs * num_eps_combs
 
     # Initialize x_all with repeats of strategy combinations
@@ -146,15 +141,6 @@ else:
 
     # Save to file for reference in postprocessing
     np.save(pproc.data_dir + '/x_all.npy', x_all)
-
-    # Save uncertainty axes to file
-    fn = pproc.data_dir + "/eps_axes.h5"
-    if (not os.path.isfile(fn)) or pproc.overwrite_results:
-        with h5py.File(fn, "w") as handle:
-            handle['mu_tau'] = mu_tau_vec
-            handle['sigm_tau'] = sigm_tau_vec
-            handle['mu_tauc'] = mu_tauc_vec
-            handle['sigm_tauc'] = sigm_tauc_vec
 
 # Broadcast samples to all ranks
 x_all = pproc.comm.bcast(x_all, root=pproc.root)
