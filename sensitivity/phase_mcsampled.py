@@ -32,9 +32,10 @@ constants.update({'metric': 'lambda_s'})
 constants.update({'tauc_method': 'flat'})
 constants.update({'overwrite_metrics': True}) 
 constants['overwrite_results'] = True
+metric_thresh = 0.975 # Threshold of pop metric value used for calculating meta metric
 
 # Get list of samples for each parameter
-constants['tauc_min_samples'] = np.array([9.0])
+constants['tauc_min_samples'] = np.array([3,5,7,9.0,11])
 constants['ncell_samples'] = 15
 constants['slice_samples'] = 30
 
@@ -57,10 +58,17 @@ with open(pproc.data_dir + "/metric_spl_all.pkl", "rb") as handle:
 # Population full list of parameter combinations 'x_all'
 if pproc.rank != pproc.root:
     x_all = None
+    fixed_metric_mask = None
 else:
-    # Check that all splines makes sense
-    for metric_spl in metric_spl_all.values():
+    # Store indices of demographic samples that will have a fixed value of the metapop metric
+    # This occurs for the gte_thresh metric when metric(tau) < thresh for all tau
+    fixed_metric_mask = np.full(len(metric_spl_all), False)
+    tau_test = np.linspace(pproc.min_tau, pproc.final_max_tau, 1000)
+    for demographic_index, metric_spl in metric_spl_all.items():
+        # Check that spline lower bound makes sense
         assert metric_spl(pproc.min_tau) > 0
+        if np.all(tau_test < metric_thresh) and (pproc.metric == 'gte_thresh'):
+            fixed_metric_mask[demographic_index] = True
 
     # Theoretical (or ad-hoc) maxima/minima for parameters
     minima = {
@@ -153,6 +161,7 @@ else:
 
 # Broadcast samples to all ranks
 x_all = pproc.comm.bcast(x_all, root=pproc.root)
+fixed_metric_mask = pproc.comm.bcast(fixed_metric_mask, root=pproc.root)
 
 # Set number of samples as instance attribute
 pproc.total_samples = x_all.shape[0]
@@ -182,6 +191,9 @@ for rank_sample_i, x_i in enumerate(range(pproc.rank_start, pproc.rank_start + p
             param_val = float(x[i])
         setattr(pproc, param, param_val)
 
+    ## Skip parameter comb if meta metric doesn't change; fill these in later
+    #if fixed_metric_mask[demographic_index]: continue
+
     # Reset tau values to baseline
     pproc.tau_expect = pproc.tau_flat
 
@@ -194,7 +206,7 @@ for rank_sample_i, x_i in enumerate(range(pproc.rank_start, pproc.rank_start + p
 
     # Compute and store metric value
     if pproc.meta_metric == 'gte_thresh':
-        pproc.calculate_metric_gte()
+        pproc.calculate_metric_gte(metric_thresh)
     pproc.metric_expect_rank[rank_sample_i] = pproc.metric_expect
 
     # Update progress (root only)
@@ -216,14 +228,20 @@ pproc.comm.Gatherv(pproc.xs_means_rank, sampled_xs_means, root=pproc.root)
 
 if pproc.rank == pproc.root:
     pbar.close()
-    print(f"{timeit.default_timer() - start_time} seconds")
-    meta_metric_all = sampled_metric_expect[:,None]
-    np.save(pproc.data_dir + '/meta_metric_all.npy', meta_metric_all)
-    #plt.hist(meta_metric_all);
-    #plt.show()
 
     # Compute meta metric under no change for reference later
     pproc.tau_expect = pproc.tau_flat
+    pproc.metric_spl = metric_spl_all[0]
     if pproc.meta_metric == 'gte_thresh':
-        pproc.calculate_metric_gte()
-    np.save(pproc.data_dir + '/meta_metric_nochange.npy', pproc.metric_expect)
+        pproc.calculate_metric_gte(metric_thresh)
+    meta_metric_nochange = pproc.metric_expect
+    np.save(pproc.data_dir + '/meta_metric_nochange.npy', meta_metric_nochange)
+
+    ## Put in baseline meta metric values where relevant
+    #demo_col_i = np.nonzero(param_keys == 'demographic_index')[0][0]
+    #mask = ...
+    #sampled_metric_expect[fixed_metric_mask] = meta_metric_nochange
+
+    print(f"{timeit.default_timer() - start_time} seconds")
+    meta_metric_all = sampled_metric_expect[:,None]
+    np.save(pproc.data_dir + '/meta_metric_all.npy', meta_metric_all)

@@ -690,19 +690,16 @@ class Phase:
             if np.any(metric_dist < 0): sys.exit(f"metric_expect is negative ({self.metric_expect}), exiting!")
         self.metric_expect = np.mean(metric_dist)
 
-    def calculate_metric_gte(self, vectorized=False):
+    def calculate_metric_gte(self, threshold, vectorized=False):
         # Get density of metric_k values above some threshold
         '''Replace any tau > max simulated with max tau, similar approximation as before'''
         tau_with_cutoff = np.where(self.tau_expect > self.tau_vec.max(), self.tau_vec.max(), self.tau_expect)
         metric_dist = self.metric_spl(tau_with_cutoff)
         if self.metric == 'P_s':
-            threshold = 0.5
+            #threshold = 0.5
             # Metric value is bounded by zero, anything lt zero is an interpolation error
             metric_dist[metric_dist < 0] = 0.0
             if np.any(metric_dist < 0): sys.exit(f"metric_expect is negative ({self.metric_expect}), exiting!")
-        elif self.metric == 'lambda_s':
-            threshold = 0.975
-            #threshold = 0.994
         '''Still calling this metric_expect for now but should change this to metapop_metric or something'''
         if vectorized:
             self.metric_expect = np.count_nonzero(metric_dist >= threshold, axis=1) / self.ncell_tot
