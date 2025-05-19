@@ -32,7 +32,7 @@ tau_vec = b_vec * gamma(1+1/c)
 tauc_methods = ["flat"]
 #C_i_vec = [0,1,2,4,6]
 #C_i_vec = [0,2,4,6]
-C_i_vec = [0, 1]
+#C_i_vec = [0, 1]
 results_pre = 'gte_thresh' 
 #results_pre = 'distribution_avg' 
 
@@ -71,9 +71,10 @@ def set_globals(results_pre):
     #                                       'Google Drive', 'My Drive', 'Research', 'Regan', 'Figs/')
 
     # Load things saved specific to these results
-    globals()['all_metric'] = np.load(f"{results_pre}/data/Aeff_{Aeff}/tfinal_{t_final}/metric_{metric}/all_metric.npy")
-    globals()['all_tau'] = np.load(f"{results_pre}/data/Aeff_{Aeff}/tfinal_{t_final}/all_tau.npy")
+    globals()['metric_all'] = np.load(f"{results_pre}/data/Aeff_{Aeff}/tfinal_{t_final}/metric_{metric}/metric_all.npy")
+    globals()['tau_all'] = np.load(f"{results_pre}/data/Aeff_{Aeff}/tfinal_{t_final}/tau_all.npy")
     globals()['C_vec'] = np.load(fn_prefix + "C_vec.npy")
+    globals()['C_i_vec'] = np.arange(len(C_vec)) 
     globals()['ncell_vec'] = np.load(fn_prefix + "ncell_vec.npy")
     globals()['slice_left_all'] = np.load(fn_prefix + "slice_left_all.npy")
     eps_axes = {}
@@ -155,12 +156,12 @@ tau_edges = np.concatenate((
                 np.arange(tau_vec[1]+tau_step/2, tau_vec[-1]+tau_step, tau_step)
                            ))
 min_edge_i = 2
-metric_min = min(all_metric[(all_tau >= tau_edges[min_edge_i]) & (all_tau < tau_edges[min_edge_i+1])])
-metric_edges = np.linspace(metric_min, all_metric.max()*1.005, 50)
+metric_min = min(metric_all[(tau_all >= tau_edges[min_edge_i]) & (tau_all < tau_edges[min_edge_i+1])])
+metric_edges = np.linspace(metric_min, metric_all.max()*1.005, 50)
 cmap = copy.copy(cm.YlGn)
 #cmap.set_bad(cmap(0.0))
-im = ax3.hist2d(all_tau, all_metric, bins=[tau_edges, metric_edges],
-                 norm=colors.LogNorm(vmax=int(len(all_metric)/len(b_vec))),
+im = ax3.hist2d(tau_all, metric_all, bins=[tau_edges, metric_edges],
+                 norm=colors.LogNorm(vmax=int(len(metric_all)/len(b_vec))),
                  density=False,
                 cmap=cmap)
 
@@ -174,8 +175,8 @@ cbar = fig.colorbar(sm, cax=cbar_ax, orientation="vertical", ticks=[0, 0.25, 0.5
 # Make interpolation function for <metric> wrt tau
 metric_expect_vec = np.ones(tau_vec.size) * np.nan
 for tau_i, tau in enumerate(tau_vec):
-    tau_filt = (all_tau == tau)
-    metric_slice = all_metric[tau_filt]
+    tau_filt = (tau_all == tau)
+    metric_slice = metric_all[tau_filt]
     metric_expect_vec[tau_i] = np.mean(metric_slice)
 t = tau_vec[2:-2:2] 
 k = 3

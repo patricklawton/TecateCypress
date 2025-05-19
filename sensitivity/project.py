@@ -262,7 +262,6 @@ class Phase:
             # Init data to be read on root
             self.tau_flat = None
             self.data_dir = None
-            self.metric_exp_spl = None
         else:
             # Handle data reading on root alone
             project = sg.get_project()
@@ -272,20 +271,22 @@ class Phase:
             jobs = project.find_jobs({'doc.simulated': True, 'Aeff': self.Aeff, 
                                       't_final': self.t_final, 'method': self.sim_method})
             self.data_dir = f"{self.meta_metric}/data/Aeff_{self.Aeff}/tfinal_{self.t_final}"
-            fn = self.data_dir + "/all_tau.npy"
+            fn = self.data_dir + "/tau_all.npy"
             if (not os.path.isfile(fn)) or self.overwrite_metrics:
-                all_tau = np.tile(self.tau_vec, len(jobs))
-                np.save(fn, all_tau)
+                tau_all = np.tile(self.tau_vec, len(jobs))
+                np.save(fn, tau_all)
             else:
-                all_tau = np.load(fn)
+                tau_all = np.load(fn)
 
             self.data_dir = f"{self.meta_metric}/data/Aeff_{self.Aeff}/tfinal_{self.t_final}/metric_{self.metric}"
-            fn = self.data_dir + f"/all_metric.npy"
+            fn = self.data_dir + f"/metric_all.npy"
             if (not os.path.isfile(fn)) or self.overwrite_metrics:
-                # Loop over all jobs and collect metric data
-                all_metric = np.array([])
+                # Loop over all jobs and process metric data
+                metric_all = np.array([]) # To collect data across all jobs
+                metric_spl_all = {} # To collect spline interpolations across all jobs
                 for job_i, job in enumerate(jobs):
                     with job.data as data:
+                        # Get the metric values across all b (i.e. tau) samples for this demo param sample
                         metric_vec = []
                         for b in self.b_vec:
                             if self.metric == 'P_s':
@@ -294,13 +295,43 @@ class Phase:
                                 metric_vec.append(1.0 - float(data[f'frac_extirpated/{b}'][T-1]))
                             else:
                                 metric_vec.append(float(data[f'{self.metric}/{b}']))
-                    all_metric = np.append(all_metric, metric_vec)
+
+                        # Store metric samples
+                        metric_all = np.append(metric_all, metric_vec)
+
+                        # Create and store interpolation function for this demo sample 
+                        t = self.tau_vec[2:-2:2] 
+                        k = 3
+                        t = np.r_[(self.tau_vec[1],)*(k+1), t, (self.tau_vec[-1],)*(k+1)]
+                        metric_spl = make_lsq_spline(self.tau_vec[1:], metric_vec[1:], t, k)
+                        metric_spl_all.update({job.sp.demographic_index: metric_spl})
 
                 # Save collected metric data to file
                 with open(fn, 'wb') as handle:
-                    np.save(fn, all_metric)
+                    np.save(fn, metric_all)
                     
-                # Plot the metric probability density
+                # Create interpolating function for average metric(tau) values
+                metric_vec = np.ones(self.tau_vec.size) * np.nan
+                for tau_i, tau in enumerate(self.tau_vec):
+                    tau_filt = (tau_all == tau)
+                    metric_slice = metric_all[tau_filt]
+                    metric_vec[tau_i] = np.mean(metric_slice)
+                t = self.tau_vec[2:-2:2] 
+                k = 3
+                t = np.r_[(self.tau_vec[1],)*(k+1), t, (self.tau_vec[-1],)*(k+1)]
+                metric_spl = make_lsq_spline(self.tau_vec[1:], metric_vec[1:], t, k)
+                metric_spl_all.update({0: metric_spl}) # Store on demographic index 0
+
+                # Save interpolated metric(tau) functions to file
+                with open(self.data_dir + "/metric_spl_all.pkl", "wb") as handle:
+                    pickle.dump(metric_spl_all, handle)
+            #else:
+                #metric_all = np.load(fn)
+                #with open(self.data_dir + "/metric_spl_all.pkl", "rb") as handle:
+                #    metric_spl_all = pickle.load(handle)
+
+            # Plot the metric probability density
+            if (not os.path.isfile(self.data_dir + f"/metric_all.npy")) or self.overwrite_metrics:
                 print(f"Creating {self.metric} histogram") 
                 fig, ax = plt.subplots(figsize=(13,8))
                 tau_diffs = np.diff(self.tau_vec)
@@ -311,11 +342,11 @@ class Phase:
                                 np.arange(self.tau_vec[1]+tau_step/2, self.tau_vec[-1]+tau_step, tau_step)
                                            ))
                 min_edge_i = 2
-                metric_min = min(all_metric[(all_tau >= tau_edges[min_edge_i]) & (all_tau < tau_edges[min_edge_i+1])])
-                metric_edges = np.linspace(metric_min, all_metric.max()*1.005, 50)
+                metric_min = min(metric_all[(tau_all >= tau_edges[min_edge_i]) & (tau_all < tau_edges[min_edge_i+1])])
+                metric_edges = np.linspace(metric_min, metric_all.max()*1.005, 50)
                 cmap = copy.copy(matplotlib.cm.YlGn)
-                im = ax.hist2d(all_tau, all_metric, bins=[tau_edges, metric_edges],
-                                 norm=matplotlib.colors.LogNorm(vmax=int(len(all_metric)/len(self.b_vec))),
+                im = ax.hist2d(tau_all, metric_all, bins=[tau_edges, metric_edges],
+                                 norm=matplotlib.colors.LogNorm(vmax=int(len(metric_all)/len(self.b_vec))),
                                  density=False,
                                 cmap=cmap)
                 # Add the colorbar to inset axis
@@ -331,19 +362,6 @@ class Phase:
                     os.makedirs(figs_dir)
                 fig.savefig(figs_dir + f"sensitivity", bbox_inches='tight', dpi=50)
                 plt.close(fig)
-            else:
-                all_metric = np.load(fn)
-
-            # Create interpolating function for <metric>(tauc)
-            metric_expect_vec = np.ones(self.tau_vec.size) * np.nan
-            for tau_i, tau in enumerate(self.tau_vec):
-                tau_filt = (all_tau == tau)
-                metric_slice = all_metric[tau_filt]
-                metric_expect_vec[tau_i] = np.mean(metric_slice)
-            t = self.tau_vec[2:-2:2] 
-            k = 3
-            t = np.r_[(self.tau_vec[1],)*(k+1), t, (self.tau_vec[-1],)*(k+1)]
-            self.metric_exp_spl = make_lsq_spline(self.tau_vec[1:], metric_expect_vec[1:], t, k)
 
             # Read in FDM
             usecols = np.arange(self.ul_coord[0], self.lr_coord[0])
@@ -376,7 +394,6 @@ class Phase:
         # Broadcast data used later to all ranks
         self.tau_flat = self.comm.bcast(self.tau_flat, root=self.root)
         self.data_dir = self.comm.bcast(self.data_dir, root=self.root)
-        self.metric_exp_spl = self.comm.bcast(self.metric_exp_spl, root=self.root)
 
         # Store the total number of cells as an instance variable
         self.ncell_tot = len(self.tau_flat)
@@ -666,31 +683,31 @@ class Phase:
         # Get expected value of metric
         '''Replace any tau > max simulated with max tau, similar approximation as before'''
         tau_with_cutoff = np.where(self.tau_expect > self.tau_vec.max(), self.tau_vec.max(), self.tau_expect)
-        metric_exp_dist = self.metric_exp_spl(tau_with_cutoff)
+        metric_dist = self.metric_spl(tau_with_cutoff)
         if self.metric == 'P_s':
             # Metric value is bounded by zero, anything lt zero is an interpolation error
-            metric_exp_dist[metric_exp_dist < 0] = 0.0
-            if np.any(metric_exp_dist < 0): sys.exit(f"metric_expect is negative ({self.metric_expect}), exiting!")
-        self.metric_expect = np.mean(metric_exp_dist)
+            metric_dist[metric_dist < 0] = 0.0
+            if np.any(metric_dist < 0): sys.exit(f"metric_expect is negative ({self.metric_expect}), exiting!")
+        self.metric_expect = np.mean(metric_dist)
 
     def calculate_metric_gte(self, vectorized=False):
         # Get density of metric_k values above some threshold
         '''Replace any tau > max simulated with max tau, similar approximation as before'''
         tau_with_cutoff = np.where(self.tau_expect > self.tau_vec.max(), self.tau_vec.max(), self.tau_expect)
-        metric_exp_dist = self.metric_exp_spl(tau_with_cutoff)
+        metric_dist = self.metric_spl(tau_with_cutoff)
         if self.metric == 'P_s':
             threshold = 0.5
             # Metric value is bounded by zero, anything lt zero is an interpolation error
-            metric_exp_dist[metric_exp_dist < 0] = 0.0
-            if np.any(metric_exp_dist < 0): sys.exit(f"metric_expect is negative ({self.metric_expect}), exiting!")
+            metric_dist[metric_dist < 0] = 0.0
+            if np.any(metric_dist < 0): sys.exit(f"metric_expect is negative ({self.metric_expect}), exiting!")
         elif self.metric == 'lambda_s':
             threshold = 0.975
             #threshold = 0.994
         '''Still calling this metric_expect for now but should change this to metapop_metric or something'''
         if vectorized:
-            self.metric_expect = np.count_nonzero(metric_exp_dist >= threshold, axis=1) / self.ncell_tot
+            self.metric_expect = np.count_nonzero(metric_dist >= threshold, axis=1) / self.ncell_tot
         else:
-            self.metric_expect = np.count_nonzero(metric_exp_dist >= threshold) / self.ncell_tot
+            self.metric_expect = np.count_nonzero(metric_dist >= threshold) / self.ncell_tot
 
     def process_samples(self, C, ncell):
         '''is relocating these indicies significantly slowing things down?'''

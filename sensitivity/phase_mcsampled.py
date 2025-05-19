@@ -9,6 +9,7 @@ import timeit
 from itertools import product
 import os
 import h5py
+import pickle
 
 rng = np.random.default_rng()
 
@@ -32,10 +33,8 @@ constants.update({'tauc_method': 'flat'})
 constants.update({'overwrite_metrics': True}) 
 constants['overwrite_results'] = True
 
-constants['plotting_tau_bw_ratio'] = 30 #For binning initial tau (with uncertainty) in phase slice plots
-
 # Get list of samples for each parameter
-constants['tauc_min_samples'] = np.array([5.0, 9.0])
+constants['tauc_min_samples'] = np.array([9.0])
 constants['ncell_samples'] = 15
 constants['slice_samples'] = 30
 
@@ -44,18 +43,25 @@ start_time = timeit.default_timer()
 
 # Define ordered list of parameter keys
 param_keys = ['C', 'ncell', 'slice_left',
-              'mu_tau', 'sigm_tau', 'mu_tauc', 'sigm_tauc']
+              'mu_tau', 'sigm_tau', 'mu_tauc', 'sigm_tauc', 'demographic_index']
 
 # Initialize "Phase" instance for processing samples
 pproc = Phase(**constants)
 pproc.initialize()
 pproc.init_strategy_variables()
-sys.exit('exiting')
-assert pproc.metric_exp_spl(pproc.min_tau) > 0
 
+# Read in all splined interpolations of metric(tau)
+with open(pproc.data_dir + "/metric_spl_all.pkl", "rb") as handle:
+    metric_spl_all = pickle.load(handle)
+
+# Population full list of parameter combinations 'x_all'
 if pproc.rank != pproc.root:
     x_all = None
 else:
+    # Check that all splines makes sense
+    for metric_spl in metric_spl_all.values():
+        assert metric_spl(pproc.min_tau) > 0
+
     # Theoretical (or ad-hoc) maxima/minima for parameters
     minima = {
         # 'C': 5.*pproc.ncell_tot,
@@ -64,7 +70,8 @@ else:
         'mu_tau': -10.,
         'sigm_tau': 0.,
         'mu_tauc': -10.,
-        'sigm_tauc': 0.
+        'sigm_tauc': 0.,
+        'demographic_index': 1
     }
     maxima = {
         # 'C': 5.*pproc.ncell_tot,
@@ -73,7 +80,8 @@ else:
         'mu_tau': 6.,
         'sigm_tau': 10.,
         'mu_tauc': 6.,
-        'sigm_tauc': 10.
+        'sigm_tauc': 10.,
+        'demographic_index': len(metric_spl_all) - 1
     }
 
     ### Initialize strategy combinations ### 
@@ -109,7 +117,7 @@ else:
     x_all = np.tile(x_strategy, (num_eps_combs, 1))
 
     # Fill columns with samples of uncertain parameters
-    uncertain_params = ['mu_tau', 'sigm_tau', 'mu_tauc', 'sigm_tauc']
+    uncertain_params = ['mu_tau', 'sigm_tau', 'mu_tauc', 'sigm_tauc', 'demographic_index']
 
     # Add columns for uncertain param samples
     x_all = np.hstack((
@@ -134,7 +142,7 @@ else:
         if _type == float:
             samples = rng.uniform(_min, _max, num_combs_tot-num_strategy_combs)
         elif _type == int:
-            samples = rng.integers(_min, _max, num_combs_tot-num_strategy_combs)
+            samples = rng.integers(_min, _max, num_combs_tot-num_strategy_combs, endpoint=True)
         x_all[num_strategy_combs:, uncertain_param_i] = samples
 
     # Shuffle to give all procs ~ the same amount of work
@@ -162,10 +170,17 @@ for rank_sample_i, x_i in enumerate(range(pproc.rank_start, pproc.rank_start + p
     for i, param in enumerate(param_keys):
         # Assign parameter values for this sample
         if i in [1,2]:
-            _type = int
+            #_type = int
+            param_val = int(x[i])
+        elif param == 'demographic_index':
+            # Retrieve the spline function for this demographic sample
+            demographic_index = int(x[i])
+            param_val = metric_spl_all[demographic_index]
+            param = 'metric_spl'
         else:
-            _type = float
-        setattr(pproc, param, x[i].astype(_type))
+            #_type = float
+            param_val = float(x[i])
+        setattr(pproc, param, param_val)
 
     # Reset tau values to baseline
     pproc.tau_expect = pproc.tau_flat
