@@ -8,6 +8,7 @@ from scipy.optimize import curve_fit
 # Additional imports for phase analysis
 from matplotlib import pyplot as plt
 import matplotlib
+from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 import scipy
 from scipy.special import gamma
 from scipy.interpolate import make_lsq_spline
@@ -259,38 +260,33 @@ class Phase:
         '''
         if self.rank != self.root:
             # Init data to be read on root
-            self.metric_data = None
-            self.tau_edges = None
             self.tau_flat = None
             self.data_dir = None
-            self.metric_exp_spl = None
         else:
             # Handle data reading on root alone
             project = sg.get_project()
             tau_diffs = np.diff(self.tau_vec)
             tau_step = (self.b_vec[1]-self.b_vec[0]) * gamma(1+1/self.c)
-            self.tau_edges = np.concatenate(([0], np.arange(tau_step/2, self.tau_vec[-1]+tau_step, tau_step)))
 
             jobs = project.find_jobs({'doc.simulated': True, 'Aeff': self.Aeff, 
                                       't_final': self.t_final, 'method': self.sim_method})
             self.data_dir = f"{self.meta_metric}/data/Aeff_{self.Aeff}/tfinal_{self.t_final}"
-            fn = self.data_dir + "/all_tau.npy"
+            fn = self.data_dir + "/tau_all.npy"
             if (not os.path.isfile(fn)) or self.overwrite_metrics:
-                all_tau = np.tile(self.tau_vec, len(jobs))
-                np.save(fn, all_tau)
+                tau_all = np.tile(self.tau_vec, len(jobs))
+                np.save(fn, tau_all)
             else:
-                all_tau = np.load(fn)
+                tau_all = np.load(fn)
 
             self.data_dir = f"{self.meta_metric}/data/Aeff_{self.Aeff}/tfinal_{self.t_final}/metric_{self.metric}"
-            fn = self.data_dir + f"/metric_data.pkl"
+            fn = self.data_dir + f"/metric_all.npy"
             if (not os.path.isfile(fn)) or self.overwrite_metrics:
-                self.metric_data = {}
-                print(f"Creating {self.metric} histogram") 
-                if self.metric == 'r': metric_label = 'fractional_change'
-                else: metric_label = self.metric
-                all_metric = np.array([])
+                # Loop over all jobs and process metric data
+                metric_all = np.array([]) # To collect data across all jobs
+                metric_spl_all = {} # To collect spline interpolations across all jobs
                 for job_i, job in enumerate(jobs):
                     with job.data as data:
+                        # Get the metric values across all b (i.e. tau) samples for this demo param sample
                         metric_vec = []
                         for b in self.b_vec:
                             if self.metric == 'P_s':
@@ -298,56 +294,74 @@ class Phase:
                                 T = 200
                                 metric_vec.append(1.0 - float(data[f'frac_extirpated/{b}'][T-1]))
                             else:
-                                metric_vec.append(float(data[f'{metric_label}/{b}']))
-                    all_metric = np.append(all_metric, metric_vec)
+                                metric_vec.append(float(data[f'{self.metric}/{b}']))
+
+                        # Store metric samples
+                        metric_all = np.append(metric_all, metric_vec)
+
+                        # Create and store interpolation function for this demo sample 
+                        t = self.tau_vec[2:-2:2] 
+                        k = 3
+                        t = np.r_[(self.tau_vec[1],)*(k+1), t, (self.tau_vec[-1],)*(k+1)]
+                        metric_spl = make_lsq_spline(self.tau_vec[1:], metric_vec[1:], t, k)
+                        metric_spl_all.update({job.sp.demographic_index: metric_spl})
+
+                # Save collected metric data to file
+                with open(fn, 'wb') as handle:
+                    np.save(fn, metric_all)
                     
-                metric_min, metric_max = (min(all_metric), max(all_metric))
-                if self.metric in ['lambda_s', 'mu_s']:
-                    coarse_step = 0.02
-                    fine_step = coarse_step/100
-                    metric_edges = np.arange(metric_min, metric_max + fine_step, fine_step)
-                else:
-                    metric_min, metric_max = (all_metric.min(), all_metric.max())
-                    metric_bw = (metric_max - metric_min) / 200
-                    metric_edges = np.arange(metric_min, metric_max + metric_bw, metric_bw)
-                
-                # First plot the metric probability density
+                # Create interpolating function for average metric(tau) values
+                metric_vec = np.ones(self.tau_vec.size) * np.nan
+                for tau_i, tau in enumerate(self.tau_vec):
+                    tau_filt = (tau_all == tau)
+                    metric_slice = metric_all[tau_filt]
+                    metric_vec[tau_i] = np.mean(metric_slice)
+                t = self.tau_vec[2:-2:2] 
+                k = 3
+                t = np.r_[(self.tau_vec[1],)*(k+1), t, (self.tau_vec[-1],)*(k+1)]
+                metric_spl = make_lsq_spline(self.tau_vec[1:], metric_vec[1:], t, k)
+                metric_spl_all.update({0: metric_spl}) # Store on demographic index 0
+
+                # Save interpolated metric(tau) functions to file
+                with open(self.data_dir + "/metric_spl_all.pkl", "wb") as handle:
+                    pickle.dump(metric_spl_all, handle)
+            #else:
+                #metric_all = np.load(fn)
+                #with open(self.data_dir + "/metric_spl_all.pkl", "rb") as handle:
+                #    metric_spl_all = pickle.load(handle)
+
+            # Plot the metric probability density
+            if (not os.path.isfile(self.data_dir + f"/metric_all.npy")) or self.overwrite_metrics:
+                print(f"Creating {self.metric} histogram") 
                 fig, ax = plt.subplots(figsize=(13,8))
-                metric_hist = ax.hist2d(all_tau, all_metric, bins=[self.tau_edges, metric_edges], 
-                                 norm=matplotlib.colors.LogNorm(vmax=int(len(all_metric)/len(self.b_vec))), 
-                                 density=False)
-                cbar = ax.figure.colorbar(metric_hist[-1], ax=ax, location="right")
-                cbar.ax.set_ylabel('demographic robustness', rotation=-90, fontsize=10, labelpad=20)
-                ax.set_xlabel('<FRI>')
+                tau_diffs = np.diff(self.tau_vec)
+                tau_step = tau_diffs[1]
+                tau_edges = np.concatenate((
+                                [self.tau_vec[0]],
+                                [tau_diffs[0]/2],
+                                np.arange(self.tau_vec[1]+tau_step/2, self.tau_vec[-1]+tau_step, tau_step)
+                                           ))
+                min_edge_i = 2
+                metric_min = min(metric_all[(tau_all >= tau_edges[min_edge_i]) & (tau_all < tau_edges[min_edge_i+1])])
+                metric_edges = np.linspace(metric_min, metric_all.max()*1.005, 50)
+                cmap = copy.copy(matplotlib.cm.YlGn)
+                im = ax.hist2d(tau_all, metric_all, bins=[tau_edges, metric_edges],
+                                 norm=matplotlib.colors.LogNorm(vmax=int(len(metric_all)/len(self.b_vec))),
+                                 density=False,
+                                cmap=cmap)
+                # Add the colorbar to inset axis
+                cbar_ax = inset_axes(ax, width="5%", height="50%", loc='center',
+                                     bbox_to_anchor=(0.5, -0.2, 0.55, 1.1),
+                                     bbox_transform=ax.transAxes, borderpad=0)
+                sm = matplotlib.cm.ScalarMappable(cmap=cmap, norm=None)
+                cbar = fig.colorbar(sm, cax=cbar_ax, orientation="vertical", ticks=[0, 0.25, 0.5, 0.75, 1.])
+                ax.set_xlabel(r'$\tau$')
                 ax.set_ylabel(self.metric)
                 figs_dir = f"{self.meta_metric}/figs/Aeff_{self.Aeff}/tfinal_{self.t_final}/metric_{self.metric}/"
                 if not os.path.isdir(figs_dir):
                     os.makedirs(figs_dir)
-                print("saving sensitivity figure")
                 fig.savefig(figs_dir + f"sensitivity", bbox_inches='tight', dpi=50)
                 plt.close(fig)
-                # Now remake with density=True for calculations later
-                metric_hist = np.histogram2d(all_tau, all_metric, bins=[self.tau_edges, metric_edges], 
-                                             density=True)
-
-                self.metric_data.update({'all_metric': all_metric})
-                self.metric_data.update({'metric_hist': metric_hist[:3]})
-                with open(fn, 'wb') as handle:
-                    pickle.dump(self.metric_data, handle, protocol=pickle.HIGHEST_PROTOCOL)
-            else:
-                with open(fn, 'rb') as handle:
-                    self.metric_data = pickle.load(handle)
-
-            # Create interpolating function for <metric>(tauc)
-            metric_expect_vec = np.ones(self.tau_vec.size) * np.nan
-            for tau_i, tau in enumerate(self.tau_vec):
-                tau_filt = (all_tau == tau)
-                metric_slice = self.metric_data["all_metric"][tau_filt]
-                metric_expect_vec[tau_i] = np.mean(metric_slice)
-            t = self.tau_vec[2:-2:2] 
-            k = 3
-            t = np.r_[(self.tau_vec[1],)*(k+1), t, (self.tau_vec[-1],)*(k+1)]
-            self.metric_exp_spl = make_lsq_spline(self.tau_vec[1:], metric_expect_vec[1:], t, k)
 
             # Read in FDM
             usecols = np.arange(self.ul_coord[0], self.lr_coord[0])
@@ -378,11 +392,8 @@ class Phase:
             self.tau_flat = tau_raster[maps_filt]
         
         # Broadcast data used later to all ranks
-        self.metric_data = self.comm.bcast(self.metric_data, root=self.root)
-        self.tau_edges = self.comm.bcast(self.tau_edges, root=self.root)
         self.tau_flat = self.comm.bcast(self.tau_flat, root=self.root)
         self.data_dir = self.comm.bcast(self.data_dir, root=self.root)
-        self.metric_exp_spl = self.comm.bcast(self.metric_exp_spl, root=self.root)
 
         # Store the total number of cells as an instance variable
         self.ncell_tot = len(self.tau_flat)
@@ -415,82 +426,7 @@ class Phase:
         self.slice_left_all = np.round(self.slice_left_all).astype(int)
 
         if self.tauc_method != "flat":
-            # Generate tauc scaling parameters, if needed
-            check1 = os.path.isfile(self.data_dir + f"/v_all_{self.tauc_method}.npy")
-            check2 = os.path.isfile(self.data_dir + f"/w_all_{self.tauc_method}.npy")
-            if np.all([check1, check2, self.overwrite_scaleparams == False]):
-                generate_params = False
-                self.v_all = np.load(self.data_dir + f"/v_all_{self.tauc_method}.npy")
-                self.w_all = np.load(self.data_dir + f"/w_all_{self.tauc_method}.npy")
-            else:
-                generate_params = True
-
-            if generate_params:
-                if self.rank != self.root:
-                    self.v_all = None
-                    self.w_all = None
-                else:
-                    print(f"Generating scaling parameters for {self.tauc_method}")
-                    self.v_all = np.ones((len(self.C_vec), len(self.ncell_vec), len(self.slice_left_all))) * np.nan
-                    self.w_all = np.ones((len(self.C_vec), len(self.ncell_vec), len(self.slice_left_all))) * np.nan
-
-                # Distribute work among ranks
-                task_list = list(product(enumerate(self.C_vec), enumerate(self.ncell_vec), enumerate(self.slice_left_all)))
-                rank_tasks = np.array_split(task_list, self.num_procs)[self.rank]  # Split tasks across ranks
-                # Each rank performs optimization on its assigned subset of tasks
-                rank_v_all = []
-                rank_w_all = []
-
-                for (C_i, C), (ncell_i, ncell), (slice_left_i, slice_left) in rank_tasks:
-                    self.slice_left_max = self.slice_right_max - ncell
-                    if slice_left > self.slice_left_max: continue
-
-                    tau_slice = tau_sorted[slice_left:slice_left+ncell]
-                    '''Try translating the initial tau so they start at zero'''
-                    tau_slice = tau_slice - min(tau_slice)
-
-                    if self.tauc_method == "initlinear":
-                        x0 = [-0.003, 900]
-                        result = self.maximize_preflat(self.tauc_method, C, ncell, tau_slice, x0=x0)
-                    elif self.tauc_method == "initinverse":
-                        penalty_weight = 0.05
-                        result = self.maximize_preflat(self.tauc_method, C, ncell, tau_slice, penalty_weight=penalty_weight)
-                        while not result.success:
-                            penalty_weight *= 0.5
-                            result = self.maximize_preflat(self.tauc_method, C, ncell, tau_slice, penalty_weight=penalty_weight)
-
-                    rank_v_all.append((C_i, ncell_i, slice_left_i, result.x[0]))
-                    rank_w_all.append((C_i, ncell_i, slice_left_i, result.x[1]))
-
-                # Gather results from all ranks on the root rank
-                gathered_v_all = self.comm.gather(rank_v_all, root=self.root)
-                gathered_w_all = self.comm.gather(rank_w_all, root=self.root)
-                # Combine results on the root rank
-                if self.rank == self.root:
-                    for rank_v, rank_w in zip(gathered_v_all, gathered_w_all):
-                        for (C_i, ncell_i, slice_left_i, v_value) in rank_v:
-                            self.v_all[C_i, ncell_i, slice_left_i] = v_value
-                        for (C_i, ncell_i, slice_left_i, w_value) in rank_w:
-                            self.w_all[C_i, ncell_i, slice_left_i] = w_value
-                # Broadcast to all ranks
-                self.v_all = self.comm.bcast(self.v_all, root=self.root)
-                self.w_all = self.comm.bcast(self.w_all, root=self.root)
-
-        # Get bins of initial tau for phase plotting per (eps_tau, C)
-        tau_range = 50 - tau_sorted[0]
-        self.plotting_tau_bw = tau_range / self.plotting_tau_bw_ratio
-        self.plotting_tau_bin_edges = np.arange(tau_sorted[0], 50, self.plotting_tau_bw)
-        self.plotting_tau_bin_cntrs = np.array([edge + self.plotting_tau_bw/2 for edge in self.plotting_tau_bin_edges])
-
-        # Store the mean tau in each preset slice for reference later
-        self.tau_means_ref = []
-        for ncell in self.ncell_vec:
-            tau_means_ncell = np.ones(len(self.slice_left_all)) * np.nan
-            self.slice_left_max = self.slice_right_max - ncell
-            for slice_i, slice_left in enumerate(self.slice_left_all):
-                if slice_left <= self.slice_left_max:
-                    tau_means_ncell[slice_i] = np.mean(tau_sorted[slice_left:slice_left+ncell])
-            self.tau_means_ref.append(tau_means_ncell)
+            self.generate_scale_params(tau_sorted)
 
         if self.rank == self.root:
             # Save all state variables
@@ -508,6 +444,68 @@ class Phase:
             self.phase_xs = np.ones((
                                     len(self.C_vec), len(self.ncell_vec), len(self.slice_left_all)
                                    )) * np.nan
+
+    def generate_scale_params(self, tau_sorted):
+        # Generate tauc scaling parameters, if needed
+        check1 = os.path.isfile(self.data_dir + f"/v_all_{self.tauc_method}.npy")
+        check2 = os.path.isfile(self.data_dir + f"/w_all_{self.tauc_method}.npy")
+        if np.all([check1, check2, self.overwrite_scaleparams == False]):
+            generate_params = False
+            self.v_all = np.load(self.data_dir + f"/v_all_{self.tauc_method}.npy")
+            self.w_all = np.load(self.data_dir + f"/w_all_{self.tauc_method}.npy")
+        else:
+            generate_params = True
+
+        if generate_params:
+            if self.rank != self.root:
+                self.v_all = None
+                self.w_all = None
+            else:
+                print(f"Generating scaling parameters for {self.tauc_method}")
+                self.v_all = np.ones((len(self.C_vec), len(self.ncell_vec), len(self.slice_left_all))) * np.nan
+                self.w_all = np.ones((len(self.C_vec), len(self.ncell_vec), len(self.slice_left_all))) * np.nan
+
+            # Distribute work among ranks
+            task_list = list(product(enumerate(self.C_vec), enumerate(self.ncell_vec), enumerate(self.slice_left_all)))
+            rank_tasks = np.array_split(task_list, self.num_procs)[self.rank]  # Split tasks across ranks
+            # Each rank performs optimization on its assigned subset of tasks
+            rank_v_all = []
+            rank_w_all = []
+
+            for (C_i, C), (ncell_i, ncell), (slice_left_i, slice_left) in rank_tasks:
+                self.slice_left_max = self.slice_right_max - ncell
+                if slice_left > self.slice_left_max: continue
+
+                tau_slice = tau_sorted[slice_left:slice_left+ncell]
+                '''Try translating the initial tau so they start at zero'''
+                tau_slice = tau_slice - min(tau_slice)
+
+                if self.tauc_method == "initlinear":
+                    x0 = [-0.003, 900]
+                    result = self.maximize_preflat(self.tauc_method, C, ncell, tau_slice, x0=x0)
+                elif self.tauc_method == "initinverse":
+                    penalty_weight = 0.05
+                    result = self.maximize_preflat(self.tauc_method, C, ncell, tau_slice, penalty_weight=penalty_weight)
+                    while not result.success:
+                        penalty_weight *= 0.5
+                        result = self.maximize_preflat(self.tauc_method, C, ncell, tau_slice, penalty_weight=penalty_weight)
+
+                rank_v_all.append((C_i, ncell_i, slice_left_i, result.x[0]))
+                rank_w_all.append((C_i, ncell_i, slice_left_i, result.x[1]))
+
+            # Gather results from all ranks on the root rank
+            gathered_v_all = self.comm.gather(rank_v_all, root=self.root)
+            gathered_w_all = self.comm.gather(rank_w_all, root=self.root)
+            # Combine results on the root rank
+            if self.rank == self.root:
+                for rank_v, rank_w in zip(gathered_v_all, gathered_w_all):
+                    for (C_i, ncell_i, slice_left_i, v_value) in rank_v:
+                        self.v_all[C_i, ncell_i, slice_left_i] = v_value
+                    for (C_i, ncell_i, slice_left_i, w_value) in rank_w:
+                        self.w_all[C_i, ncell_i, slice_left_i] = w_value
+            # Broadcast to all ranks
+            self.v_all = self.comm.bcast(self.v_all, root=self.root)
+            self.w_all = self.comm.bcast(self.w_all, root=self.root)
 
     def compute_tauc_slice(self, x, method, tau_slice):
         if method == 'initlinear':
@@ -624,7 +622,7 @@ class Phase:
             # Insert back into tau_expect
             self.tau_expect[i, slice_indices] = replacement_tau
 
-        # 6. Clip with min_tau
+        # Clip with min_tau
         self.tau_expect = np.where(self.tau_expect < self.min_tau, self.min_tau, self.tau_expect)
 
 
@@ -685,31 +683,28 @@ class Phase:
         # Get expected value of metric
         '''Replace any tau > max simulated with max tau, similar approximation as before'''
         tau_with_cutoff = np.where(self.tau_expect > self.tau_vec.max(), self.tau_vec.max(), self.tau_expect)
-        metric_exp_dist = self.metric_exp_spl(tau_with_cutoff)
+        metric_dist = self.metric_spl(tau_with_cutoff)
         if self.metric == 'P_s':
             # Metric value is bounded by zero, anything lt zero is an interpolation error
-            metric_exp_dist[metric_exp_dist < 0] = 0.0
-            if np.any(metric_exp_dist < 0): sys.exit(f"metric_expect is negative ({self.metric_expect}), exiting!")
-        self.metric_expect = np.mean(metric_exp_dist)
+            metric_dist[metric_dist < 0] = 0.0
+            if np.any(metric_dist < 0): sys.exit(f"metric_expect is negative ({self.metric_expect}), exiting!")
+        self.metric_expect = np.mean(metric_dist)
 
-    def calculate_metric_gte(self, vectorized=False):
+    def calculate_metric_gte(self, threshold, vectorized=False):
         # Get density of metric_k values above some threshold
         '''Replace any tau > max simulated with max tau, similar approximation as before'''
         tau_with_cutoff = np.where(self.tau_expect > self.tau_vec.max(), self.tau_vec.max(), self.tau_expect)
-        metric_exp_dist = self.metric_exp_spl(tau_with_cutoff)
+        metric_dist = self.metric_spl(tau_with_cutoff)
         if self.metric == 'P_s':
-            threshold = 0.5
+            #threshold = 0.5
             # Metric value is bounded by zero, anything lt zero is an interpolation error
-            metric_exp_dist[metric_exp_dist < 0] = 0.0
-            if np.any(metric_exp_dist < 0): sys.exit(f"metric_expect is negative ({self.metric_expect}), exiting!")
-        elif self.metric == 'lambda_s':
-            threshold = 0.975
-            #threshold = 0.994
+            metric_dist[metric_dist < 0] = 0.0
+            if np.any(metric_dist < 0): sys.exit(f"metric_expect is negative ({self.metric_expect}), exiting!")
         '''Still calling this metric_expect for now but should change this to metapop_metric or something'''
         if vectorized:
-            self.metric_expect = np.count_nonzero(metric_exp_dist >= threshold, axis=1) / self.ncell_tot
+            self.metric_expect = np.count_nonzero(metric_dist >= threshold, axis=1) / self.ncell_tot
         else:
-            self.metric_expect = np.count_nonzero(metric_exp_dist >= threshold) / self.ncell_tot
+            self.metric_expect = np.count_nonzero(metric_dist >= threshold) / self.ncell_tot
 
     def process_samples(self, C, ncell):
         '''is relocating these indicies significantly slowing things down?'''
@@ -789,8 +784,24 @@ class Phase:
                 else:
                     handle[data_key] = self.phase
     
-    def plot_phase_slice(self, C, xs=False):
+    def plot_phase_slice(self, C, tau_sorted, xs=False):
         if self.rank == self.root:
+            # Get bins of initial tau for phase plotting per (eps_tau, C)
+            tau_range = 50 - tau_sorted[0]
+            self.plotting_tau_bw = tau_range / self.plotting_tau_bw_ratio
+            self.plotting_tau_bin_edges = np.arange(tau_sorted[0], 50, self.plotting_tau_bw)
+            self.plotting_tau_bin_cntrs = np.array([edge + self.plotting_tau_bw/2 for edge in self.plotting_tau_bin_edges])
+
+            # Store the mean tau in each preset slice for reference later
+            self.tau_means_ref = []
+            for ncell in self.ncell_vec:
+                tau_means_ncell = np.ones(len(self.slice_left_all)) * np.nan
+                self.slice_left_max = self.slice_right_max - ncell
+                for slice_i, slice_left in enumerate(self.slice_left_all):
+                    if slice_left <= self.slice_left_max:
+                        tau_means_ncell[slice_i] = np.mean(tau_sorted[slice_left:slice_left+ncell])
+                self.tau_means_ref.append(tau_means_ncell)
+
             C_i = np.nonzero(self.C_vec == C)[0][0]
             phase_slice = self.phase[C_i, :, :]
             if xs:

@@ -4,6 +4,7 @@ from matplotlib import cm
 from matplotlib import pyplot as plt
 from matplotlib import rc
 from matplotlib.gridspec import GridSpec
+import matplotlib.ticker as mticker
 from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 import pickle
 import signac as sg
@@ -27,12 +28,7 @@ c = 1.42
 with sg.H5Store('shared_data.h5').open(mode='r') as sd:
     b_vec = np.array(sd['b_vec'])
 tau_vec = b_vec * gamma(1+1/c)
-#tau_step = np.diff(tau_vec)[0] / 2
-#tau_edges = np.concatenate(([0], np.arange(tau_step/2, tau_vec[-1]+tau_step, tau_step)))
 tauc_methods = ["flat"]
-#C_i_vec = [0,1,2,4,6]
-#C_i_vec = [0,2,4,6]
-C_i_vec = [0, 1]
 results_pre = 'gte_thresh' 
 #results_pre = 'distribution_avg' 
 
@@ -49,14 +45,18 @@ rc('font', serif=['Computer Modern Sans Serif'] + plt.rcParams['font.serif'])
 rc('font', weight='light')
 histlw = 5.5
 cbar_lpad = 30
-dpi = 50
+#dpi = 50
+dpi = 200
 
 # Function to read in things specific to given results as global variables
 def set_globals(results_pre):
     if metric == 'lambda_s':
-        globals()['metric_lab'] = r'$\lambda_{meta}$'
-        globals()['rob_metric_lab'] = r'$\lambda_{meta}^*$'
-        globals()['mean_metric_lab'] = r'$<\lambda>$'
+        #globals()['metric_lab'] = r'$\lambda_{meta}$'
+        #globals()['rob_metric_lab'] = r'$\lambda_{meta}^*$'
+        #globals()['mean_metric_lab'] = r'$<\lambda>$'
+        globals()['metric_lab'] = r'$S$'
+        globals()['rob_metric_lab'] = r'$S^*$'
+        globals()['mean_metric_lab'] = r'$\bar{\lambda}(\tau)$'
     if metric == 'P_s':
         globals()['metric_lab'] = r'$S_{meta}$'
         globals()['rob_metric_lab'] = r'$\S_{meta}^*$'
@@ -66,16 +66,15 @@ def set_globals(results_pre):
         globals()['rob_metric_lab'] = r'$\s_{meta}^*$'
         globals()['mean_metric_lab'] = r'$<s>$'
     globals()['fn_prefix'] = f"{results_pre}/data/Aeff_{Aeff}/tfinal_{t_final}/metric_{metric}/"
-    globals()['fig_prefix'] = f"{results_pre}/figs/Aeff_{Aeff}/tfinal_{t_final}/metric_{metric}/"
-    #globals()['fig_prefix'] = os.path.join('/','Volumes', 'Macintosh HD', 'Users', 'patrick', 
-    #                                       'Google Drive', 'My Drive', 'Research', 'Regan', 'Figs/')
+    #globals()['fig_prefix'] = f"{results_pre}/figs/Aeff_{Aeff}/tfinal_{t_final}/metric_{metric}/"
+    globals()['fig_prefix'] = os.path.join('/','Volumes', 'Macintosh HD', 'Users', 'patrick', 
+                                           'Google Drive', 'My Drive', 'Research', 'Regan', 'Figs/')
 
     # Load things saved specific to these results
-    with open(fn_prefix + 'metric_data.pkl', 'rb') as handle:
-        globals()['metric_data'] = pickle.load(handle)
-    globals()['all_metric'] = metric_data['all_metric']
-    globals()['all_tau'] = np.load(f"{results_pre}/data/Aeff_{Aeff}/tfinal_{t_final}/all_tau.npy")
+    globals()['metric_all'] = np.load(f"{results_pre}/data/Aeff_{Aeff}/tfinal_{t_final}/metric_{metric}/metric_all.npy")
+    globals()['tau_all'] = np.load(f"{results_pre}/data/Aeff_{Aeff}/tfinal_{t_final}/tau_all.npy")
     globals()['C_vec'] = np.load(fn_prefix + "C_vec.npy")
+    globals()['C_i_vec'] = np.arange(len(C_vec))[::2]
     globals()['ncell_vec'] = np.load(fn_prefix + "ncell_vec.npy")
     globals()['slice_left_all'] = np.load(fn_prefix + "slice_left_all.npy")
     eps_axes = {}
@@ -149,20 +148,42 @@ ax1.set_yticks([])
 
 #### P(S) vs tau ####
 set_globals(results_pre)
-tau_diffs = np.diff(tau_vec)
+
+# Read in all splined interpolations of metric(tau)
+with open(fn_prefix + "/metric_spl_all.pkl", "rb") as handle:
+    metric_spl_all = pickle.load(handle)
+
+tau_plot = np.linspace(tau_vec[0], tau_vec[-1], 90)
+
+tau_diffs = np.diff(tau_plot)
 tau_step = tau_diffs[1]
 tau_edges = np.concatenate((
-                [tau_vec[0]],
+                [tau_plot[0]],
                 [tau_diffs[0]/2],
-                np.arange(tau_vec[1]+tau_step/2, tau_vec[-1]+tau_step, tau_step)
+                np.arange(tau_plot[1]+tau_step/2, tau_plot[-1]+tau_step, tau_step)
                            ))
-min_edge_i = 2
-metric_min = min(all_metric[(all_tau >= tau_edges[min_edge_i]) & (all_tau < tau_edges[min_edge_i+1])])
-metric_edges = np.linspace(metric_min, all_metric.max()*1.005, 50)
+
+project = sg.get_project()
+jobs = project.find_jobs({'doc.simulated': True, 'Aeff': Aeff, 
+                          't_final': t_final, 'method': 'discrete'})
+
+tau_plot_all = np.tile(tau_plot, len(jobs))
+metric_interp_all = np.array([])
+
+for job_i, job in enumerate(jobs):
+    metric_spl = metric_spl_all[job.sp.demographic_index]
+    metric_interp_all = np.append(metric_interp_all, metric_spl(tau_plot))
+
+min_edge_i = np.argmin(np.abs(tau_edges - 10))
+
+metric_min = min(metric_interp_all[(tau_plot_all >= tau_edges[min_edge_i]) & (tau_plot_all < tau_edges[min_edge_i+1])])
+metric_edges = np.linspace(metric_min, metric_interp_all.max()*1.005, 60)
 cmap = copy.copy(cm.YlGn)
-#cmap.set_bad(cmap(0.0))
-im = ax3.hist2d(all_tau, all_metric, bins=[tau_edges, metric_edges],
-                 norm=colors.LogNorm(vmax=int(len(all_metric)/len(b_vec))),
+num_samples = len(jobs)
+norm = colors.LogNorm(vmin=1,vmax=num_samples)
+cmap.set_bad('white')
+im = ax3.hist2d(tau_plot_all, metric_interp_all, bins=[tau_edges, metric_edges],
+                 norm=norm,
                  density=False,
                 cmap=cmap)
 
@@ -171,34 +192,28 @@ cbar_ax = inset_axes(ax3, width="5%", height="50%", loc='center',
                      bbox_to_anchor=(0.5, -0.2, 0.55, 1.1),
                      bbox_transform=ax3.transAxes, borderpad=0)
 sm = cm.ScalarMappable(cmap=cmap, norm=norm)
-cbar = fig.colorbar(sm, cax=cbar_ax, orientation="vertical", ticks=[0, 0.25, 0.5, 0.75, 1.])
+ticks = np.array([1,10, 100, 500])
+ticklabels = ticks/num_samples
+cbar = fig.colorbar(sm, cax=cbar_ax, orientation="vertical", ticks=ticks, 
+                   format=mticker.FixedFormatter(ticklabels)) 
 
-# Make interpolation function for <metric> wrt tau
-metric_expect_vec = np.ones(tau_vec.size) * np.nan
-for tau_i, tau in enumerate(tau_vec):
-    tau_filt = (all_tau == tau)
-    metric_slice = all_metric[tau_filt]
-    metric_expect_vec[tau_i] = np.mean(metric_slice)
-t = tau_vec[2:-2:2] 
-k = 3
-t = np.r_[(tau_vec[1],)*(k+1), t, (tau_vec[-1],)*(k+1)]
-spl = make_lsq_spline(tau_vec[1:], metric_expect_vec[1:], t, k)
-
-# Overplot spline and label axes, etc
+# Plot interpolation function for <metric> wrt tau
+spl = metric_spl_all[0]
 tau_samples = np.arange(0, 140, 2)
 ax3.plot(tau_samples, spl(tau_samples), color='k')
-dot_spacing = 2
-ax3.scatter(tau_vec[1::dot_spacing], spl(tau_vec[1::dot_spacing]), color='k')
+#dot_spacing = 2
+#ax3.scatter(tau_vec[1::dot_spacing], spl(tau_vec[1::dot_spacing]), color='k')
 if metric == 'P_s':
     cbar.set_label(rf'frequency of $S$ given ${{\tau}}$', rotation=-90, labelpad=cbar_lpad)
     ax3.set_ylabel(rf'simulated survival probability $S$')
 elif metric == 'lambda_s':
-    cbar.set_label(rf'frequency of $\lambda$ given ${{\tau}}$', rotation=-90, labelpad=cbar_lpad)
+    cbar.set_label(rf'frequency of $\lambda(\tau)$', rotation=-90, labelpad=cbar_lpad)
     ax3.set_ylabel(rf'simulated growth rate $\lambda$')
 elif metric == 's':
     ax3.set_ylabel(rf's')
-ax3.plot([], [], marker='o', color='k', label=mean_metric_lab)
+ax3.plot([], [], color='k', label=mean_metric_lab)
 ax3.legend(bbox_to_anchor=(0.2, -0.05, 0.5, 0.5), fontsize=21)
+
 ax3.set_ylim(metric_edges[np.nonzero(im[0][min_edge_i])[0].min()], max(metric_edges))
 ax3.set_xlim(tau_edges[min_edge_i], max(tau_edges))
 ax3.set_xlabel(r'average fire return interval $\tau$')
@@ -226,7 +241,6 @@ fig.savefig(fig_prefix + 'fig1_pre.svg', bbox_inches='tight')
 ################################################################
 
 # Initialize figure
-#fig, axes = plt.subplots(2, 2, figsize=np.array([7.,5])*2.5)
 fig = plt.figure(figsize=np.array([7.75, 5])*2.5)
 gs = GridSpec(3, 2, figure=fig, width_ratios=[1,1], height_ratios=[1.5,1,1])
 ax1 = fig.add_subplot(gs[0, 0]) 
@@ -260,8 +274,8 @@ if metric == 'P_s':
 else:
     xticks = [0.9, 0.95, 1]
     #xticks = np.round(np.arange(0.9, 1.02, 0.02), 3)
-    axes[0,0].set_xlim(0.89,1.0+bin_step)
-    axes[0,0].set_xlabel(rf"average stochastic growth rate {mean_metric_lab}")
+    axes[0,0].set_xlim(min(metric_interp),1.0+bin_step)
+    axes[0,0].set_xlabel(rf"average stochastic growth rate, {mean_metric_lab}")
 # Fill in area gte thresh
 if metric == 'P_s':
     thresh = 0.5
@@ -339,7 +353,7 @@ axes[0,1].set_yticks([])
 #axes[0,1].set_ylabel(r"$\tau$ frequency within range")
 axes[0,1].set_ylabel(r"$\tau$ frequency")
 axes[0,1].set_xticks(np.arange(20,100,20).astype(int))
-axes[0,1].set_xlabel(r"average fire return interval $\tau$")
+axes[0,1].set_xlabel(r"average fire return interval, $\tau$")
 #axes[0,1].set_xlim(15, 81);
 axes[0,1].set_xlim(15, xmax);
 ########
@@ -373,9 +387,10 @@ colormap = copy.copy(cm.RdPu_r)
 sm = cm.ScalarMappable(cmap=colormap, norm=norm)
 bar_colors = colormap(norm(c_vec))
 bar = axes[1,0].bar(np.arange(C_vec.size), plot_vec, color=bar_colors, width=width)
-axes[1,0].set_ylim(meta_metric_nochange, 1.02*np.max(plot_vec))
+#axes[1,0].set_ylim(meta_metric_nochange, 1.02*np.max(plot_vec))
+axes[1,0].set_ylim(0, 1.02*np.max(plot_vec))
 yticks = np.arange(0., 1.2, 0.2)
-axes[1,0].set_yticks(yticks[yticks >= meta_metric_nochange])
+axes[1,0].set_yticks(yticks)#[yticks >= meta_metric_nochange])
 axes[1,0].set_ylabel(fr"maximum {metric_lab}")
 xtick_spacing = 2
 #xticks = np.arange(1, len(C_vec)+1, xtick_spacing)
@@ -387,8 +402,11 @@ else:
     xtick_labels = np.round((C_vec/(ncell_tot))[0::xtick_spacing], 1)
 #xtick_labels = np.round((C_vec/(ncell_tot))[0::xtick_spacing], 1)
 axes[1,0].set_xticks(xticks, labels=xtick_labels);
-axes[1,0].set_xlabel(r"$\hat{\tau}$ if spread over entire range ${C}~/~n_{tot}$")
+axes[1,0].set_xlabel(r"$\hat{\tau}$ if spread over entire range, ${R}~/~n_{tot}$")
 axes[1,0].set_xlim(-(width/2)*1.4, len(C_vec)-1+((width/2)*1.4))
+# Plot baseline value
+axes[1,0].axhline(meta_metric_nochange, ls=':', label=f'baseline {metric_lab}', c='k')
+axes[1,0].legend()
 ########
 
 #### OPTIMA ACROSS ROBUSTNESS REQUIREMENTS ####
@@ -420,12 +438,17 @@ for line_i, C_i in enumerate(C_i_samples):
                         c=c_vec[::samp_spacing], marker=all_markers[line_i])#, s=60)
     #scatter = axes[1,1].scatter(rob_thresh_vec[::samp_spacing], plot_vec[::samp_spacing], cmap=colormap, norm=normalize,
     #                    c=c_vec[::samp_spacing], marker=all_markers[line_i])#, s=60)
-    axes[1,1].scatter([], [], label=fr"$C~/~n_{{tot}}=${np.round(C_vec[C_i]/ncell_tot, 1)}",
+    axes[1,1].scatter([], [], label=fr"$R~/~n_{{tot}}=${np.round(C_vec[C_i]/ncell_tot, 1)}",
                c='black', marker=all_markers[line_i])
-axes[1,1].set_xlabel(fr"required robustness $\omega$")
+axes[1,1].axhline(meta_metric_nochange, ls=':', c='k')
+axes[1,1].set_xlabel(fr"robustness to uncertainty, $\omega$")
 axes[1,1].set_ylabel(f"maximum {rob_metric_lab}")
 handles, labels = axes[1,1].get_legend_handles_labels()
-axes[1,1].legend(handles[::-1], labels[::-1])
+axes[1,1].legend(handles[::-1], labels[::-1], fontsize=17)
+#axes[1,1].set_ylim(meta_metric_nochange, 1)
+axes[1,1].set_ylim(0, 1)
+yticks = np.arange(0., 1.2, 0.2)
+axes[1,1].set_yticks(yticks)
 ########
 
 # Add colorbar on separate axis
@@ -441,7 +464,8 @@ fig.savefig(fig_prefix + 'fig2_pre.svg', bbox_inches='tight')
 cmap = copy.copy(cm.twilight_shifted)
 vmin = -1; vmax = 1
 norm = colors.Normalize(vmin=vmin, vmax=vmax)
-for C_i in C_i_vec:
+#for C_i in C_i_vec:
+for C_i in np.arange(len(C_vec)):
     tauhat_min = np.round(C_vec[C_i]/ncell_tot, 2)
     fig = plt.figure(figsize=np.array([6.8, 6])*2.)
     gs = GridSpec(3, 4, figure=fig, width_ratios=[2, 2, 1.1, 1.1], height_ratios=[1, 1, 1])

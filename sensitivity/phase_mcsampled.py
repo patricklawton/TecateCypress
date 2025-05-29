@@ -9,6 +9,7 @@ import timeit
 from itertools import product
 import os
 import h5py
+import pickle
 
 rng = np.random.default_rng()
 
@@ -29,32 +30,49 @@ constants.update({'final_max_tau': np.nan})
 constants['meta_metric'] = 'gte_thresh'
 constants.update({'metric': 'lambda_s'})
 constants.update({'tauc_method': 'flat'})
-constants.update({'overwrite_metrics': False}) 
+constants.update({'overwrite_metrics': True}) 
 constants['overwrite_results'] = True
-
-constants['plotting_tau_bw_ratio'] = 30 #For binning initial tau (with uncertainty) in phase slice plots
+metric_thresh = 0.975 # Threshold of pop metric value used for calculating meta metric
 
 # Get list of samples for each parameter
-constants['tauc_min_samples'] = np.array([5.0, 9.0])
-constants['ncell_samples'] = 15
-constants['slice_samples'] = 30
+#constants['tauc_min_samples'] = np.array([3,5,7,9.0,11])
+constants['tauc_min_samples'] = np.arange(1, 17, 2)
+#constants['ncell_samples'] = 15
+#constants['slice_samples'] = 30
+constants['ncell_samples'] = 50
+constants['slice_samples'] = 75
 
 # Start timer to track runtime
 start_time = timeit.default_timer()
 
 # Define ordered list of parameter keys
 param_keys = ['C', 'ncell', 'slice_left',
-              'mu_tau', 'sigm_tau', 'mu_tauc', 'sigm_tauc']
+              'mu_tau', 'sigm_tau', 'mu_tauc', 'sigm_tauc', 'demographic_index']
 
 # Initialize "Phase" instance for processing samples
 pproc = Phase(**constants)
 pproc.initialize()
 pproc.init_strategy_variables()
-assert pproc.metric_exp_spl(pproc.min_tau) > 0
 
+# Read in all splined interpolations of metric(tau)
+with open(pproc.data_dir + "/metric_spl_all.pkl", "rb") as handle:
+    metric_spl_all = pickle.load(handle)
+
+# Population full list of parameter combinations 'x_all'
 if pproc.rank != pproc.root:
     x_all = None
+    fixed_metric_mask = None
 else:
+    # Store indices of demographic samples that will have a fixed value of the metapop metric
+    # This occurs for the gte_thresh metric when metric(tau) < thresh for all tau
+    fixed_metric_mask = np.full(len(metric_spl_all), False)
+    tau_test = np.linspace(pproc.min_tau, pproc.final_max_tau, 1000)
+    for demographic_index, metric_spl in metric_spl_all.items():
+        # Check that spline lower bound makes sense
+        assert metric_spl(pproc.min_tau) > 0
+        if np.all(tau_test < metric_thresh) and (pproc.metric == 'gte_thresh'):
+            fixed_metric_mask[demographic_index] = True
+
     # Theoretical (or ad-hoc) maxima/minima for parameters
     minima = {
         # 'C': 5.*pproc.ncell_tot,
@@ -63,7 +81,8 @@ else:
         'mu_tau': -10.,
         'sigm_tau': 0.,
         'mu_tauc': -10.,
-        'sigm_tauc': 0.
+        'sigm_tauc': 0.,
+        'demographic_index': 1
     }
     maxima = {
         # 'C': 5.*pproc.ncell_tot,
@@ -72,7 +91,8 @@ else:
         'mu_tau': 6.,
         'sigm_tau': 10.,
         'mu_tauc': 6.,
-        'sigm_tauc': 10.
+        'sigm_tauc': 10.,
+        'demographic_index': len(metric_spl_all) - 1
     }
 
     ### Initialize strategy combinations ### 
@@ -99,8 +119,8 @@ else:
     ### Add on samples of uncertain samples ###
     # First define the number of eps samples per strategy combination
     #num_eps_combs = 225
-    num_eps_combs = 500
-    #num_eps_combs = 100
+    #num_eps_combs = 500
+    num_eps_combs = 1000
     np.save(pproc.data_dir + '/num_eps_combs.npy', num_eps_combs)
     num_combs_tot = num_strategy_combs * num_eps_combs
 
@@ -108,7 +128,7 @@ else:
     x_all = np.tile(x_strategy, (num_eps_combs, 1))
 
     # Fill columns with samples of uncertain parameters
-    uncertain_params = ['mu_tau', 'sigm_tau', 'mu_tauc', 'sigm_tauc']
+    uncertain_params = ['mu_tau', 'sigm_tau', 'mu_tauc', 'sigm_tauc', 'demographic_index']
 
     # Add columns for uncertain param samples
     x_all = np.hstack((
@@ -133,7 +153,7 @@ else:
         if _type == float:
             samples = rng.uniform(_min, _max, num_combs_tot-num_strategy_combs)
         elif _type == int:
-            samples = rng.integers(_min, _max, num_combs_tot-num_strategy_combs)
+            samples = rng.integers(_min, _max, num_combs_tot-num_strategy_combs, endpoint=True)
         x_all[num_strategy_combs:, uncertain_param_i] = samples
 
     # Shuffle to give all procs ~ the same amount of work
@@ -144,6 +164,7 @@ else:
 
 # Broadcast samples to all ranks
 x_all = pproc.comm.bcast(x_all, root=pproc.root)
+fixed_metric_mask = pproc.comm.bcast(fixed_metric_mask, root=pproc.root)
 
 # Set number of samples as instance attribute
 pproc.total_samples = x_all.shape[0]
@@ -152,6 +173,7 @@ pproc.total_samples = x_all.shape[0]
 pproc.prep_rank_samples()
 if pproc.rank == pproc.root:
     pbar = tqdm(total=pproc.rank_samples, position=0, dynamic_ncols=True, file=sys.stderr)
+    pbar_step = int(pproc.rank_samples/100)
 
 # Generate metric values for training
 for rank_sample_i, x_i in enumerate(range(pproc.rank_start, pproc.rank_start + pproc.rank_samples)):
@@ -161,10 +183,20 @@ for rank_sample_i, x_i in enumerate(range(pproc.rank_start, pproc.rank_start + p
     for i, param in enumerate(param_keys):
         # Assign parameter values for this sample
         if i in [1,2]:
-            _type = int
+            #_type = int
+            param_val = int(x[i])
+        elif param == 'demographic_index':
+            # Retrieve the spline function for this demographic sample
+            demographic_index = int(x[i])
+            param_val = metric_spl_all[demographic_index]
+            param = 'metric_spl'
         else:
-            _type = float
-        setattr(pproc, param, x[i].astype(_type))
+            #_type = float
+            param_val = float(x[i])
+        setattr(pproc, param, param_val)
+
+    ## Skip parameter comb if meta metric doesn't change; fill these in later
+    #if fixed_metric_mask[demographic_index]: continue
 
     # Reset tau values to baseline
     pproc.tau_expect = pproc.tau_flat
@@ -178,12 +210,13 @@ for rank_sample_i, x_i in enumerate(range(pproc.rank_start, pproc.rank_start + p
 
     # Compute and store metric value
     if pproc.meta_metric == 'gte_thresh':
-        pproc.calculate_metric_gte()
+        pproc.calculate_metric_gte(metric_thresh)
     pproc.metric_expect_rank[rank_sample_i] = pproc.metric_expect
 
     # Update progress (root only)
-    if (pproc.rank == pproc.root) and (rank_sample_i % 500 == 0):
-        pbar.update(500); print()
+    #if (pproc.rank == pproc.root) and (rank_sample_i % 500 == 0):
+    if (pproc.rank == pproc.root) and (rank_sample_i % pbar_step == 0):
+        pbar.update(pbar_step); print()
 
 # Collect data across ranks
 # Initialize data to store sample means across all ranks
@@ -200,14 +233,20 @@ pproc.comm.Gatherv(pproc.xs_means_rank, sampled_xs_means, root=pproc.root)
 
 if pproc.rank == pproc.root:
     pbar.close()
-    print(f"{timeit.default_timer() - start_time} seconds")
-    meta_metric_all = sampled_metric_expect[:,None]
-    np.save(pproc.data_dir + '/meta_metric_all.npy', meta_metric_all)
-    #plt.hist(meta_metric_all);
-    #plt.show()
 
     # Compute meta metric under no change for reference later
     pproc.tau_expect = pproc.tau_flat
+    pproc.metric_spl = metric_spl_all[0]
     if pproc.meta_metric == 'gte_thresh':
-        pproc.calculate_metric_gte()
-    np.save(pproc.data_dir + '/meta_metric_nochange.npy', pproc.metric_expect)
+        pproc.calculate_metric_gte(metric_thresh)
+    meta_metric_nochange = pproc.metric_expect
+    np.save(pproc.data_dir + '/meta_metric_nochange.npy', meta_metric_nochange)
+
+    ## Put in baseline meta metric values where relevant
+    #demo_col_i = np.nonzero(param_keys == 'demographic_index')[0][0]
+    #mask = ...
+    #sampled_metric_expect[fixed_metric_mask] = meta_metric_nochange
+
+    print(f"{timeit.default_timer() - start_time} seconds")
+    meta_metric_all = sampled_metric_expect[:,None]
+    np.save(pproc.data_dir + '/meta_metric_all.npy', meta_metric_all)
