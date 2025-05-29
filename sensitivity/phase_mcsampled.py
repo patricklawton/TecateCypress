@@ -35,9 +35,12 @@ constants['overwrite_results'] = True
 metric_thresh = 0.975 # Threshold of pop metric value used for calculating meta metric
 
 # Get list of samples for each parameter
-constants['tauc_min_samples'] = np.array([3,5,7,9.0,11])
-constants['ncell_samples'] = 15
-constants['slice_samples'] = 30
+#constants['tauc_min_samples'] = np.array([3,5,7,9.0,11])
+constants['tauc_min_samples'] = np.arange(1, 17, 2)
+#constants['ncell_samples'] = 15
+#constants['slice_samples'] = 30
+constants['ncell_samples'] = 50
+constants['slice_samples'] = 75
 
 # Start timer to track runtime
 start_time = timeit.default_timer()
@@ -116,8 +119,8 @@ else:
     ### Add on samples of uncertain samples ###
     # First define the number of eps samples per strategy combination
     #num_eps_combs = 225
-    num_eps_combs = 500
-    #num_eps_combs = 100
+    #num_eps_combs = 500
+    num_eps_combs = 1000
     np.save(pproc.data_dir + '/num_eps_combs.npy', num_eps_combs)
     num_combs_tot = num_strategy_combs * num_eps_combs
 
@@ -170,6 +173,7 @@ pproc.total_samples = x_all.shape[0]
 pproc.prep_rank_samples()
 if pproc.rank == pproc.root:
     pbar = tqdm(total=pproc.rank_samples, position=0, dynamic_ncols=True, file=sys.stderr)
+    pbar_step = int(pproc.rank_samples/100)
 
 # Generate metric values for training
 for rank_sample_i, x_i in enumerate(range(pproc.rank_start, pproc.rank_start + pproc.rank_samples)):
@@ -210,8 +214,9 @@ for rank_sample_i, x_i in enumerate(range(pproc.rank_start, pproc.rank_start + p
     pproc.metric_expect_rank[rank_sample_i] = pproc.metric_expect
 
     # Update progress (root only)
-    if (pproc.rank == pproc.root) and (rank_sample_i % 500 == 0):
-        pbar.update(500); print()
+    #if (pproc.rank == pproc.root) and (rank_sample_i % 500 == 0):
+    if (pproc.rank == pproc.root) and (rank_sample_i % pbar_step == 0):
+        pbar.update(pbar_step); print()
 
 # Collect data across ranks
 # Initialize data to store sample means across all ranks
