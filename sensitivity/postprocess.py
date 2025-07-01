@@ -87,6 +87,9 @@ for results_pre in results_pre_labs:
                 counts = np.count_nonzero(meta_metric_all[indices] >= thresh)
                 robustness = counts / tot_eps_samples
                 allrob[thresh_i, C_i, ncell_i, sl_i] = robustness
+    
+    # Save robustness results to file
+    np.save(fn_prefix + "rob_all.npy", allrob)
         
     # Now find the strategies which optimize robustness per threshold, C combination
     maxrob = np.full((len(rob_thresh_vec), len(C_vec)), np.nan)

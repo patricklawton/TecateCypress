@@ -570,7 +570,7 @@ class Phase:
             tauc_slice = self.compute_tauc_slice([v,w], self.tauc_method, tau_slice_ref)
         
         # Add uncertainty to tauc slice
-        self.generate_eps_tauc(self.mu_tauc, self.sigm_tauc, ncell)
+        self.generate_eps_tauc(self.mu_tauc*tauc, self.sigm_tauc*tauc, ncell)
         tauc_slice = tauc_slice + self.eps_tauc
 
         # Find where tauc will push tau beyond max

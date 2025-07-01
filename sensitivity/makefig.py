@@ -45,8 +45,8 @@ rc('font', serif=['Computer Modern Sans Serif'] + plt.rcParams['font.serif'])
 rc('font', weight='light')
 histlw = 5.5
 cbar_lpad = 30
-#dpi = 50
-dpi = 200
+dpi = 50
+#dpi = 200
 
 # Function to read in things specific to given results as global variables
 def set_globals(results_pre):
@@ -66,15 +66,15 @@ def set_globals(results_pre):
         globals()['rob_metric_lab'] = r'$\s_{meta}^*$'
         globals()['mean_metric_lab'] = r'$<s>$'
     globals()['fn_prefix'] = f"{results_pre}/data/Aeff_{Aeff}/tfinal_{t_final}/metric_{metric}/"
-    #globals()['fig_prefix'] = f"{results_pre}/figs/Aeff_{Aeff}/tfinal_{t_final}/metric_{metric}/"
-    globals()['fig_prefix'] = os.path.join('/','Volumes', 'Macintosh HD', 'Users', 'patrick', 
-                                           'Google Drive', 'My Drive', 'Research', 'Regan', 'Figs/')
+    globals()['fig_prefix'] = f"{results_pre}/figs/Aeff_{Aeff}/tfinal_{t_final}/metric_{metric}/"
+    #globals()['fig_prefix'] = os.path.join('/','Volumes', 'Macintosh HD', 'Users', 'patrick', 
+    #                                       'Google Drive', 'My Drive', 'Research', 'Regan', 'Figs/')
 
     # Load things saved specific to these results
     globals()['metric_all'] = np.load(f"{results_pre}/data/Aeff_{Aeff}/tfinal_{t_final}/metric_{metric}/metric_all.npy")
     globals()['tau_all'] = np.load(f"{results_pre}/data/Aeff_{Aeff}/tfinal_{t_final}/tau_all.npy")
     globals()['C_vec'] = np.load(fn_prefix + "C_vec.npy")
-    globals()['C_i_vec'] = np.arange(len(C_vec))[::2]
+    globals()['C_i_vec'] = np.arange(len(C_vec))
     globals()['ncell_vec'] = np.load(fn_prefix + "ncell_vec.npy")
     globals()['slice_left_all'] = np.load(fn_prefix + "slice_left_all.npy")
     eps_axes = {}

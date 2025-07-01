@@ -30,17 +30,19 @@ constants.update({'final_max_tau': np.nan})
 constants['meta_metric'] = 'gte_thresh'
 constants.update({'metric': 'lambda_s'})
 constants.update({'tauc_method': 'flat'})
-constants.update({'overwrite_metrics': True}) 
+constants.update({'overwrite_metrics': False}) 
 constants['overwrite_results'] = True
 metric_thresh = 0.975 # Threshold of pop metric value used for calculating meta metric
 
 # Get list of samples for each parameter
-#constants['tauc_min_samples'] = np.array([3,5,7,9.0,11])
-constants['tauc_min_samples'] = np.arange(1, 17, 2)
-#constants['ncell_samples'] = 15
-#constants['slice_samples'] = 30
-constants['ncell_samples'] = 50
-constants['slice_samples'] = 75
+constants['tauc_min_samples'] = np.array([9.0])
+#constants['tauc_min_samples'] = np.arange(1, 17, 4)
+#constants['ncell_samples'] = 20
+#constants['slice_samples'] = 40
+#constants['ncell_samples'] = 50
+#constants['slice_samples'] = 75
+constants['ncell_samples'] = 70
+constants['slice_samples'] = 120
 
 # Start timer to track runtime
 start_time = timeit.default_timer()
@@ -80,7 +82,7 @@ else:
         # 'slice_left': int(0.* pproc.ncell_tot),
         'mu_tau': -10.,
         'sigm_tau': 0.,
-        'mu_tauc': -10.,
+        'mu_tauc': -1.0,
         'sigm_tauc': 0.,
         'demographic_index': 1
     }
@@ -90,8 +92,8 @@ else:
         # 'slice_left': int(1.*pproc.ncell_tot),
         'mu_tau': 6.,
         'sigm_tau': 10.,
-        'mu_tauc': 6.,
-        'sigm_tauc': 10.,
+        'mu_tauc': 0.6,
+        'sigm_tauc': 0.5,
         'demographic_index': len(metric_spl_all) - 1
     }
 
@@ -120,7 +122,8 @@ else:
     # First define the number of eps samples per strategy combination
     #num_eps_combs = 225
     #num_eps_combs = 500
-    num_eps_combs = 1000
+    #num_eps_combs = 1000
+    num_eps_combs = 2000
     np.save(pproc.data_dir + '/num_eps_combs.npy', num_eps_combs)
     num_combs_tot = num_strategy_combs * num_eps_combs
 
@@ -202,6 +205,8 @@ for rank_sample_i, x_i in enumerate(range(pproc.rank_start, pproc.rank_start + p
     pproc.tau_expect = pproc.tau_flat
 
     # Add in uncertainty on baseline tau values
+    '''Note that at this stage tau values may become negative; 
+       they are resticted to positive in change_tau_expect'''
     pproc.generate_eps_tau()
     pproc.tau_expect = pproc.tau_flat + pproc.eps_tau
 
@@ -223,13 +228,13 @@ for rank_sample_i, x_i in enumerate(range(pproc.rank_start, pproc.rank_start + p
 sendcounts = np.array(pproc.comm.gather(len(pproc.metric_expect_rank), root=pproc.root))
 if pproc.rank == pproc.root:
     sampled_metric_expect = np.empty(sum(sendcounts))
-    sampled_xs_means = np.ones(sum(sendcounts)) * np.nan
+    #sampled_xs_means = np.ones(sum(sendcounts)) * np.nan
 else:
     sampled_metric_expect = None
-    sampled_xs_means = None
+    #sampled_xs_means = None
 # Now gather data
 pproc.comm.Gatherv(pproc.metric_expect_rank, sampled_metric_expect, root=pproc.root)
-pproc.comm.Gatherv(pproc.xs_means_rank, sampled_xs_means, root=pproc.root)
+#pproc.comm.Gatherv(pproc.xs_means_rank, sampled_xs_means, root=pproc.root)
 
 if pproc.rank == pproc.root:
     pbar.close()
