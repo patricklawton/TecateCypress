@@ -82,11 +82,11 @@ for results_pre in results_pre_labs:
     zero_eps_mask = np.all(x_all[:, 3:] == 0, axis=1)
     for thresh_i, thresh in enumerate(rob_thresh_vec):
         for (C_i, ncell_i, sl_i), indices in filter_dict.items():
-            zeroeps_filt = zero_eps_mask[indices]
-            if np.any(meta_metric_all[indices][zeroeps_filt] >= thresh):
-                counts = np.count_nonzero(meta_metric_all[indices] >= thresh)
-                robustness = counts / tot_eps_samples
-                allrob[thresh_i, C_i, ncell_i, sl_i] = robustness
+            #zeroeps_filt = zero_eps_mask[indices]
+            #if np.any(meta_metric_all[indices][zeroeps_filt] >= thresh):
+            counts = np.count_nonzero(meta_metric_all[indices] >= thresh)
+            robustness = counts / tot_eps_samples
+            allrob[thresh_i, C_i, ncell_i, sl_i] = robustness
     
     # Save robustness results to file
     np.save(fn_prefix + "rob_all.npy", allrob)
