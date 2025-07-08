@@ -41,8 +41,8 @@ constants['tauc_min_samples'] = np.array([9.0])
 #constants['slice_samples'] = 40
 #constants['ncell_samples'] = 50
 #constants['slice_samples'] = 75
-constants['ncell_samples'] = 70
-constants['slice_samples'] = 120
+constants['ncell_samples'] = 40
+constants['slice_samples'] = 75
 
 # Start timer to track runtime
 start_time = timeit.default_timer()
