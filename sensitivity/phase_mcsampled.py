@@ -123,7 +123,7 @@ else:
     #num_eps_combs = 225
     #num_eps_combs = 500
     #num_eps_combs = 1000
-    num_eps_combs = 2000
+    num_eps_combs = 6000
     np.save(pproc.data_dir + '/num_eps_combs.npy', num_eps_combs)
     num_combs_tot = num_strategy_combs * num_eps_combs
 
