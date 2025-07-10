@@ -87,6 +87,8 @@ for results_pre in results_pre_labs:
             counts = np.count_nonzero(meta_metric_all[indices] >= thresh)
             robustness = counts / tot_eps_samples
             allrob[thresh_i, C_i, ncell_i, sl_i] = robustness
+            #else:
+            #    allrob[thresh_i, C_i, ncell_i, sl_i] = 0.0
     
     # Save robustness results to file
     np.save(fn_prefix + "rob_all.npy", allrob)
