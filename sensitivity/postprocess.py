@@ -65,7 +65,8 @@ for results_pre in results_pre_labs:
         tot_eps_samples = np.cumprod([len(axis) for axis in eps_axes.values()])[-1]
 
     # Define range of threshold values for metapop metric
-    rob_thresh_vec = np.linspace(min(meta_metric_all), max(meta_metric_all), 100)
+    #rob_thresh_vec = np.linspace(min(meta_metric_all), max(meta_metric_all), 100)
+    rob_thresh_vec = np.linspace(0, 1, 150)
     np.save(fn_prefix + "rob_thresh_vec.npy", rob_thresh_vec)
 
     # Create a lookup table for parameter combinations
