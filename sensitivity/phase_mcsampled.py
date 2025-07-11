@@ -41,8 +41,8 @@ constants['tauc_min_samples'] = np.array([9.0])
 #constants['slice_samples'] = 40
 #constants['ncell_samples'] = 50
 #constants['slice_samples'] = 75
-constants['ncell_samples'] = 40
-constants['slice_samples'] = 75
+constants['ncell_samples'] = 35
+constants['slice_samples'] = 65
 
 # Start timer to track runtime
 start_time = timeit.default_timer()
@@ -80,11 +80,11 @@ else:
         # 'C': 5.*pproc.ncell_tot,
         # 'ncell': int(0.02*pproc.ncell_tot),
         # 'slice_left': int(0.* pproc.ncell_tot),
-        'mu_tau': -10.,
+        'mu_tau': 0.,
         'sigm_tau': 0.,
-        'mu_tauc': -1.0,
+        'mu_tauc': 0.0,
         'sigm_tauc': 0.,
-        'demographic_index': 0
+        'demographic_index': 1
     }
     maxima = {
         # 'C': 5.*pproc.ncell_tot,
@@ -94,7 +94,7 @@ else:
         'sigm_tau': 0.,
         'mu_tauc': 0.0,
         'sigm_tauc': 0.,
-        'demographic_index': 0 #len(metric_spl_all) - 1
+        'demographic_index': len(metric_spl_all) - 1
     }
 
     ### Initialize strategy combinations ### 
