@@ -84,17 +84,17 @@ else:
         'sigm_tau': 0.,
         'mu_tauc': 0.0,
         'sigm_tauc': 0.,
-        'demographic_index': 1
+        'demographic_index': 0
     }
     maxima = {
         # 'C': 5.*pproc.ncell_tot,
         # 'ncell': int(1. * pproc.slice_right_max),
         # 'slice_left': int(1.*pproc.ncell_tot),
         'mu_tau': 0.,
-        'sigm_tau': 0.,
+        'sigm_tau': 10.,
         'mu_tauc': 0.0,
-        'sigm_tauc': 0.,
-        'demographic_index': len(metric_spl_all) - 1
+        'sigm_tauc': 0.5,
+        'demographic_index': 0 
     }
 
     ### Initialize strategy combinations ### 
