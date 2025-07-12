@@ -207,7 +207,7 @@ res = minimize(objective_baseline, x0, method='COBYLA', bounds=bounds, constrain
 n_opt_baseline, l_opt_baseline = x_rescaler_baseline.descale(res.x).astype(int)
 S_opt_baseline = y_rescaler_baseline.descale(-res.fun)
 '''Fudge factor'''
-S_opt_baseline *= 0.97
+S_opt_baseline *= 1.
 
 NUM_RESTARTS = 5
 

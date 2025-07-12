@@ -91,9 +91,9 @@ else:
         # 'ncell': int(1. * pproc.slice_right_max),
         # 'slice_left': int(1.*pproc.ncell_tot),
         'mu_tau': 0.,
-        'sigm_tau': 0.,
+        'sigm_tau': 2.5,
         'mu_tauc': 0.0,
-        'sigm_tauc': 0.,
+        'sigm_tauc': 0.25,
         'demographic_index': len(metric_spl_all) - 1 
     }
 
