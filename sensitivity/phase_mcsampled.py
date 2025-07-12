@@ -82,7 +82,7 @@ else:
         # 'slice_left': int(0.* pproc.ncell_tot),
         'mu_tau': -10.,
         'sigm_tau': 0.,
-        'mu_tauc': 0.0,
+        'mu_tauc': -1.0,
         'sigm_tauc': 0.,
         'demographic_index': 0
     }
@@ -90,7 +90,7 @@ else:
         # 'C': 5.*pproc.ncell_tot,
         # 'ncell': int(1. * pproc.slice_right_max),
         # 'slice_left': int(1.*pproc.ncell_tot),
-        'mu_tau': 6.,
+        'mu_tau': 0.,
         'sigm_tau': 0.,
         'mu_tauc': 0.0,
         'sigm_tauc': 0.,
@@ -121,9 +121,9 @@ else:
     ### Add on samples of uncertain samples ###
     # First define the number of eps samples per strategy combination
     #num_eps_combs = 225
-    num_eps_combs = 500
+    #num_eps_combs = 500
     #num_eps_combs = 1000
-    #num_eps_combs = 5000
+    num_eps_combs = 3000
     np.save(pproc.data_dir + '/num_eps_combs.npy', num_eps_combs)
     num_combs_tot = num_strategy_combs * num_eps_combs
 
