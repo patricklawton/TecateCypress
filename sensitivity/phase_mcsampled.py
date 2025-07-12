@@ -84,7 +84,7 @@ else:
         'sigm_tau': 0.,
         'mu_tauc': -1.0,
         'sigm_tauc': 0.,
-        'demographic_index': 0
+        'demographic_index': 1
     }
     maxima = {
         # 'C': 5.*pproc.ncell_tot,
@@ -94,7 +94,7 @@ else:
         'sigm_tau': 0.,
         'mu_tauc': 0.0,
         'sigm_tauc': 0.,
-        'demographic_index': 0 #len(metric_spl_all) - 1 
+        'demographic_index': len(metric_spl_all) - 1 
     }
 
     ### Initialize strategy combinations ### 
@@ -123,7 +123,7 @@ else:
     #num_eps_combs = 225
     #num_eps_combs = 500
     #num_eps_combs = 1000
-    num_eps_combs = 3000
+    num_eps_combs = 4000
     np.save(pproc.data_dir + '/num_eps_combs.npy', num_eps_combs)
     num_combs_tot = num_strategy_combs * num_eps_combs
 
