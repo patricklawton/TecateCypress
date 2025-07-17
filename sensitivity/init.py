@@ -10,7 +10,10 @@ sys.path.insert(1, sbi_path)
 import sbi
 from itertools import product
 
-project = sg.init_project()
+try:
+    project = sg.get_project()
+except:
+    project = sg.init_project()
 
 overwrite_bvec = True
 sd_fn = project.fn('shared_data.h5')
@@ -28,18 +31,14 @@ Aeff_vec = np.array([np.round(A_cell, 2)])
 #Aeff_vec = np.array([np.round((4*A_cell)*sdm_mean, 2)])
 #Aeff_vec = np.array([1.0])
 t_final_vec = np.array([300])
-demographic_samples_vec = np.array([500])
+demographic_samples_vec = np.array([5_000])
 method_vec = ["discrete"]
-#for Aeff, t_final, demographic_samples in zip(Aeff_vec, t_final_vec, demographic_samples_vec):
+
 for Aeff, t_final, demographic_samples, method in product(Aeff_vec, t_final_vec, 
                                                           demographic_samples_vec, 
                                                           method_vec):
-    existing_samples = project.find_jobs({'Aeff': Aeff, 't_final': t_final, 'method': method})
-    try:
-        demographic_samples -= len(existing_samples) #len(project)
-    except TypeError:
-        # If existing_samples has no len, no jobs with these specifications exist
-        pass
+    existing_samples = project.find_jobs({'Aeff': float(Aeff), 't_final': int(t_final), 'method': str(method)})
+    demographic_samples -= len(existing_samples) #len(project)
     mort_labels = ['alph_m', 'beta_m', 'gamm_m', 'sigm_m', 'gamm_nu', 'kappa', 'K_adult']
     fec_labels = ['rho_max', 'eta_rho', 'a_mature', 'sigm_max', 'eta_sigm']
 
@@ -53,7 +52,8 @@ for Aeff, t_final, demographic_samples, method in product(Aeff_vec, t_final_vec,
 
     #params = mort_fixed
     for i in range(demographic_samples):
-        sp = {'params': {}, 'Aeff': Aeff, 't_final': t_final, 'method': method, 'demographic_index': i+1}
+        sp = {'params': {}, 'Aeff': Aeff, 't_final': t_final, 'method': method, 
+              'demographic_index': len(existing_samples) + i + 1}
         for p_i, p in enumerate(mort_samples[i]):
             sp['params'].update({mort_labels[p_i]: float(p)})
         for p_i, p in enumerate(fec_samples[i]):

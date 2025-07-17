@@ -37,12 +37,10 @@ metric_thresh = 0.975 # Threshold of pop metric value used for calculating meta 
 # Get list of samples for each parameter
 constants['tauc_min_samples'] = np.array([9.0])
 #constants['tauc_min_samples'] = np.arange(1, 17, 4)
-#constants['ncell_samples'] = 20
-#constants['slice_samples'] = 40
-#constants['ncell_samples'] = 50
-#constants['slice_samples'] = 75
-constants['ncell_samples'] = 35
-constants['slice_samples'] = 65
+#constants['ncell_samples'] = 35
+#constants['slice_samples'] = 65
+constants['ncell_samples'] = 2
+constants['slice_samples'] = 2
 
 # Start timer to track runtime
 start_time = timeit.default_timer()
@@ -98,11 +96,19 @@ else:
     }
 
     ### Initialize strategy combinations ### 
-    num_strategy_combs = pproc.C_vec.size * pproc.ncell_vec.size * pproc.slice_left_all.size
+    #num_strategy_combs = pproc.C_vec.size * pproc.ncell_vec.size * pproc.slice_left_all.size
 
-    strategy_combs = product(pproc.C_vec,
-                    pproc.ncell_vec,
-                    pproc.slice_left_all)
+    #strategy_combs = product(pproc.C_vec,
+    #                pproc.ncell_vec,
+    #                pproc.slice_left_all)
+    '''Hardcoding in two test cases: baseline optima and robust optima when Sstar=S_opt_baseline'''
+    num_strategy_combs = 2
+    strategy_combs = np.array([
+                                [pproc.C_vec[0], 51833, 20571], 
+                                [pproc.C_vec[0], 54766, 14113]
+                              ])
+    np.save(pproc.data_dir + '/ncell_vec.npy', np.array([51833, 54766]))
+    np.save(pproc.data_dir + '/slice_left_all.npy', np.array([20571, 14113]))
 
     # Initialize strategy parameter combinations
     x_strategy = np.full((num_strategy_combs, 3), np.nan)
@@ -120,10 +126,8 @@ else:
 
     ### Add on samples of uncertain samples ###
     # First define the number of eps samples per strategy combination
-    #num_eps_combs = 225
-    #num_eps_combs = 500
-    #num_eps_combs = 1000
-    num_eps_combs = 4000
+    #num_eps_combs = 100
+    num_eps_combs = 10_000_000
     np.save(pproc.data_dir + '/num_eps_combs.npy', num_eps_combs)
     num_combs_tot = num_strategy_combs * num_eps_combs
 

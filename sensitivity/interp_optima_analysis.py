@@ -206,6 +206,8 @@ cons = [{'type': 'ineq', 'fun': lambda x:  1 - x[1] - x[0]}] # Constrain l < (n_
 res = minimize(objective_baseline, x0, method='COBYLA', bounds=bounds, constraints=cons)
 n_opt_baseline, l_opt_baseline = x_rescaler_baseline.descale(res.x).astype(int)
 S_opt_baseline = y_rescaler_baseline.descale(-res.fun)
+np.save(fn_prefix + 'decision_opt_baseline.npy', np.array([n_opt_baseline, l_opt_baseline]))
+np.save(fn_prefix + 'S_opt_baseline.npy', S_opt_baseline)
 '''Fudge factor'''
 S_opt_baseline *= 1.
 
@@ -278,6 +280,11 @@ for Sstar_i, Sstar in enumerate(rob_thresh_vec):
     # Take the mean over multiple optimization runs
     n_opt_interp[Sstar_i] = np.mean(n_opt_samples)
     l_opt_interp[Sstar_i] = np.mean(l_opt_samples)
+
+decision_opt_uncertain = np.full((rob_thresh_vec.size, 2), np.nan)
+decision_opt_uncertain[:, 0] = n_opt_interp
+decision_opt_uncertain[:, 1] = l_opt_interp
+np.save(fn_prefix + 'decision_opt_uncertain.npy', decision_opt_uncertain.astype(int))
 
 # q_vec = np.arange(0.0, 0.85, 0.05)
 q_vec = np.arange(0.0, 1.0, 0.05)
