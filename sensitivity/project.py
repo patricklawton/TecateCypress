@@ -325,11 +325,7 @@ class Phase:
                 # Save interpolated metric(tau) functions to file
                 with open(self.data_dir + "/metric_spl_all.pkl", "wb") as handle:
                     pickle.dump(metric_spl_all, handle)
-            #else:
-                #metric_all = np.load(fn)
-                #with open(self.data_dir + "/metric_spl_all.pkl", "rb") as handle:
-                #    metric_spl_all = pickle.load(handle)
-
+                    
             # Plot the metric probability density
             if (not os.path.isfile(self.data_dir + f"/metric_all.npy")) or self.overwrite_metrics:
                 print(f"Creating {self.metric} histogram") 
@@ -417,8 +413,13 @@ class Phase:
         # Min left bound set by user-defined constant
         slice_left_min = np.nonzero(tau_sorted > self.min_tau)[0][0]
         # Generate slice sizes of the tau distribution
-        self.ncell_vec = np.linspace(self.ncell_min, self.slice_right_max, self.ncell_samples)
-        self.ncell_vec = np.round(self.ncell_vec).astype(int)
+        if isinstance(self.ncell_samples, int):
+            self.ncell_vec = np.linspace(self.ncell_min, self.slice_right_max, self.ncell_samples)
+            self.ncell_vec = np.round(self.ncell_vec).astype(int)
+        elif isinstance(self.ncell_samples, np.ndarray):
+            self.ncell_vec = self.ncell_samples.copy()
+        else:
+            sys.exit('ncell_samples needs to be int or numpy array') 
         # Max left bound set by smallest slice size
         self.slice_left_max = self.slice_right_max - min(self.ncell_vec)
         # Generate slice left bound indices, reference tau_argsort_ref for full slice indices
@@ -433,17 +434,23 @@ class Phase:
             np.save(self.data_dir + "/C_vec.npy", self.C_vec)
             np.save(self.data_dir + "/ncell_vec.npy", self.ncell_vec)
             np.save(self.data_dir + "/slice_left_all.npy", self.slice_left_all)
+
             if self.tauc_method != "flat":
                 np.save(self.data_dir + f"/v_all_{self.tauc_method}.npy", self.v_all)
                 np.save(self.data_dir + f"/w_all_{self.tauc_method}.npy", self.w_all)
 
-            # Initialize data for <metric> across (C, ncell, slice_left) space
-            self.phase = np.ones((
-                                  len(self.C_vec), len(self.ncell_vec), len(self.slice_left_all)
-                                )) * np.nan
-            self.phase_xs = np.ones((
-                                    len(self.C_vec), len(self.ncell_vec), len(self.slice_left_all)
-                                   )) * np.nan
+            # If mc sampling, save number of uncertainty samples to file
+            if hasattr(self, 'num_eps_combs'):
+                np.save(self.data_dir + '/num_eps_combs.npy', self.num_eps_combs)
+
+            # Initialize data for meta metric across (C, ncell, slice_left) space
+            if not hasattr(self, 'num_eps_combs'):
+                self.phase = np.ones((
+                                      len(self.C_vec), len(self.ncell_vec), len(self.slice_left_all)
+                                    )) * np.nan
+                self.phase_xs = np.ones((
+                                        len(self.C_vec), len(self.ncell_vec), len(self.slice_left_all)
+                                       )) * np.nan
 
     def generate_scale_params(self, tau_sorted):
         # Generate tauc scaling parameters, if needed
@@ -585,9 +592,10 @@ class Phase:
         self.tau_expect = np.where(self.tau_expect < self.min_tau, self.min_tau, self.tau_expect)
 
         # Store the mean value of excess resources, keep at nan if no excess
-        xsresources = (tauc_slice - final_max_tauc)[xs_filt]
-        if hasattr(self, 'xs_means_rank') and (len(xsresources) > 0):
-            self.xs_means_rank[self.global_sample_i-self.rank_start] = np.sum(xsresources) / C
+        if not hasattr(self, 'num_eps_samples'):
+            xsresources = (tauc_slice - final_max_tauc)[xs_filt]
+            if hasattr(self, 'xs_means_rank') and (len(xsresources) > 0):
+                self.xs_means_rank[self.global_sample_i-self.rank_start] = np.sum(xsresources) / C
 
     def change_tau_expect_vectorized(self, C_vec, ncell_vec, slice_left_vec, mu_tauc_vec, sigm_tauc_vec):
         n_samples = len(C_vec)
@@ -671,13 +679,14 @@ class Phase:
             self.rank_start = -1
             self.rank_samples = 0
 
-        # Initialize data for this rank's chunk of samples
-        self.metric_expect_rank = np.ones(self.rank_samples) * np.nan
-        self.xs_means_rank = np.ones(self.rank_samples) * np.nan
+        if not hasattr(self, 'num_eps_combs'):
+            # Initialize data for this rank's chunk of samples
+            self.metric_expect_rank = np.ones(self.rank_samples) * np.nan
+            #self.xs_means_rank = np.ones(self.rank_samples) * np.nan
 
-        # Add one sample for computing the no change scenario
-        if (hasattr(self, 'slice_left_all')) and (ncell==max(self.ncell_vec)) and (self.rank==self.root):
-            self.rank_samples += 1
+            # Add one sample for computing the no change scenario
+            if (hasattr(self, 'slice_left_all')) and (ncell==max(self.ncell_vec)) and (self.rank==self.root):
+                self.rank_samples += 1
 
     def calculate_metric_expect(self):
         # Get expected value of metric

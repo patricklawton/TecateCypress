@@ -98,14 +98,13 @@ tau_argsort = np.argsort(tau_flat)
 tau_sorted = tau_flat[tau_argsort]
 
 set_globals(results_pre)
-x_all = np.load(fn_prefix + '/x_all.npy')
-meta_metric_all = np.load(fn_prefix + '/meta_metric_all.npy')
-meta_metric_all = meta_metric_all[:,0]
+#phase = h5py.File(fn_prefix + '/phase.h5', 'r')
+decision_indices = np.load(fn_prefix + '/decision_indices.npy')
+S_opt_baseline = np.load(fn_prefix + '/S_opt_baseline.npy')
+#decision_opt_baseline = np.load(fn_prefix + '/decision_opt_baseline.npy')
+n_opt_baseline, l_opt_baseline = np.load(fn_prefix + '/decision_opt_baseline.npy')
 
 meta_metric_nochange = float(np.load(fn_prefix + 'meta_metric_nochange.npy'))
-
-# Create a filter for the baseline scenario
-zero_eps_mask = np.all(x_all[:, 3:] == 0, axis=1)
 
 maxrob = np.load(fn_prefix + "maxrob.npy")
 argmaxrob = np.load(fn_prefix + "argmaxrob.npy")
@@ -142,7 +141,7 @@ assert np.any(np.isclose(C_vec/ncell_tot, C))
 C_i = np.isclose(C_vec/ncell_tot, C).argmax()
 
 # First, filter robustness values for this R value
-rob_all_filtered = rob_all[:, 0, ...]
+rob_all_filtered = rob_all[:, C_i, ...]
 
 # Unravel the filtered robustness values into y_obs
 y_obs = rob_all_filtered.flatten()
@@ -172,71 +171,20 @@ x_obs = x_rescaler.rescale(x_obs)
 # Create interpolator for robustness(S^*, n, l) given R
 interp = RBFInterpolator(x_obs, y_obs, neighbors=NN_ROB, smoothing=SMOOTHING)
 
-# Get parameters and S values under baseline condintions
-C_mask = (x_all[:, 0] == (C*ncell_tot))
-baseline_mask = np.all(x_all[:, 3:] == 0, axis=1)
-x_obs_baseline = x_all[C_mask & baseline_mask, 1:3]
-y_obs_baseline = meta_metric_all[C_mask & baseline_mask]
-
-# Rescale inputs and outputs
-x_rescaler_baseline = Rescaler(x_obs_baseline.min(axis=0), x_obs_baseline.max(axis=0))
-x_obs_baseline = x_rescaler_baseline.rescale(x_obs_baseline)
-y_rescaler_baseline = Rescaler(y_obs_baseline.min(axis=0), y_obs_baseline.max(axis=0))
-y_obs_baseline = y_rescaler_baseline.rescale(y_obs_baseline) 
-
-# Interpolate S(n, l) given R under baseline conditions for reference during optimization
-interp_baseline = RBFInterpolator(x_obs_baseline, y_obs_baseline, neighbors=NN_S, smoothing=0.0)
-
-# First optimize decision under baseline conditions
-def objective_baseline(decision_params):
-    S = interp_baseline([decision_params])
-    return -S
-
-# Use optimal decision from exisiting samples as starting point
-zeroeps_filt = np.all(x_all[:, 3:] == 0, axis=1)
-_filt = zeroeps_filt & (x_all[:,0] == C*ncell_tot)
-argmax = np.nanargmax(meta_metric_all[_filt])
-n0, l0 = x_all[_filt,:][argmax][1:3].astype(int)
-n0, l0 = x_rescaler_baseline.rescale([n0, l0])
-
-# Optimize using scipy
-x0 = np.array([n0, l0])
-bounds = ((0, 1), (0, 1)) # Remeber, we rescaled the training data
-cons = [{'type': 'ineq', 'fun': lambda x:  1 - x[1] - x[0]}] # Constrain l < (n_tot - n)
-res = minimize(objective_baseline, x0, method='COBYLA', bounds=bounds, constraints=cons)
-n_opt_baseline, l_opt_baseline = x_rescaler_baseline.descale(res.x).astype(int)
-S_opt_baseline = y_rescaler_baseline.descale(-res.fun)
-np.save(fn_prefix + 'decision_opt_baseline.npy', np.array([n_opt_baseline, l_opt_baseline]))
-np.save(fn_prefix + 'S_opt_baseline.npy', S_opt_baseline)
-'''Fudge factor'''
-S_opt_baseline *= 1.
-
 NUM_RESTARTS = 5
 
 # Define objective function (i.e. robustness) to be optimized
 def objective(decision_params, *args):
-    '''This should get descaled before proceeding'''
     Sstar = args[0]
-    # Sstar_descaled = x_rescaler.descale([Sstar, decision_params[0], decision_params[1]])[0]
 
-    # S_baseline = interp_baseline([decision_params])
-    # S_baseline = y_rescaler_baseline.descale(S_baseline)
-    # if S_baseline < Sstar_descaled:
-    #     # Only consider robustness to be nonzero if S^* met under baseline
-    #     robustness = 0
-    # else:
-    if True:
-        # Take robustness value from interpolation
-        x = np.full(len(decision_params)+1, np.nan)
-        x[0] = Sstar
-        x[1:] = decision_params
-        try:
-            robustness = interp([x])
-        except:
-            # print(x)
-            # import sys; sys.exit()
-            robustness = 0
-        # print(robustness)
+    # Get robustness value from interpolation
+    x = np.full(len(decision_params)+1, np.nan)
+    x[0] = Sstar
+    x[1:] = decision_params
+    try:
+        robustness = interp([x])
+    except:
+        robustness = 0
 
     return -robustness # Negate bc using minimization algorithm
 
@@ -261,9 +209,6 @@ for Sstar_i, Sstar in enumerate(rob_thresh_vec):
 
         # Use an optimizer that can handle some noise in the objective
         x0 = np.array([n0, l0])
-        # bounds = ((0, 1), (0, 1)) # Remeber, we rescaled the training data
-        # cons = [{'type': 'ineq', 'fun': lambda x:  1 - x[1] - x[0]}] # Constrain l < (n_tot - n)
-        # res = minimize(objective, x0, args=(Sstar), method='COBYLA', bounds=bounds, constraints=cons)
         cons = [
             {'type': 'ineq', 'fun': lambda x: x[0]},          # x[0] >= 0
             {'type': 'ineq', 'fun': lambda x: 1 - x[0]},      # x[0] <= 1

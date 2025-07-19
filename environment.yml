@@ -22,7 +22,7 @@ dependencies:
   - brotli-python=1.0.9=py311h313beb8_7
   - bzip2=1.0.8=h620ffc9_4
   - ca-certificates=2025.2.25=hca03da5_0
-  - certifi=2025.4.26=py311hca03da5_0
+  - certifi=2025.6.15=py311hca03da5_0
   - cffi=1.16.0=py311h80987f9_0
   - cloudpickle=3.0.0=pyhd8ed1ab_0
   - comm=0.1.2=py311hca03da5_0
@@ -34,6 +34,7 @@ dependencies:
   - defusedxml=0.7.1=pyhd3eb1b0_0
   - deprecation=2.1.0=pyh9f0ad1d_0
   - executing=0.8.3=pyhd3eb1b0_0
+  - faiss-cpu=1.9.0=py3.11_hbe593ad_0_cpu
   - freetype=2.12.1=h1192e45_0
   - gettext=0.21.0=h13f89a0_1
   - glib=2.69.1=h514c7bf_2
@@ -79,6 +80,7 @@ dependencies:
   - libcxx=14.0.6=h848a8c0_0
   - libdeflate=1.17=h80987f9_1
   - libedit=3.1.20230828=h80987f9_0
+  - libfaiss=1.9.0=hcb8d3e5_0_cpu
   - libffi=3.4.4=hca03da5_0
   - libgfortran=5.0.0=11_3_0_hca03da5_28
   - libgfortran5=11.3.0=h009349e_28
@@ -109,11 +111,14 @@ dependencies:
   - nbformat=5.9.2=py311hca03da5_0
   - ncurses=6.4=h313beb8_0
   - nest-asyncio=1.5.6=py311hca03da5_0
+  - nomkl=3.0=0
   - notebook=7.0.6=py311hca03da5_0
   - notebook-shim=0.2.3=py311hca03da5_0
   - numba=0.61.0=py311h313beb8_1
   - numpy=1.24.3=py311hb57d4eb_0
   - numpy-base=1.24.3=py311h1d85a46_0
+  - openblas=0.3.21=hca03da5_0
+  - openblas-devel=0.3.21=hca03da5_0
   - openjpeg=2.5.2=h54b8e55_0
   - openssl=3.4.1=h81ee809_0
   - opt_einsum=3.4.0=pyhd8ed1ab_1
