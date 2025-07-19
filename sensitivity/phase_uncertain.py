@@ -35,15 +35,12 @@ constants['overwrite_results'] = True
 metric_thresh = 0.975 # Threshold of pop metric value used for calculating meta metric
 
 # Get list of samples for each parameter
-constants['tauc_min_samples'] = np.array([9.0])
-#constants['tauc_min_samples'] = np.arange(1, 17, 4)
-#constants['ncell_samples'] = 75
-#constants['slice_samples'] = 140
-constants['ncell_samples'] = 30
-constants['slice_samples'] = 60
+constants['tauc_min_samples'] = np.array([9.0])#np.arange(2, 18, 4)
+constants['ncell_samples'] = np.array([40_000])#40
+constants['slice_samples'] = np.array([20_000])#75
 
 # Define the number of eps samples per decision combination
-constants['num_eps_combs'] = 2000#50_000
+constants['num_eps_combs'] = 10_000#20_000
 
 # Define ordered list of parameter keys
 param_keys = ['C', 'ncell', 'slice_left',
@@ -62,17 +59,17 @@ with open(pproc.data_dir + "/metric_spl_all.pkl", "rb") as handle:
 # Theoretical (or ad-hoc) maxima/minima for parameters
 '''Reserve the demo sample index 0 for mean lambda(tau)'''
 minima = {
-    'mu_tau': -10.,
+    'mu_tau': 0.,#-10.,
     'sigm_tau': 0.,
-    'mu_tauc': -1.0,
+    'mu_tauc': 0.,#-1.0,
     'sigm_tauc': 0.,
     'demographic_index': 1
 }
 maxima = {
     'mu_tau': 0.,
-    'sigm_tau': 2.5,
+    'sigm_tau': 0.,#2.5,
     'mu_tauc': 0.0,
-    'sigm_tauc': 0.25,
+    'sigm_tauc': 0.,#0.25,
     'demographic_index': len(metric_spl_all) - 1 
 }
 
@@ -83,17 +80,18 @@ start_time = timeit.default_timer()
 if pproc.rank != pproc.root:
     x_decision = None
     decision_indices = None
-    #fixed_metric_mask = None
+    fixed_metric_mask = None
 else:
-    # Store indices of demographic samples that will have a fixed value of the metapop metric
-    # This occurs for the gte_thresh metric when metric(tau) < thresh for all tau
-    #fixed_metric_mask = np.full(len(metric_spl_all), False)
-    #tau_test = np.linspace(pproc.min_tau, pproc.final_max_tau, 1000)
+    # Store indices of demographic samples that will have a fixed value of S=0
+    fixed_metric_mask = np.full(len(metric_spl_all), False)
+    tau_test = np.linspace(pproc.min_tau, pproc.final_max_tau, 1000)
     for demographic_index, metric_spl in metric_spl_all.items():
         # Check that spline lower bound makes sense
         assert metric_spl(pproc.min_tau) > 0
-        #if np.all(tau_test < metric_thresh) and (pproc.metric == 'gte_thresh'):
-        #    fixed_metric_mask[demographic_index] = True
+        # Check if lambda ever greater than threshold
+        if np.all(metric_spl(tau_test) < metric_thresh) and (pproc.meta_metric == 'gte_thresh'):
+            fixed_metric_mask[demographic_index] = True
+    print(f'{np.count_nonzero(fixed_metric_mask)} of {len(metric_spl_all)} demograhpic samples are always unstable')
 
     ## Initialize decision combinations ### 
     num_decision_combs = pproc.C_vec.size * pproc.ncell_vec.size * pproc.slice_left_all.size
@@ -134,7 +132,7 @@ else:
 # Broadcast samples to all ranks
 x_decision = pproc.comm.bcast(x_decision, root=pproc.root)
 decision_indices = pproc.comm.bcast(decision_indices, root=pproc.root)
-#fixed_metric_mask = pproc.comm.bcast(fixed_metric_mask, root=pproc.root)
+fixed_metric_mask = pproc.comm.bcast(fixed_metric_mask, root=pproc.root)
 
 # Initialize results file
 results = h5py.File(pproc.data_dir + '/phase.h5', 'w', driver='mpio', comm=MPI.COMM_WORLD)
@@ -184,38 +182,41 @@ for rank_sample_i, decision_i in enumerate(range(pproc.rank_start, pproc.rank_st
 
     # Compute outcome under all uncertainty samples
     for x_i, x in enumerate(x_all):
-        # Assign parameter values for this sample
-        for i, param in enumerate(param_keys):
-            if i in [1,2]:
-                param_val = int(x[i])
-            elif param == 'demographic_index':
-                # Retrieve the spline function for this demographic sample
-                demographic_index = int(x[i])
-                param_val = metric_spl_all[demographic_index]
-                param = 'metric_spl'
-            else:
-                param_val = float(x[i])
-            setattr(pproc, param, param_val)
+        # First, check if lambda(tau) < lambda^* for all tau; for these S=0
+        if fixed_metric_mask[int(x[-1])]:
+            meta_metric_all[x_i] = 0.0
+        
+        # Otherwise, actually compute the new value of S
+        else:
+            # Assign parameter values for this sample
+            for i, param in enumerate(param_keys):
+                if i in [1,2]:
+                    param_val = int(x[i])
+                elif param == 'demographic_index':
+                    # Retrieve the spline function for this demographic sample
+                    demographic_index = int(x[i])
+                    param_val = metric_spl_all[demographic_index]
+                    param = 'metric_spl'
+                else:
+                    param_val = float(x[i])
+                setattr(pproc, param, param_val)
 
-        ## Handle comb if meta metric doesn't change
-        #if fixed_metric_mask[demographic_index]: meta_metric under no change at this lambda(tau)
+            # Reset tau values to baseline
+            pproc.tau_expect = pproc.tau_flat
 
-        # Reset tau values to baseline
-        pproc.tau_expect = pproc.tau_flat
+            # Add in uncertainty on baseline tau values
+            '''Note that at this stage tau values may become negative; 
+               they are resticted to positive in change_tau_expect'''
+            pproc.generate_eps_tau()
+            pproc.tau_expect = pproc.tau_flat + pproc.eps_tau
 
-        # Add in uncertainty on baseline tau values
-        '''Note that at this stage tau values may become negative; 
-           they are resticted to positive in change_tau_expect'''
-        pproc.generate_eps_tau()
-        pproc.tau_expect = pproc.tau_flat + pproc.eps_tau
+            # Shift selected tau values (including uncertainty)
+            pproc.change_tau_expect(pproc.C, pproc.ncell, pproc.slice_left)
 
-        # Shift selected tau values (including uncertainty)
-        pproc.change_tau_expect(pproc.C, pproc.ncell, pproc.slice_left)
-
-        # Compute and store metric value
-        if pproc.meta_metric == 'gte_thresh':
-            pproc.calculate_metric_gte(metric_thresh)
-        meta_metric_all[x_i] = pproc.metric_expect
+            # Compute and store metric value
+            if pproc.meta_metric == 'gte_thresh':
+                pproc.calculate_metric_gte(metric_thresh)
+            meta_metric_all[x_i] = pproc.metric_expect
 
     # Store meta metric values and uncertainty samples in h5
     key = decision_indices[decision_i]

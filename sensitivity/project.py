@@ -423,8 +423,13 @@ class Phase:
         # Max left bound set by smallest slice size
         self.slice_left_max = self.slice_right_max - min(self.ncell_vec)
         # Generate slice left bound indices, reference tau_argsort_ref for full slice indices
-        self.slice_left_all = np.linspace(slice_left_min, self.slice_left_max, self.slice_samples)
-        self.slice_left_all = np.round(self.slice_left_all).astype(int)
+        if isinstance(self.slice_samples, int):
+            self.slice_left_all = np.linspace(slice_left_min, self.slice_left_max, self.slice_samples)
+            self.slice_left_all = np.round(self.slice_left_all).astype(int)
+        elif isinstance(self.slice_samples, np.ndarray):
+            self.slice_left_all = self.slice_samples.copy()
+        else:
+            sys.exit('slice_samples needs to be int or numpy array')
 
         if self.tauc_method != "flat":
             self.generate_scale_params(tau_sorted)
