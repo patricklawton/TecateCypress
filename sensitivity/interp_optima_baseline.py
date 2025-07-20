@@ -67,10 +67,6 @@ def set_globals(results_pre):
     # Load things saved specific to these results
     globals()['metric_all'] = np.load(f"{results_pre}/data/Aeff_{Aeff}/tfinal_{t_final}/metric_{metric}/metric_all.npy")
     globals()['tau_all'] = np.load(f"{results_pre}/data/Aeff_{Aeff}/tfinal_{t_final}/tau_all.npy")
-    globals()['C_vec'] = np.load(fn_prefix + "C_vec.npy")
-    globals()['C_i_vec'] = np.arange(len(C_vec))[::2]
-    globals()['ncell_vec'] = np.load(fn_prefix + "ncell_vec.npy")
-    globals()['slice_left_all'] = np.load(fn_prefix + "slice_left_all.npy")
     eps_axes = {}
     with h5py.File(fn_prefix + "eps_axes.h5", "r") as handle:
         for key in handle.keys():
@@ -133,7 +129,7 @@ NN_S = 100
 # SMOOTHING = 0.15
 SMOOTHING = 0.01
 
-C = 9
+C = 10
 assert np.any(np.isclose(C_vec/ncell_tot, C))
 C_i = np.isclose(C_vec/ncell_tot, C).argmax()
 

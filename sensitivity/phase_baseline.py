@@ -35,7 +35,7 @@ constants['overwrite_results'] = True
 metric_thresh = 0.975 # Threshold of pop metric value used for calculating meta metric
 
 # Get list of samples for each parameter
-constants['tauc_min_samples'] = np.array([9.]) #np.arange([1.0, 13, 0.5])
+constants['tauc_min_samples'] = np.arange(2, 18, 4)#np.arange(2.0, 14.5, 0.5)
 constants['ncell_samples'] =  250
 constants['slice_samples'] = 500
 
@@ -47,7 +47,7 @@ uncertain_params = ['mu_tau', 'sigm_tau', 'mu_tauc', 'sigm_tauc', 'demographic_i
 # Initialize "Phase" instance for processing samples
 pproc = Phase(**constants)
 pproc.initialize()
-pproc.init_strategy_variables()
+pproc.init_strategy_variables(overwrite=True, suffix='_baseline')
 
 # Save C_vec to file for reference during optimization
 np.save(pproc.data_dir + '/C_vec_baseline.npy', pproc.C_vec)

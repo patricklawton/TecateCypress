@@ -35,12 +35,12 @@ constants['overwrite_results'] = True
 metric_thresh = 0.975 # Threshold of pop metric value used for calculating meta metric
 
 # Get list of samples for each parameter
-constants['tauc_min_samples'] = np.array([9.0])#np.arange(2, 18, 4)
-constants['ncell_samples'] = np.array([40_000])#40
-constants['slice_samples'] = np.array([20_000])#75
+constants['tauc_min_samples'] = np.arange(2, 18, 4)
+constants['ncell_samples'] = 40
+constants['slice_samples'] = 75
 
 # Define the number of eps samples per decision combination
-constants['num_eps_combs'] = 10_000#20_000
+constants['num_eps_combs'] = 20_000
 
 # Define ordered list of parameter keys
 param_keys = ['C', 'ncell', 'slice_left',
@@ -50,7 +50,7 @@ uncertain_params = ['mu_tau', 'sigm_tau', 'mu_tauc', 'sigm_tauc', 'demographic_i
 # Initialize "Phase" instance for processing samples
 pproc = Phase(**constants)
 pproc.initialize()
-pproc.init_strategy_variables()
+pproc.init_strategy_variables(overwrite=True)
 
 # Read in all splined interpolations of metric(tau)
 with open(pproc.data_dir + "/metric_spl_all.pkl", "rb") as handle:
@@ -59,17 +59,17 @@ with open(pproc.data_dir + "/metric_spl_all.pkl", "rb") as handle:
 # Theoretical (or ad-hoc) maxima/minima for parameters
 '''Reserve the demo sample index 0 for mean lambda(tau)'''
 minima = {
-    'mu_tau': 0.,#-10.,
+    'mu_tau': -10.,
     'sigm_tau': 0.,
-    'mu_tauc': 0.,#-1.0,
+    'mu_tauc': -1.0,
     'sigm_tauc': 0.,
     'demographic_index': 1
 }
 maxima = {
     'mu_tau': 0.,
-    'sigm_tau': 0.,#2.5,
+    'sigm_tau': 2.5,
     'mu_tauc': 0.0,
-    'sigm_tauc': 0.,#0.25,
+    'sigm_tauc': 0.25,
     'demographic_index': len(metric_spl_all) - 1 
 }
 

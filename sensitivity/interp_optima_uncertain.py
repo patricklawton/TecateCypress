@@ -136,7 +136,7 @@ NN_S = 100
 # SMOOTHING = 0.15
 SMOOTHING = 0.01
 
-C = 9
+C = 10
 assert np.any(np.isclose(C_vec/ncell_tot, C))
 C_i = np.isclose(C_vec/ncell_tot, C).argmax()
 
@@ -315,7 +315,7 @@ fig.savefig(fig_prefix + '/tau_minmax_shift.png', bbox_inches='tight')
 # Define reference indices for per population tau
 tau_indices = np.arange(tau_sorted.size)
 
-q_samples = [0.0, 0.225, 0.4, 0.6, 0.85]
+q_samples = [0.0, 0.4, 0.85]
 for i, q in enumerate(q_samples):
     # Set the S^* value we're plotting
     q_i = np.argmin(np.abs(q_vec - q))

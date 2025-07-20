@@ -405,7 +405,7 @@ class Phase:
         else:
             self.slice_right_max = len(tau_sorted) - 1
         
-    def init_strategy_variables(self): 
+    def init_strategy_variables(self, overwrite=False, suffix=''): 
         tau_sorted = self.tau_flat[self.tau_argsort_ref] 
         # Generate samples of remaining state variables
         # Get samples of total shift to fire regime (C)  
@@ -435,18 +435,19 @@ class Phase:
             self.generate_scale_params(tau_sorted)
 
         if self.rank == self.root:
-            # Save all state variables
-            np.save(self.data_dir + "/C_vec.npy", self.C_vec)
-            np.save(self.data_dir + "/ncell_vec.npy", self.ncell_vec)
-            np.save(self.data_dir + "/slice_left_all.npy", self.slice_left_all)
+            if overwrite:
+                # Save all state variables
+                np.save(self.data_dir + f"/C_vec{suffix}.npy", self.C_vec)
+                np.save(self.data_dir + f"/ncell_vec{suffix}.npy", self.ncell_vec)
+                np.save(self.data_dir + f"/slice_left_all{suffix}.npy", self.slice_left_all)
 
-            if self.tauc_method != "flat":
-                np.save(self.data_dir + f"/v_all_{self.tauc_method}.npy", self.v_all)
-                np.save(self.data_dir + f"/w_all_{self.tauc_method}.npy", self.w_all)
+                if self.tauc_method != "flat":
+                    np.save(self.data_dir + f"/v_all_{self.tauc_method}.npy", self.v_all)
+                    np.save(self.data_dir + f"/w_all_{self.tauc_method}.npy", self.w_all)
 
-            # If mc sampling, save number of uncertainty samples to file
-            if hasattr(self, 'num_eps_combs'):
-                np.save(self.data_dir + '/num_eps_combs.npy', self.num_eps_combs)
+                # If mc sampling, save number of uncertainty samples to file
+                if hasattr(self, 'num_eps_combs'):
+                    np.save(self.data_dir + f'/num_eps_combs{suffix}.npy', self.num_eps_combs)
 
             # Initialize data for meta metric across (C, ncell, slice_left) space
             if not hasattr(self, 'num_eps_combs'):
