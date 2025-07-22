@@ -360,53 +360,49 @@ axes[0,1].set_xlim(15, xmax);
 
 #### RESULTS UNDER ZERO UNCERTAINTY ####
 ## Load all results
-#set_globals(results_pre)
-#x_all = np.load(fn_prefix + '/x_all.npy')
-#meta_metric_all = np.load(fn_prefix + '/meta_metric_all.npy')
-#meta_metric_all = meta_metric_all[:,0]
+set_globals(results_pre)
+C_vec_baseline = np.load(fn_prefix + 'C_vec_baseline.npy')
+x_all = np.load(fn_prefix + '/x_all_baseline.npy')
+meta_metric_all = np.load(fn_prefix + '/meta_metric_all_baseline.npy')
+meta_metric_all = meta_metric_all[:,0]
 meta_metric_nochange = float(np.load(fn_prefix + 'meta_metric_nochange.npy'))
-#
-#plot_vec = np.ones_like(C_vec) * np.nan
-#c_vec = np.ones_like(C_vec) * np.nan
-#for C_i, C in enumerate(C_vec):
-#    #argmax = np.nanargmax(phase_slice_zeroeps[C_i, :, :])
-#    #optimal_param_i = np.unravel_index(argmax, phase_slice_zeroeps.shape[1:])
-#    #plot_vec[C_i] = phase_slice_zeroeps[C_i, optimal_param_i[0], optimal_param_i[1]]
-#    #c_vec[C_i] = ncell_vec[optimal_param_i[0]]
-#    zeroeps_filt = np.all(x_all[:, 3:] == 0, axis=1)
-#    _filt = zeroeps_filt & (x_all[:,0] == C)
-#    argmax = np.nanargmax(meta_metric_all[_filt])
-#    plot_vec[C_i] = meta_metric_all[_filt][argmax]
-#    c_vec[C_i] = x_all[_filt,:][argmax][1]
-#c_vec = c_vec / ncell_tot
-#
-#width = 0.875
-#vmin = 0; vmax = 1
-#norm = colors.Normalize(vmin=vmin, vmax=vmax)
-#colormap = copy.copy(cm.RdPu_r)
-#sm = cm.ScalarMappable(cmap=colormap, norm=norm)
-#bar_colors = colormap(norm(c_vec))
-#bar = axes[1,0].bar(np.arange(C_vec.size), plot_vec, color=bar_colors, width=width)
-##axes[1,0].set_ylim(meta_metric_nochange, 1.02*np.max(plot_vec))
-#axes[1,0].set_ylim(0, 1.02*np.max(plot_vec))
-#yticks = np.arange(0., 1.2, 0.2)
-#axes[1,0].set_yticks(yticks)#[yticks >= meta_metric_nochange])
-#axes[1,0].set_ylabel(fr"maximum {metric_lab}")
-#xtick_spacing = 2
-##xticks = np.arange(1, len(C_vec)+1, xtick_spacing)
-#if len(C_vec) % 2 == 0:
-#    xticks = np.arange(1, len(C_vec)+1, xtick_spacing)
-#    xtick_labels = np.round((C_vec/(ncell_tot))[1::xtick_spacing], 1)
-#else:
-#    xticks = np.arange(0, len(C_vec), xtick_spacing)
-#    xtick_labels = np.round((C_vec/(ncell_tot))[0::xtick_spacing], 1)
-##xtick_labels = np.round((C_vec/(ncell_tot))[0::xtick_spacing], 1)
-#axes[1,0].set_xticks(xticks, labels=xtick_labels);
-#axes[1,0].set_xlabel(r"$\hat{\tau}$ if spread over entire range, ${R}~/~n_{tot}$")
-#axes[1,0].set_xlim(-(width/2)*1.4, len(C_vec)-1+((width/2)*1.4))
-## Plot baseline value
-#axes[1,0].axhline(meta_metric_nochange, ls=':', label=f'baseline {metric_lab}', c='k')
-#axes[1,0].legend()
+
+plot_vec = np.ones_like(C_vec_baseline) * np.nan
+c_vec = np.ones_like(C_vec_baseline) * np.nan
+for C_i, C in enumerate(C_vec_baseline):
+    zeroeps_filt = np.all(x_all[:, 3:] == 0, axis=1)
+    _filt = zeroeps_filt & (x_all[:,0] == C)
+    argmax = np.nanargmax(meta_metric_all[_filt])
+    plot_vec[C_i] = meta_metric_all[_filt][argmax]
+    c_vec[C_i] = x_all[_filt,:][argmax][1]
+c_vec = c_vec / ncell_tot
+
+width = 0.875
+vmin = 0; vmax = 1
+norm = colors.Normalize(vmin=vmin, vmax=vmax)
+colormap = copy.copy(cm.RdPu_r)
+sm = cm.ScalarMappable(cmap=colormap, norm=norm)
+bar_colors = colormap(norm(c_vec))
+bar = axes[1,0].bar(np.arange(C_vec_baseline.size), plot_vec, color=bar_colors, width=width)
+#axes[1,0].set_ylim(meta_metric_nochange, 1.02*np.max(plot_vec))
+axes[1,0].set_ylim(0, 1.02*np.max(plot_vec))
+yticks = np.arange(0., 1.2, 0.2)
+axes[1,0].set_yticks(yticks)#[yticks >= meta_metric_nochange])
+axes[1,0].set_ylabel(fr"maximum {metric_lab}")
+xtick_spacing = 2
+#xticks = np.arange(1, len(C_vec_baseline)+1, xtick_spacing)
+if len(C_vec_baseline) % 2 == 0:
+    xticks = np.arange(1, len(C_vec_baseline)+1, xtick_spacing)
+    xtick_labels = np.round((C_vec_baseline/(ncell_tot))[1::xtick_spacing], 1)
+else:
+    xticks = np.arange(0, len(C_vec_baseline), xtick_spacing)
+    xtick_labels = np.round((C_vec_baseline/(ncell_tot))[0::xtick_spacing], 1)
+axes[1,0].set_xticks(xticks, labels=xtick_labels);
+axes[1,0].set_xlabel(r"$\hat{\tau}$ if spread over entire range, ${R}~/~n_{tot}$")
+axes[1,0].set_xlim(-(width/2)*1.4, len(C_vec_baseline)-1+((width/2)*1.4))
+# Plot baseline value
+axes[1,0].axhline(meta_metric_nochange, ls=':', label=f'baseline {metric_lab}', c='k')
+axes[1,0].legend()
 ########
 
 #### OPTIMA ACROSS ROBUSTNESS REQUIREMENTS ####
