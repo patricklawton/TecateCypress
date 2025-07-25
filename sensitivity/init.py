@@ -9,11 +9,15 @@ sbi_path = '/'.join(root_splt)
 sys.path.insert(1, sbi_path) 
 import sbi
 from itertools import product
+import json
 
 try:
     project = sg.get_project()
 except:
     project = sg.init_project()
+
+mort_labels = ['alph_m', 'beta_m', 'gamm_m', 'sigm_m', 'gamm_nu', 'kappa', 'K_adult']
+fec_labels = ['rho_max', 'eta_rho', 'a_mature', 'sigm_max', 'eta_sigm']
 
 overwrite_bvec = True
 sd_fn = project.fn('shared_data.h5')
@@ -26,10 +30,7 @@ if not os.path.isfile(sd_fn) or overwrite_bvec:
 A_cell = 270**2 / 10_000 #Ha
 sdm_min = 0.32649827003479004 
 sdm_mean = 0.51
-#Aeff_vec = np.array([np.round(A_cell*sdm_min, 2)])
 Aeff_vec = np.array([np.round(A_cell, 2)])
-#Aeff_vec = np.array([np.round((4*A_cell)*sdm_mean, 2)])
-#Aeff_vec = np.array([1.0])
 t_final_vec = np.array([300])
 demographic_samples_vec = np.array([5_000])
 method_vec = ["discrete"]
@@ -39,8 +40,6 @@ for Aeff, t_final, demographic_samples, method in product(Aeff_vec, t_final_vec,
                                                           method_vec):
     existing_samples = project.find_jobs({'Aeff': float(Aeff), 't_final': int(t_final), 'method': str(method)})
     demographic_samples -= len(existing_samples) #len(project)
-    mort_labels = ['alph_m', 'beta_m', 'gamm_m', 'sigm_m', 'gamm_nu', 'kappa', 'K_adult']
-    fec_labels = ['rho_max', 'eta_rho', 'a_mature', 'sigm_max', 'eta_sigm']
 
     if demographic_samples > 0:
         with open('../model_fitting/mortality/posterior.pkl', 'rb') as handle:
@@ -50,7 +49,6 @@ for Aeff, t_final, demographic_samples, method in product(Aeff_vec, t_final_vec,
             fec_posterior = pickle.load(handle)
         fec_samples = fec_posterior.sample(sample_shape=(demographic_samples,))
 
-    #params = mort_fixed
     for i in range(demographic_samples):
         sp = {'params': {}, 'Aeff': Aeff, 't_final': t_final, 'method': method, 
               'demographic_index': len(existing_samples) + i + 1}
@@ -60,3 +58,12 @@ for Aeff, t_final, demographic_samples, method in product(Aeff_vec, t_final_vec,
             sp['params'].update({fec_labels[p_i]: float(p)})
         job = project.open_job(sp)
         job.init()
+
+    # Lastly, initialize demographic index 0 with the MAP parameters
+    sp = {'params': {}, 'Aeff': Aeff, 't_final': t_final, 'method': method, 
+          'demographic_index': 0}
+    for pr in ['mortality', 'fecundity']:
+        with open('../model_fitting/{}/map.json'.format(pr), 'r') as handle:
+            sp['params'].update(json.load(handle))
+    job = project.open_job(sp)
+    job.init()

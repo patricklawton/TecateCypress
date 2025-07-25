@@ -310,17 +310,17 @@ class Phase:
                 with open(fn, 'wb') as handle:
                     np.save(fn, metric_all)
                     
-                # Create interpolating function for average metric(tau) values
-                metric_vec = np.ones(self.tau_vec.size) * np.nan
-                for tau_i, tau in enumerate(self.tau_vec):
-                    tau_filt = (tau_all == tau)
-                    metric_slice = metric_all[tau_filt]
-                    metric_vec[tau_i] = np.mean(metric_slice)
-                t = self.tau_vec[2:-2:2] 
-                k = 3
-                t = np.r_[(self.tau_vec[1],)*(k+1), t, (self.tau_vec[-1],)*(k+1)]
-                metric_spl = make_lsq_spline(self.tau_vec[1:], metric_vec[1:], t, k)
-                metric_spl_all.update({0: metric_spl}) # Store on demographic index 0
+                ## Create interpolating function for average metric(tau) values
+                #metric_vec = np.ones(self.tau_vec.size) * np.nan
+                #for tau_i, tau in enumerate(self.tau_vec):
+                #    tau_filt = (tau_all == tau)
+                #    metric_slice = metric_all[tau_filt]
+                #    metric_vec[tau_i] = np.mean(metric_slice)
+                #t = self.tau_vec[2:-2:2] 
+                #k = 3
+                #t = np.r_[(self.tau_vec[1],)*(k+1), t, (self.tau_vec[-1],)*(k+1)]
+                #metric_spl = make_lsq_spline(self.tau_vec[1:], metric_vec[1:], t, k)
+                #metric_spl_all.update({0: metric_spl}) # Store on demographic index 0
 
                 # Save interpolated metric(tau) functions to file
                 with open(self.data_dir + "/metric_spl_all.pkl", "wb") as handle:

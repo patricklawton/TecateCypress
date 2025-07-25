@@ -30,14 +30,14 @@ constants.update({'final_max_tau': np.nan})
 constants['meta_metric'] = 'gte_thresh'
 constants.update({'metric': 'lambda_s'})
 constants.update({'tauc_method': 'flat'})
-constants.update({'overwrite_metrics': False}) 
+constants.update({'overwrite_metrics': True}) 
 constants['overwrite_results'] = True
 metric_thresh = 0.975 # Threshold of pop metric value used for calculating meta metric
 
 # Get list of samples for each parameter
-constants['tauc_min_samples'] = np.arange(2, 18, 4)#np.arange(2.0, 14.5, 0.5)
-constants['ncell_samples'] =  250
-constants['slice_samples'] = 500
+constants['tauc_min_samples'] = np.arange(2, 18, 4)
+constants['ncell_samples'] =  150#250
+constants['slice_samples'] = 300#500
 
 # Define ordered list of parameter keys
 param_keys = ['C', 'ncell', 'slice_left',
@@ -79,17 +79,10 @@ start_time = timeit.default_timer()
 # Population full list of parameter combinations 'x_all'
 if pproc.rank != pproc.root:
     x_decision = None
-    #fixed_metric_mask = None
 else:
-    # Store indices of demographic samples that will have a fixed value of the metapop metric
-    # This occurs for the gte_thresh metric when metric(tau) < thresh for all tau
-    #fixed_metric_mask = np.full(len(metric_spl_all), False)
-    #tau_test = np.linspace(pproc.min_tau, pproc.final_max_tau, 1000)
     for demographic_index, metric_spl in metric_spl_all.items():
         # Check that spline lower bound makes sense
         assert metric_spl(pproc.min_tau) > 0
-        #if np.all(tau_test < metric_thresh) and (pproc.metric == 'gte_thresh'):
-        #    fixed_metric_mask[demographic_index] = True
 
     ## Initialize decision combinations ### 
     num_decision_combs = pproc.C_vec.size * pproc.ncell_vec.size * pproc.slice_left_all.size
@@ -114,7 +107,6 @@ else:
 
 # Broadcast samples to all ranks
 x_decision = pproc.comm.bcast(x_decision, root=pproc.root)
-#fixed_metric_mask = pproc.comm.bcast(fixed_metric_mask, root=pproc.root)
 
 # Add columns for uncertain param samples
 x_all = np.hstack((
@@ -147,9 +139,6 @@ for rank_sample_i, x_i in enumerate(range(pproc.rank_start, pproc.rank_start + p
         else:
             param_val = float(x[i])
         setattr(pproc, param, param_val)
-
-    ## Handle comb if meta metric doesn't change
-    #if fixed_metric_mask[demographic_index]: meta_metric under no change at this lambda(tau)
 
     # Reset tau values to baseline
     pproc.tau_expect = pproc.tau_flat

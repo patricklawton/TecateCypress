@@ -183,7 +183,7 @@ def get_pair_results(C_i, n_i, l_i, Sstar, num_param_bins):
     return results, param_cntrs
 
 # Specify number of bins for each uncertainty parameter
-num_param_bins = 13
+num_param_bins = 9
 
 # Specify resource constraint
 C = 10 * ncell_tot

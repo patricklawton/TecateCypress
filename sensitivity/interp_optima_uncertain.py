@@ -42,7 +42,7 @@ rc('font', serif=['Computer Modern Sans Serif'] + plt.rcParams['font.serif'])
 rc('font', weight='light')
 histlw = 5.5
 cbar_lpad = 30
-dpi = 50
+dpi = 40
 # dpi = 200
 
 # Function to read in things specific to given results as global variables
@@ -291,7 +291,7 @@ ax.set_xlabel(r'$S^*$')
 ax.set_xlim(meta_metric_nochange, S_opt_baseline*1.025);
 ax.set_ylim(0, ncell_tot)
 
-fig.savefig(fig_prefix + '/nandloptvsSstar.png', bbox_inches='tight')
+fig.savefig(fig_prefix + '/nandloptvsSstar.png', bbox_inches='tight', dpi=dpi)
 
 # Restrict the range of plotting to a desired q value
 q_lim = 0.85
@@ -310,7 +310,7 @@ ax.set_xlabel(r'% of $\text{max}(S_{baseline})$ sacrificed')
 ax.set_ylabel(r'$\Delta \tau$ relative to baseline')
 ax.legend()
 ax.set_ylim(-5,10)
-fig.savefig(fig_prefix + '/tau_minmax_shift.png', bbox_inches='tight')
+fig.savefig(fig_prefix + '/tau_minmax_shift.png', bbox_inches='tight', dpi=dpi)
 
 # Define reference indices for per population tau
 tau_indices = np.arange(tau_sorted.size)
@@ -395,4 +395,4 @@ for i, q in enumerate(q_samples):
     im = ax.imshow(colored_data)#, aspect='auto')
     ax.set_yticks([])
     ax.set_xticks([])
-    fig.savefig(fig_prefix + f'/shiftdist_q{q_samples[i]}.png', bbox_inches='tight')
+    fig.savefig(fig_prefix + f'/shiftdist_q{q_samples[i]}.png', bbox_inches='tight', dpi=dpi)

@@ -13,8 +13,8 @@ import pandas as pd
 import os
 from scipy.stats import moment
 
-overwrite_observations = True
-overwrite_simulations = True
+overwrite_observations = False
+overwrite_simulations = False
 overwrite_posterior = True
 add_simulations = False
 
@@ -97,50 +97,6 @@ for pr in processes:
             prior = MultipleIndependent(priors)
         else:
             prior = priors[0]
-        #elif pr == 'fecundity':
-        #    custom_bin_edges = np.load(pr + '/observations/custom_bin_edges.npy')
-        #    a_star_target = 20
-        #    a_star_i = np.argmin(np.abs(a_star_target - custom_bin_edges))
-        #    a_star = custom_bin_edges[a_star_i]
-        #    class CustomPrior(Distribution):
-        #        def __init__(self):
-        #            super().__init__()
-        #            self.base_dist = Uniform(tensor([rng[0] for rng in ranges]), tensor([rng[1] for rng in ranges]))
-
-        #        def sample(self, sample_shape=torch.Size()):
-        #            num_samples = sample_shape[0] if len(sample_shape) > 0 else 1
-        #            samples = []
-        #            while len(samples) < num_samples:
-        #                theta = self.base_dist.sample()
-        #                constraint_check = theta[2] - ((1 / theta[3]) * torch.log(torch.exp(theta[1]**2 / 2) * theta[0] - 0.25))
-        #                #constraint_check = theta[2] - ((1 / theta[3]) * torch.log(theta[0] - 1))
-        #                #if theta[0] + theta[1] < 10:  # Constraint example: θ₁ + θ₂ < 10
-        #                if a_star <= constraint_check:
-        #                    samples.append(theta)
-        #            if len(sample_shape) == 0:
-        #                return samples[0]
-        #            else:
-        #                return torch.stack(samples)
-
-        #        def log_prob(self, theta):
-        #            sample_shape = theta.shape
-        #            # Return -inf if constraint is violated, otherwise use base log prob
-        #            if len(sample_shape) == 1:
-        #                constraint_check = theta[2] - ((1 / theta[3]) * torch.log(torch.exp(theta[1]**2 / 2) * theta[0] - 0.25))
-        #                #constraint_check = theta[2] - ((1 / theta[3]) * torch.log(theta[0] - 1))
-        #                success = (a_star <= constraint_check)
-        #                if success:
-        #                    log_prob = self.base_dist.log_prob(theta).sum(dim=-1)  # Sum over dimensions
-        #                else:
-        #                    log_prob = -float("inf")  # Enforce constraint
-        #                return tensor([log_prob])
-        #            else:
-        #                constraint_check = theta[:, 2] - ((1 / theta[:, 3]) * torch.log(torch.exp(theta[:, 1]**2 / 2) * theta[:, 0] - 1))
-        #                mask = (a_star <= constraint_check)
-        #                log_prob = self.base_dist.log_prob(theta).sum(dim=-1)  # Sum over dimensions
-        #                log_prob[~mask] = -float("inf")  # Enforce constraint
-        #                return log_prob
-        #    prior = CustomPrior()
         prior, theta_numel, prior_returns_numpy = utils.user_input_checks.process_prior(prior)
         with open(pr+"/prior.pkl", "wb") as handle:
             pickle.dump(prior, handle)

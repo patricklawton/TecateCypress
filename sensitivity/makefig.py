@@ -192,8 +192,8 @@ cbar_ax = inset_axes(ax3, width="5%", height="50%", loc='center',
                      bbox_to_anchor=(0.5, -0.2, 0.55, 1.1),
                      bbox_transform=ax3.transAxes, borderpad=0)
 sm = cm.ScalarMappable(cmap=cmap, norm=norm)
-ticks = np.array([1,10, 100, 500])
-ticklabels = ticks/num_samples
+ticks = np.array([1,10, 100, 500]) * 10
+ticklabels = np.round(ticks/num_samples, 3)
 cbar = fig.colorbar(sm, cax=cbar_ax, orientation="vertical", ticks=ticks, 
                    format=mticker.FixedFormatter(ticklabels)) 
 
@@ -201,8 +201,6 @@ cbar = fig.colorbar(sm, cax=cbar_ax, orientation="vertical", ticks=ticks,
 spl = metric_spl_all[0]
 tau_samples = np.arange(0, 140, 2)
 ax3.plot(tau_samples, spl(tau_samples), color='k')
-#dot_spacing = 2
-#ax3.scatter(tau_vec[1::dot_spacing], spl(tau_vec[1::dot_spacing]), color='k')
 if metric == 'P_s':
     cbar.set_label(rf'frequency of $S$ given ${{\tau}}$', rotation=-90, labelpad=cbar_lpad)
     ax3.set_ylabel(rf'simulated survival probability $S$')
@@ -401,7 +399,7 @@ axes[1,0].set_xticks(xticks, labels=xtick_labels);
 axes[1,0].set_xlabel(r"$\hat{\tau}$ if spread over entire range, ${R}~/~n_{tot}$")
 axes[1,0].set_xlim(-(width/2)*1.4, len(C_vec_baseline)-1+((width/2)*1.4))
 # Plot baseline value
-axes[1,0].axhline(meta_metric_nochange, ls=':', label=f'baseline {metric_lab}', c='k')
+axes[1,0].axhline(meta_metric_nochange, ls=':', label=f'baseline {metric_lab}, no management', c='k')
 axes[1,0].legend()
 ########
 
@@ -430,21 +428,27 @@ for line_i, C_i in enumerate(C_i_samples):
             c_vec[thresh_i] = ncell_vec[int(argmaxrob[thresh_i, C_i][0])] / ncell_tot
     # Filter out some samples for clarity
     samp_spacing = 1
-    scatter = axes[1,1].scatter(plot_vec[::samp_spacing], rob_thresh_vec[::samp_spacing], cmap=colormap, norm=normalize,
-                        c=c_vec[::samp_spacing], marker=all_markers[line_i])#, s=60)
-    #scatter = axes[1,1].scatter(rob_thresh_vec[::samp_spacing], plot_vec[::samp_spacing], cmap=colormap, norm=normalize,
+    #scatter = axes[1,1].scatter(plot_vec[::samp_spacing], rob_thresh_vec[::samp_spacing], cmap=colormap, norm=normalize,
     #                    c=c_vec[::samp_spacing], marker=all_markers[line_i])#, s=60)
+    scatter = axes[1,1].scatter(rob_thresh_vec[::samp_spacing], plot_vec[::samp_spacing], cmap=colormap, norm=normalize,
+                        c=c_vec[::samp_spacing], marker=all_markers[line_i])#, s=60)
     axes[1,1].scatter([], [], label=fr"$R~/~n_{{tot}}=${np.round(C_vec[C_i]/ncell_tot, 1)}",
                c='black', marker=all_markers[line_i])
-axes[1,1].axhline(meta_metric_nochange, ls=':', c='k')
-axes[1,1].set_xlabel(fr"robustness to uncertainty, $\omega$")
-axes[1,1].set_ylabel(f"maximum {rob_metric_lab}")
+
+    # Get the max robustness under Sstar=S_baseline_nochange for y lim
+    if C_i == max(C_i_samples):
+        Sstar_i = np.abs(rob_thresh_vec - meta_metric_nochange).argmin()
+        ymax = maxrob[Sstar_i, C_i]
+#axes[1,1].axvline(meta_metric_nochange, ls=':', c='k')
+axes[1,1].set_ylabel(fr"max robustness to uncertainty, $\omega$")
+axes[1,1].set_xlabel(f"{rob_metric_lab}")
 handles, labels = axes[1,1].get_legend_handles_labels()
 axes[1,1].legend(handles[::-1], labels[::-1], fontsize=17)
-#axes[1,1].set_ylim(meta_metric_nochange, 1)
-axes[1,1].set_ylim(0, 1)
-yticks = np.arange(0., 1.2, 0.2)
-axes[1,1].set_yticks(yticks)
+axes[1,1].set_xlim(meta_metric_nochange, 1)
+#axes[1,1].set_xlim(0, 1)
+xticks = np.arange(0., 1.2, 0.2)
+axes[1,1].set_yticks(xticks)
+axes[1,1].set_ylim(-0.01, ymax)
 ########
 
 # Add colorbar on separate axis
