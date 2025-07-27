@@ -106,9 +106,9 @@ minima = {
 }
 maxima = {
     'mu_tau': 0.,
-    'sigm_tau': 2.5,
+    'sigm_tau': 0.,
     'mu_tauc': 0.0,
-    'sigm_tauc': 0.25,
+    'sigm_tauc': 0.,
     'demographic_index': len(metric_spl_all) - 1 
 }
 

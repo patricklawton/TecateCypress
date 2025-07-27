@@ -35,7 +35,7 @@ constants['overwrite_results'] = True
 metric_thresh = 0.975 # Threshold of pop metric value used for calculating meta metric
 
 # Get list of samples for each parameter
-constants['tauc_min_samples'] = np.arange(2, 18, 4)
+constants['tauc_min_samples'] = np.array([10.0]) #np.arange(2, 18, 4)
 constants['ncell_samples'] = 40
 constants['slice_samples'] = 75
 
@@ -67,9 +67,9 @@ minima = {
 }
 maxima = {
     'mu_tau': 0.,
-    'sigm_tau': 2.5,
+    'sigm_tau': 0.0,
     'mu_tauc': 0.0,
-    'sigm_tauc': 0.25,
+    'sigm_tauc': 0.0,
     'demographic_index': len(metric_spl_all) - 1 
 }
 
