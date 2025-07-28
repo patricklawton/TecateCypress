@@ -245,8 +245,7 @@ for rank_sample_i, decision_i in enumerate(range(pproc.rank_start, pproc.rank_st
             # Add in uncertainty on baseline tau values
             '''Note that at this stage tau values may become negative; 
                they are resticted to positive in change_tau_expect'''
-            pproc.generate_eps_tau()
-            pproc.tau_expect = pproc.tau_flat + pproc.eps_tau
+            pproc.tau_expect = pproc.generate_tau() 
 
             # Shift selected tau values (including uncertainty)
             pproc.change_tau_expect(pproc.C, pproc.ncell, pproc.slice_left)

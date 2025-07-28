@@ -583,10 +583,9 @@ class Phase:
             tauc_slice = self.compute_tauc_slice([v,w], self.tauc_method, tau_slice_ref)
         
         # Add uncertainty to tauc slice
-        mu_tauc = self.mu_tauc * tauc
-        sigm_tauc = np.abs(mu_tauc * self.sigm_tauc)
-        self.generate_eps_tauc(mu_tauc, sigm_tauc, ncell)
-        tauc_slice = tauc_slice + self.eps_tauc
+        mu_tauc = (1 + self.mu_tauc) * tauc
+        sigm_tauc = self.sigm_tauc * mu_tauc
+        tauc_slice = self.rng.normal(loc=mu_tauc, scale=sigm_tauc, size=ncell)
 
         # Find where tauc will push tau beyond max
         xs_filt = (tauc_slice > final_max_tauc) 
@@ -646,6 +645,11 @@ class Phase:
         mu_tau = self.mu_tau * self.tau_flat
         sigm_tau = np.abs(mu_tau * self.sigm_tau)
         self.eps_tau = self.rng.normal(loc=mu_tau, scale=sigm_tau, size=len(self.tau_flat)) 
+
+    def generate_tau(self):
+        mu_tau = (1 + self.mu_tau) * self.tau_flat
+        sigm_tau = self.sigm_tau * mu_tau
+        return self.rng.normal(loc=mu_tau, scale=sigm_tau, size=len(self.tau_flat))
 
     def generate_eps_tau_vectorized(self):
         assert self.mu_tau.shape == self.sigm_tau.shape
