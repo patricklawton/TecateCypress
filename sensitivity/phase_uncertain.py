@@ -40,7 +40,7 @@ constants['ncell_samples'] = 40
 constants['slice_samples'] = 75
 
 # Define the number of eps samples per decision combination
-constants['num_eps_combs'] = 20_000
+constants['num_eps_combs'] = 10_000
 
 # Define ordered list of parameter keys
 param_keys = ['C', 'ncell', 'slice_left',
@@ -59,17 +59,17 @@ with open(pproc.data_dir + "/metric_spl_all.pkl", "rb") as handle:
 # Theoretical (or ad-hoc) maxima/minima for parameters
 '''Reserve the demo sample index 0 for mean lambda(tau)'''
 minima = {
-    'mu_tau': -10.,
+    'mu_tau': -0.75,
     'sigm_tau': 0.,
-    'mu_tauc': -1.0,
+    'mu_tauc': -0.75,
     'sigm_tauc': 0.,
     'demographic_index': 1
 }
 maxima = {
     'mu_tau': 0.,
-    'sigm_tau': 0.0,
+    'sigm_tau': 0.2,
     'mu_tauc': 0.0,
-    'sigm_tauc': 0.0,
+    'sigm_tauc': 0.2,
     'demographic_index': len(metric_spl_all) - 1 
 }
 

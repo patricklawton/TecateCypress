@@ -583,7 +583,9 @@ class Phase:
             tauc_slice = self.compute_tauc_slice([v,w], self.tauc_method, tau_slice_ref)
         
         # Add uncertainty to tauc slice
-        self.generate_eps_tauc(self.mu_tauc*tauc, self.sigm_tauc*tauc, ncell)
+        mu_tauc = self.mu_tauc * tauc
+        sigm_tauc = np.abs(mu_tauc * self.sigm_tauc)
+        self.generate_eps_tauc(mu_tauc, sigm_tauc, ncell)
         tauc_slice = tauc_slice + self.eps_tauc
 
         # Find where tauc will push tau beyond max
@@ -641,7 +643,9 @@ class Phase:
 
 
     def generate_eps_tau(self):
-        self.eps_tau = self.rng.normal(loc=self.mu_tau, scale=self.sigm_tau, size=len(self.tau_flat)) 
+        mu_tau = self.mu_tau * self.tau_flat
+        sigm_tau = np.abs(mu_tau * self.sigm_tau)
+        self.eps_tau = self.rng.normal(loc=mu_tau, scale=sigm_tau, size=len(self.tau_flat)) 
 
     def generate_eps_tau_vectorized(self):
         assert self.mu_tau.shape == self.sigm_tau.shape
@@ -656,9 +660,7 @@ class Phase:
         self.eps_tau = self.rng.normal(loc=mu_tau, scale=sigm_tau, size=(len(mu_tau), m))
 
     def generate_eps_tauc(self, mu_tauc, sigm_tauc, ncell):
-        self.mu_tauc = mu_tauc
-        self.sigm_tauc = sigm_tauc
-        self.eps_tauc = self.rng.normal(loc=self.mu_tauc, scale=self.sigm_tauc, size=ncell) 
+        self.eps_tauc = self.rng.normal(loc=mu_tauc, scale=sigm_tauc, size=ncell) 
 
     def prep_rank_samples(self, ncell=None): 
         # Determine the number of samples to parallelize based on some instance variable
