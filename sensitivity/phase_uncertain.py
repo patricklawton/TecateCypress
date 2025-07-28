@@ -11,8 +11,6 @@ import os
 import h5py
 import pickle
 
-rng = np.random.default_rng()
-
 constants = {}
 constants['progress'] = False
 constants['c'] = 1.42
@@ -66,9 +64,9 @@ minima = {
     'demographic_index': 1
 }
 maxima = {
-    'mu_tau': 0.,
+    'mu_tau': 0.15,
     'sigm_tau': 0.2,
-    'mu_tauc': 0.0,
+    'mu_tauc': 0.15,
     'sigm_tauc': 0.2,
     'demographic_index': len(metric_spl_all) - 1 
 }
@@ -174,10 +172,28 @@ for rank_sample_i, decision_i in enumerate(range(pproc.rank_start, pproc.rank_st
         _type = type(_min)
 
         # Generate and store nonzero samples
-        if _type == float:
-            samples = rng.uniform(_min, _max, pproc.num_eps_combs)
-        elif _type == int:
-            samples = rng.integers(_min, _max, pproc.num_eps_combs, endpoint=True)
+        if uncertain_param in ['mu_tau', 'mu_tauc']:
+            # Pct change from baseline will be drawn from beta distributions 
+            alpha = 1.5 # Start by defining an ad-hoc value for alpha
+
+            # Solve for the transformed mode of zero
+            x_mode = (-_min) / (_max - _min)
+
+            # Use transformed mode to solve for 2nd shape parameter _beta
+            _beta = ((alpha - 1) / x_mode) - alpha + 2
+
+            # Draw samples from the beta distribution and apply linear transform
+            samples = pproc.rng.beta(alpha, _beta, pproc.num_eps_combs)
+            samples = _min + ((_max - _min) * samples)
+        elif uncertain_param in ['sigm_tau', 'sigm_tauc']:
+            # Multipliers to get spread of tau/tauc post pct change, assume uniform
+            samples = pproc.rng.uniform(_min, _max, pproc.num_eps_combs)
+        elif uncertain_param == 'demographic_index':
+            # Samples of pop parameters follow inferred posterior, so just select
+            # indices of pre-generated samples uniformly
+            samples = pproc.rng.integers(_min, _max, pproc.num_eps_combs, endpoint=True)
+        else:
+            sys.exit(f'No protocol specified for how to draw samples of {uncertain_param}') 
         x_all[:, uncertain_param_i] = samples
 
     # Compute outcome under all uncertainty samples
