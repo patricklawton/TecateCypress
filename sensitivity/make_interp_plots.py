@@ -114,10 +114,6 @@ decision_opt_uncertain = np.load(fn_prefix + 'decision_opt_uncertain.npy')
 n_opt_interp = decision_opt_uncertain[:,0]
 l_opt_interp = decision_opt_uncertain[:,1]
 
-C = 10
-assert np.any(np.isclose(C_vec/ncell_tot, C))
-C_i = np.isclose(C_vec/ncell_tot, C).argmax()
-
 # q_vec = np.arange(0.0, 0.85, 0.05)
 q_vec = np.arange(0.0, 1.0, 0.05)
 

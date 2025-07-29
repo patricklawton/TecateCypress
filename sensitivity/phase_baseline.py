@@ -11,8 +11,6 @@ import os
 import h5py
 import pickle
 
-rng = np.random.default_rng()
-
 constants = {}
 constants['progress'] = False
 constants['c'] = 1.42

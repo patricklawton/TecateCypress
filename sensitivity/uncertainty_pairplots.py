@@ -186,7 +186,7 @@ def get_pair_results(C_i, n_i, l_i, Sstar, num_param_bins):
 num_param_bins = 9
 
 # Specify resource constraint
-C = 10 * ncell_tot
+C = 6 * ncell_tot
 assert C in C_vec
 C_i = np.argmin(np.abs(C_vec - C))
 print(f'C/n_tot={C_vec[C_i]/ncell_tot}')
@@ -222,6 +222,7 @@ for q_i in range(q_vec.size):
                 # Get extreme value of result for colorbar limits
                 extreme = max([np.abs(np.nanmin(results_pair)), np.nanmax(results_pair)])
                 norm = colors.TwoSlopeNorm(vmin=-extreme, vcenter=0, vmax=extreme)
+                print(f'sum of contribution differences at ({uncertain_params[param_i], uncertain_params[param_j]}): {np.sum(results_pair)}')
             else:
                 cmap = 'viridis'
                 norm = colors.Normalize(vmin=np.nanmin(results_pair), vmax=np.nanmax(results_pair))
@@ -244,7 +245,7 @@ for q_i in range(q_vec.size):
                 cbar = fig.colorbar(im, shrink=0.75, label=label)
             else:
                 cbar = fig.colorbar(im, shrink=0.75)
-            cbar.ax.tick_params(labelsize=plt.rcParams['axes.labelsize'] * 0.5)
+            cbar.ax.tick_params(labelsize=plt.rcParams['axes.labelsize'] * 0.75)
             tick_spacing = 1 if num_param_bins <= 5 else 2
             axes[param_i,param_j-1].set_xlabel(param_labels[param_j], fontsize=plt.rcParams['axes.titlesize']*1.75)
             axes[param_i,param_j-1].set_xticks(np.arange(num_param_bins)[::tick_spacing],
