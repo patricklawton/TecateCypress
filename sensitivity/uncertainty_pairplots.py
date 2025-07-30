@@ -118,6 +118,8 @@ for demographic_i in demographic_i_vec:
     # Compute the average difference in this sample's lambda from baseline across tau_samples
     lam_diff = np.mean(metric_spl_all[demographic_i](tau_samples) - baseline_lam)
     lam_diff_vec[demographic_i] = lam_diff
+print("ATTENTION: CAPPING lam_diff AT ZERO FOR THE SAKE OF PLOTTING, DONT LEAVE THIS IN HERE")
+lam_diff_vec[lam_diff_vec <= 0] = 0
 
 def get_pair_results(C_i, n_i, l_i, Sstar, num_param_bins):
     # Get the slice of range-wide stability at the specified decision parameters
@@ -170,15 +172,15 @@ def get_pair_results(C_i, n_i, l_i, Sstar, num_param_bins):
             joint_filt = bin_filts[param_i][i] & bin_filts[param_j][j]
 
             # Compute fraction of samples at or above Sstar (i.e. the probability of our target being met) 
-            # within each joint parameter bin use that to compute bin's contribution to the robustness
+            # within each joint parameter bin; use that to compute bin's contribution to the robustness
             if np.any(joint_filt):
                 P_targetmet = np.count_nonzero(S_slice[joint_filt] >= Sstar) / np.count_nonzero(joint_filt)
                 # We need to normalize to make these comparisons
-                results[pair_i, i, j] = P_targetmet / norm_factor
+                #results[pair_i, i, j] = P_targetmet / norm_factor
                 '''Or just look at P_targetmet'''
-                # results[pair_i, i, j] = P_targetmet
+                results[pair_i, i, j] = P_targetmet
                 '''Or just divide counts in this bin by total counts'''
-                results[pair_i, i, j] = np.count_nonzero(S_slice[joint_filt] >= Sstar) / counts
+                #results[pair_i, i, j] = np.count_nonzero(S_slice[joint_filt] >= Sstar) / counts
 
     return results, param_cntrs
 
@@ -222,7 +224,7 @@ for q_i in range(q_vec.size):
                 # Get extreme value of result for colorbar limits
                 extreme = max([np.abs(np.nanmin(results_pair)), np.nanmax(results_pair)])
                 norm = colors.TwoSlopeNorm(vmin=-extreme, vcenter=0, vmax=extreme)
-                print(f'sum of contribution differences at ({uncertain_params[param_i], uncertain_params[param_j]}): {np.sum(results_pair)}')
+                #print(f'sum of contribution differences at ({uncertain_params[param_i], uncertain_params[param_j]}): {np.sum(results_pair)}')
             else:
                 cmap = 'viridis'
                 norm = colors.Normalize(vmin=np.nanmin(results_pair), vmax=np.nanmax(results_pair))
@@ -240,8 +242,8 @@ for q_i in range(q_vec.size):
 
             im = axes[param_i,param_j-1].imshow(results_pair, origin=origin, norm=norm, cmap=cmap)
             if param_j == len(uncertain_params) - 1:
-                # label = r'$\Delta P(S \geq S^*)$' if condition_key == 'uncertain-baseline' else r'$P(S \geq S^*)$'
-                label = r'$\Delta$ contribution to $\omega$' if condition_key == 'uncertain-baseline' else r'contribution to $\omega$'
+                label = r'$\Delta P(S \geq S^*)$' if condition_key == 'uncertain-baseline' else r'$P(S \geq S^*)$'
+                #label = r'$\Delta$ contribution to $\omega$' if condition_key == 'uncertain-baseline' else r'contribution to $\omega$'
                 cbar = fig.colorbar(im, shrink=0.75, label=label)
             else:
                 cbar = fig.colorbar(im, shrink=0.75)

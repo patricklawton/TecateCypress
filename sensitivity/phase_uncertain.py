@@ -33,12 +33,12 @@ constants['overwrite_results'] = True
 metric_thresh = 0.975 # Threshold of pop metric value used for calculating meta metric
 
 # Get list of samples for each parameter
-constants['tauc_min_samples'] = np.arange(2, 18, 4) #np.array([10.0]) 
+constants['tauc_min_samples'] = np.array([6.0]) #np.arange(2, 18, 4)
 constants['ncell_samples'] = 25
 constants['slice_samples'] = 50
 
 # Define the number of eps samples per decision combination
-constants['num_eps_combs'] = 20_000
+constants['num_eps_combs'] = 50_000
 
 # Define ordered list of parameter keys
 param_keys = ['C', 'ncell', 'slice_left',
