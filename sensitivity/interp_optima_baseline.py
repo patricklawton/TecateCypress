@@ -129,7 +129,7 @@ NN_S = 100
 # SMOOTHING = 0.15
 SMOOTHING = 0.01
 
-C = 10
+C = 6
 assert np.any(np.isclose(C_vec/ncell_tot, C))
 C_i = np.isclose(C_vec/ncell_tot, C).argmax()
 

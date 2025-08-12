@@ -178,78 +178,78 @@ print('saving fig')
 fig.savefig(fig_prefix + '/nandloptvsSstar.png', bbox_inches='tight', dpi=dpi)
 
 # Restrict the range of plotting to a desired q value
-q_lim = 0.75
+q_lim = 0.61
 q_mask = q_vec <= q_lim
 
 fig, ax = plt.subplots(figsize=np.array([7,5])*1.)
 
-ax.scatter(q_vec[q_mask]*100, delta_taul_interp[q_mask], label=r'lowest $\tau$')
-ax.axhline(0, ls='--', c='k', lw=1)
-
-ax.scatter(q_vec[q_mask]*100, delta_tauh_interp[q_mask], label=r'highest $\tau$')
-ax.axhline(0, ls='--', c='k', lw=1)
-
-## Get the points where before and after crossing baseline and color them differently
-#alpha = 0.6
+#ax.scatter(q_vec[q_mask]*100, delta_taul_interp[q_mask], label=r'lowest $\tau$')
+#ax.axhline(0, ls='--', c='k', lw=1)
 #
-## First handle lower bound of optimal tau slice
-#lte_baseline_q = q_vec[delta_taul_interp[q_mask & (delta_taul_interp <= 0)].argmax() + 1]
-#lte_baseline_mask = (q_vec < lte_baseline_q)
-##ax.scatter(q_vec[q_mask]*100, taul_interp[q_mask], c='k', marker='v', label=r'lowest $\tau$')
-#marker_x_positions = np.linspace(min(q_vec[q_mask]), max(q_vec[q_mask]), 50)
-#marker_y_positions = np.full_like(marker_x_positions, tau_sorted[l_opt_baseline])
-#ax.plot(marker_x_positions*100, marker_y_positions, '--', markersize=8, color='k', label='baseline')
-#y2 = np.full(np.count_nonzero(q_mask & lte_baseline_mask), tau_sorted[l_opt_baseline])
-#ax.fill_between( # First handle less than baseline
-#    q_vec[q_mask & lte_baseline_mask]*100,
-#    taul_interp[q_mask & lte_baseline_mask],
-#    y2,
-#    color=custom_colors[3],
-#    alpha=alpha,
-#    zorder=-1
-#)
-#y1 = np.full(np.count_nonzero(q_mask & ~lte_baseline_mask), tau_sorted[l_opt_baseline])
-#ax.fill_between( # Now handle greater than baseline
-#    q_vec[q_mask & ~lte_baseline_mask]*100,
-#    y1,
-#    taul_interp[q_mask & ~lte_baseline_mask],
-#    color=custom_colors[1],
-#    alpha=alpha,
-#    zorder=-1
-#)
+#ax.scatter(q_vec[q_mask]*100, delta_tauh_interp[q_mask], label=r'highest $\tau$')
+#ax.axhline(0, ls='--', c='k', lw=1)
 #
-## Now handle upper bound of optimal tau slice
-#lte_baseline_q = q_vec[delta_tauh_interp[q_mask & (delta_tauh_interp <= 0)].argmax() + 1]
-#lte_baseline_mask = (q_vec < lte_baseline_q)
-##ax.scatter(q_vec[q_mask]*100, tauh_interp[q_mask], label=r'highest $\tau$', c='k', marker='^')
-#marker_y_positions = np.full_like(marker_x_positions, tau_sorted[l_opt_baseline+n_opt_baseline])
-#ax.plot(marker_x_positions*100, marker_y_positions, '--', markersize=8, color='k')
-#y2 = np.full(np.count_nonzero(q_mask & lte_baseline_mask), tau_sorted[l_opt_baseline + n_opt_baseline])
-#ax.fill_between( # First handle less than baseline
-#    q_vec[q_mask & lte_baseline_mask]*100,
-#    tauh_interp[q_mask & lte_baseline_mask],
-#    y2,
-#    color=custom_colors[1],
-#    alpha=alpha,
-#    zorder=-1
-#)
-#y1 = np.full(np.count_nonzero(q_mask & ~lte_baseline_mask), tau_sorted[l_opt_baseline + n_opt_baseline])
-#ax.fill_between( # Now handle greater than baseline
-#    q_vec[q_mask & ~lte_baseline_mask]*100,
-#    y1,
-#    tauh_interp[q_mask & ~lte_baseline_mask],
-#    color=custom_colors[3],
-#    alpha=alpha,
-#    zorder=-1
-#)
+# Get the points where before and after crossing baseline and color them differently
+alpha = 0.6
+
+# First handle lower bound of optimal tau slice
+lte_baseline_q = q_vec[delta_taul_interp[q_mask & (delta_taul_interp <= 0)].argmax() + 1]
+lte_baseline_mask = (q_vec < lte_baseline_q)
+#ax.scatter(q_vec[q_mask]*100, taul_interp[q_mask], c='k', marker='v', label=r'lowest $\tau$')
+marker_x_positions = np.linspace(min(q_vec[q_mask]), max(q_vec[q_mask]), 50)
+marker_y_positions = np.full_like(marker_x_positions, tau_sorted[l_opt_baseline])
+ax.plot(marker_x_positions*100, marker_y_positions, '--', markersize=8, color='k', label='baseline')
+y2 = np.full(np.count_nonzero(q_mask & lte_baseline_mask), tau_sorted[l_opt_baseline])
+ax.fill_between( # First handle less than baseline
+    q_vec[q_mask & lte_baseline_mask]*100,
+    taul_interp[q_mask & lte_baseline_mask],
+    y2,
+    color=custom_colors[3],
+    alpha=alpha,
+    zorder=-1
+)
+y1 = np.full(np.count_nonzero(q_mask & ~lte_baseline_mask), tau_sorted[l_opt_baseline])
+ax.fill_between( # Now handle greater than baseline
+    q_vec[q_mask & ~lte_baseline_mask]*100,
+    y1,
+    taul_interp[q_mask & ~lte_baseline_mask],
+    color=custom_colors[1],
+    alpha=alpha,
+    zorder=-1
+)
+
+# Now handle upper bound of optimal tau slice
+lte_baseline_q = q_vec[delta_tauh_interp[q_mask & (delta_tauh_interp <= 0)].argmax() + 1]
+lte_baseline_mask = (q_vec < lte_baseline_q)
+#ax.scatter(q_vec[q_mask]*100, tauh_interp[q_mask], label=r'highest $\tau$', c='k', marker='^')
+marker_y_positions = np.full_like(marker_x_positions, tau_sorted[l_opt_baseline+n_opt_baseline])
+ax.plot(marker_x_positions*100, marker_y_positions, '--', markersize=8, color='k')
+y2 = np.full(np.count_nonzero(q_mask & lte_baseline_mask), tau_sorted[l_opt_baseline + n_opt_baseline])
+ax.fill_between( # First handle less than baseline
+    q_vec[q_mask & lte_baseline_mask]*100,
+    tauh_interp[q_mask & lte_baseline_mask],
+    y2,
+    color=custom_colors[1],
+    alpha=alpha,
+    zorder=-1
+)
+y1 = np.full(np.count_nonzero(q_mask & ~lte_baseline_mask), tau_sorted[l_opt_baseline + n_opt_baseline])
+ax.fill_between( # Now handle greater than baseline
+    q_vec[q_mask & ~lte_baseline_mask]*100,
+    y1,
+    tauh_interp[q_mask & ~lte_baseline_mask],
+    color=custom_colors[3],
+    alpha=alpha,
+    zorder=-1
+)
 
 ax.set_xlabel(r'% of $\text{max}(S_{baseline})$ sacrificed')
-ax.set_ylabel(r'$\Delta \tau$ relative to baseline')
-#ax.set_ylabel(r'optimal $\tau$')
+#ax.set_ylabel(r'$\Delta \tau$ relative to baseline')
+ax.set_ylabel(r'optimal $\tau$')
 ax.legend()
 #ax.set_ylim(-5,25)
-fig.savefig(fig_prefix + '/tau_minmax_shift.png', bbox_inches='tight', dpi=dpi+40)
-#fig.savefig(fig_prefix + '/tauopt_minmax.png', bbox_inches='tight', dpi=dpi+40)
+#fig.savefig(fig_prefix + '/tau_minmax_shift.png', bbox_inches='tight', dpi=dpi+40)
+fig.savefig(fig_prefix + '/tauopt_minmax.png', bbox_inches='tight', dpi=dpi+40)
 
 # Define reference indices for per population tau
 tau_indices = np.arange(tau_sorted.size)

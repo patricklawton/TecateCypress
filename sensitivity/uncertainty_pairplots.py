@@ -15,6 +15,7 @@ Aeff = 7.29
 t_final = 300
 ncell_tot = 87_993
 c = 1.42
+lamstar = 0.975
 with sg.H5Store('shared_data.h5').open(mode='r') as sd:
     b_vec = np.array(sd['b_vec'])
 tau_vec = b_vec * gamma(1+1/c)
@@ -76,9 +77,9 @@ tau_argsort = np.argsort(tau_flat)
 tau_sorted = tau_flat[tau_argsort]
 
 # Define keys and labels for parameters
-uncertain_params = ['mu_tau', 'sigm_tau', 'mu_tauc', 'sigm_tauc', 'mean_lam_diff']
+uncertain_params = ['mu_tau', 'sigm_tau', 'mu_tauc', 'sigm_tauc', 'tau_crit']#'mean_lam_diff']
 param_labels = [r'$\mu_{\tau}$', r'$\sigma_{\tau}$', r'$\mu_{\hat{\tau}}$', 
-                r'$\sigma_{\hat{\tau}}$', r'$<\lambda_m - \bar{\lambda}>$']
+                r'$\sigma_{\hat{\tau}}$', r'$\hat{\tau}^*$']#r'$<\lambda_m - \bar{\lambda}>$']
 
 # Get all possible parameter pairs
 param_pairs = [pair for pair in combinations(range(len(uncertain_params)), 2)]
@@ -118,8 +119,20 @@ for demographic_i in demographic_i_vec:
     # Compute the average difference in this sample's lambda from baseline across tau_samples
     lam_diff = np.mean(metric_spl_all[demographic_i](tau_samples) - baseline_lam)
     lam_diff_vec[demographic_i] = lam_diff
-print("ATTENTION: CAPPING lam_diff AT ZERO FOR THE SAKE OF PLOTTING, DONT LEAVE THIS IN HERE")
-lam_diff_vec[lam_diff_vec <= 0] = 0
+#print("ATTENTION: CAPPING lam_diff AT ZERO FOR THE SAKE OF PLOTTING, DONT LEAVE THIS IN HERE")
+#lam_diff_vec[lam_diff_vec <= 0] = 0
+
+# Summarize uncertainty in demography by critical tau values where pops are 'stabilized'
+demographic_i_vec = np.arange(0, len(metric_spl_all), 1).astype(int)
+tau_crit_vec = np.full(demographic_i_vec.size, np.nan)
+tau_samples = np.linspace(tau_vec[1], tau_vec.max(), 1_000)
+for demographic_i in demographic_i_vec:
+    lam_samples = metric_spl_all[demographic_i](tau_samples)
+    if np.any(lam_samples >= lamstar):
+        tau_crit_i = np.abs(lam_samples - lamstar).argmin()
+        tau_crit_vec[demographic_i] = tau_samples[tau_crit_i]
+print("ATTENTION: CAPPING tau_crit AT 35 FOR THE SAKE OF PLOTTING, DONT LEAVE THIS IN HERE")
+tau_crit_vec[tau_crit_vec >= 35] = 35
 
 def get_pair_results(C_i, n_i, l_i, Sstar, num_param_bins):
     # Get the slice of range-wide stability at the specified decision parameters
@@ -136,7 +149,8 @@ def get_pair_results(C_i, n_i, l_i, Sstar, num_param_bins):
     norm_factor = robustness * num_param_bins**2
 
     # Replace demographic samples in x_uncertain with our summary
-    x_uncertain[:, 4] = lam_diff_vec[x_uncertain[:,4].astype(int)]
+    #x_uncertain[:, 4] = lam_diff_vec[x_uncertain[:,4].astype(int)]
+    x_uncertain[:, 4] = tau_crit_vec[x_uncertain[:,4].astype(int)]
 
     # Preallocate filters for samples within bins of each parameter
     bin_filts = {i: np.full((num_param_bins, x_uncertain.shape[0]), False) for i in range(x_uncertain.shape[-1])}
@@ -148,6 +162,11 @@ def get_pair_results(C_i, n_i, l_i, Sstar, num_param_bins):
             '''There's an outlier making lam diff right skewed, take percentiles for now'''
             param_low = np.percentile(lam_diff_vec, 0.1)
             param_high = np.percentile(lam_diff_vec, 99.9)
+        elif uncertain_params[param_i] == 'tau_crit':
+            #param_low = np.nanpercentile(tau_crit_vec, 0.1)
+            #param_high = np.nanpercentile(tau_crit_vec, 99.9)
+            param_low = np.nanmin(tau_crit_vec)
+            param_high = np.nanmax(tau_crit_vec)
         else:
             param_low = x_uncertain[:, param_i].min()
             param_high = x_uncertain[:, param_i].max()
@@ -185,7 +204,7 @@ def get_pair_results(C_i, n_i, l_i, Sstar, num_param_bins):
     return results, param_cntrs
 
 # Specify number of bins for each uncertainty parameter
-num_param_bins = 9
+num_param_bins = 13
 
 # Specify resource constraint
 C = 6 * ncell_tot
@@ -223,18 +242,20 @@ for q_i in range(q_vec.size):
                 cmap = 'PuOr_r'
                 # Get extreme value of result for colorbar limits
                 extreme = max([np.abs(np.nanmin(results_pair)), np.nanmax(results_pair)])
+                #extreme = 0.25
+                #print("HARDCODING IN COLORBAR LIMIT")
                 norm = colors.TwoSlopeNorm(vmin=-extreme, vcenter=0, vmax=extreme)
                 #print(f'sum of contribution differences at ({uncertain_params[param_i], uncertain_params[param_j]}): {np.sum(results_pair)}')
             else:
                 cmap = 'viridis'
                 norm = colors.Normalize(vmin=np.nanmin(results_pair), vmax=np.nanmax(results_pair))
 
-            if param_i in [0, 2, 4]:
+            if param_i in [0, 2]:
                 origin = 'upper'
             else:
                 origin = 'lower'
 
-            if param_j  in [0, 2, 4]:
+            if param_j  in [0, 2]:
                 results_pair = np.fliplr(results_pair.copy())
                 x_axis = np.flip(param_cntrs[param_j])
             else:
@@ -249,14 +270,16 @@ for q_i in range(q_vec.size):
                 cbar = fig.colorbar(im, shrink=0.75)
             cbar.ax.tick_params(labelsize=plt.rcParams['axes.labelsize'] * 0.75)
             tick_spacing = 1 if num_param_bins <= 5 else 2
+            numround = 1 if param_j-1 == 3 else 2
             axes[param_i,param_j-1].set_xlabel(param_labels[param_j], fontsize=plt.rcParams['axes.titlesize']*1.75)
             axes[param_i,param_j-1].set_xticks(np.arange(num_param_bins)[::tick_spacing],
-                                               np.round(x_axis, 2)[::tick_spacing],
+                                               np.round(x_axis, numround)[::tick_spacing],
                                                size=plt.rcParams['axes.labelsize']*0.25)
             axes[param_i,param_j-1].set_ylabel(param_labels[param_i], fontsize=plt.rcParams['axes.titlesize']*1.75)
             axes[param_i,param_j-1].set_yticks(np.arange(num_param_bins)[::tick_spacing], np.round(param_cntrs[param_i], 2)[::tick_spacing])
             axes[param_i,param_j-1].tick_params(axis='both', labelsize=plt.rcParams['axes.labelsize'] * 0.75)
 
-        if condition_key == 'uncertain-baseline':
+        #if condition_key == 'uncertain-baseline':
+        if q_i == 0: 
             fig.savefig(fig_prefix + f'uncertainty_pairs_{condition_key}_{np.round(q_vec[q_i],2)}.png', bbox_inches='tight', dpi=dpi)
         plt.close(fig)

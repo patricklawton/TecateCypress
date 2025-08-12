@@ -18,9 +18,7 @@ from itertools import product
 import os
 
 # Define/load things non-specific to a given set of results
-#metric = "P_s"
 metric = 'lambda_s'
-#metric = 's'
 Aeff = 7.29
 t_final = 300
 ncell_tot = 87_993
@@ -30,10 +28,10 @@ with sg.H5Store('shared_data.h5').open(mode='r') as sd:
 tau_vec = b_vec * gamma(1+1/c)
 tauc_methods = ["flat"]
 results_pre = 'gte_thresh' 
-#results_pre = 'distribution_avg' 
 
 # Update global plotting parameters
-rc('axes', labelsize=21)  # Font size for x and y labels
+#rc('axes', labelsize=21)  # Font size for x and y labels
+rc('axes', labelsize=24)  # Font size for x and y labels
 rc('axes', titlesize=16)
 rc('xtick', labelsize=19)  # Font size for x-axis tick labels
 rc('ytick', labelsize=19)  # Font size for y-axis tick labels
@@ -51,12 +49,9 @@ dpi = 50
 # Function to read in things specific to given results as global variables
 def set_globals(results_pre):
     if metric == 'lambda_s':
-        #globals()['metric_lab'] = r'$\lambda_{meta}$'
-        #globals()['rob_metric_lab'] = r'$\lambda_{meta}^*$'
-        #globals()['mean_metric_lab'] = r'$<\lambda>$'
         globals()['metric_lab'] = r'$S$'
         globals()['rob_metric_lab'] = r'$S^*$'
-        globals()['mean_metric_lab'] = r'$\bar{\lambda}(\tau)$'
+        globals()['mean_metric_lab'] = r'$\hat{\lambda}(\tau)$'
     if metric == 'P_s':
         globals()['metric_lab'] = r'$S_{meta}$'
         globals()['rob_metric_lab'] = r'$\S_{meta}^*$'
@@ -130,7 +125,7 @@ colored_data = colored_data[row_min:row_max + 1, col_min:col_max + 1]
 
 im1 = ax1.imshow(colored_data)
 # Add the colorbar to inset axis
-cbar_ax = inset_axes(ax1, width="5%", height="50%", loc='center',
+cbar_ax = inset_axes(ax1, width="5%", height="60%", loc='center',
                      bbox_to_anchor=(-0.1, -0.15, 0.65, 0.9),  # Centered on the plot,
                      bbox_transform=ax1.transAxes, borderpad=0)
 sm = cm.ScalarMappable(cmap=cmap, norm=norm)
@@ -140,7 +135,7 @@ cbar.set_ticks(cbar_ticks)
 cbar_ticklabels = [rf'$\leq${cbar_ticks[0]}'] + [t for t in cbar_ticks[1:-1]] + [rf'$\geq${cbar_ticks[-1]}']
 cbar.set_ticklabels(cbar_ticklabels)
 #cbar.set_label('30 year fire probability', color='white', rotation=-90, labelpad=cbar_lpad)
-cbar.set_label(r'average fire return interval $\tau$', color='white', rotation=-90, labelpad=cbar_lpad)
+cbar.set_label(r'baseline fire return interval, $\hat{\tau}$', color='white', rotation=-90, labelpad=cbar_lpad)
 cbar.ax.tick_params(labelcolor='white', color='white')
 ax1.set_xticks([])
 ax1.set_yticks([])
@@ -177,7 +172,8 @@ for job_i, job in enumerate(jobs):
 min_edge_i = np.argmin(np.abs(tau_edges - 10))
 
 metric_min = min(metric_interp_all[(tau_plot_all >= tau_edges[min_edge_i]) & (tau_plot_all < tau_edges[min_edge_i+1])])
-metric_edges = np.linspace(metric_min, metric_interp_all.max()*1.005, 60)
+metric_max = np.quantile(metric_interp_all, 0.99)
+metric_edges = np.linspace(metric_min, metric_max*1.015, 60)
 cmap = copy.copy(cm.YlGn)
 num_samples = len(jobs)
 norm = colors.LogNorm(vmin=1,vmax=num_samples)
@@ -205,26 +201,26 @@ if metric == 'P_s':
     cbar.set_label(rf'frequency of $S$ given ${{\tau}}$', rotation=-90, labelpad=cbar_lpad)
     ax3.set_ylabel(rf'simulated survival probability $S$')
 elif metric == 'lambda_s':
-    cbar.set_label(rf'frequency of $\lambda(\tau)$', rotation=-90, labelpad=cbar_lpad)
-    ax3.set_ylabel(rf'simulated growth rate $\lambda$')
+    #cbar.set_label(rf'frequency of $\lambda(\tau)$', rotation=-90, labelpad=cbar_lpad)
+    cbar.set_label(rf'$P(\lambda|\tau)$', rotation=-90, labelpad=cbar_lpad)
+    ax3.set_ylabel(rf'growth rate, $\lambda(\tau)$')
 elif metric == 's':
     ax3.set_ylabel(rf's')
 ax3.plot([], [], color='k', label=mean_metric_lab)
-ax3.legend(bbox_to_anchor=(0.2, -0.05, 0.5, 0.5), fontsize=21)
+ax3.legend(bbox_to_anchor=(0.2, -0.05, 0.5, 0.5), fontsize=24)
 
 ax3.set_ylim(metric_edges[np.nonzero(im[0][min_edge_i])[0].min()], max(metric_edges))
 ax3.set_xlim(tau_edges[min_edge_i], max(tau_edges))
-ax3.set_xlabel(r'average fire return interval $\tau$')
+ax3.set_xlabel(r'fire return interval, $\tau$')
 ########
 
 #### INITIAL TAU DISTRIBUTION ####
-#tau_edges = np.arange(0, int(max(tau_vec)+0.5)+1, 1)
 tau_edges = np.arange(0, int(max(tau_edges)+0.5)+1, 1)
 tau_flat = tau_raster[maps_filt]
 tau_argsort = np.argsort(tau_flat)
 ax2.hist(tau_flat, bins=tau_edges, color='black', histtype='step', lw=histlw, density=True);
 ax2.set_yticks([])
-ax2.set_ylabel(r"$\tau$ frequency")
+ax2.set_ylabel(r"$\hat{\tau}$ frequency")
 ax2.set_xticks([])
 # Use the boundaries of the P(S) imshow plot for the tau limits
 ax2.set_xlim(ax3.get_xlim())
@@ -273,7 +269,7 @@ else:
     xticks = [0.9, 0.95, 1]
     #xticks = np.round(np.arange(0.9, 1.02, 0.02), 3)
     axes[0,0].set_xlim(min(metric_interp),1.0+bin_step)
-    axes[0,0].set_xlabel(rf"average stochastic growth rate, {mean_metric_lab}")
+    axes[0,0].set_xlabel(rf"baseline growth rate, $\hat{{\lambda}}$")
 # Fill in area gte thresh
 if metric == 'P_s':
     thresh = 0.5
@@ -288,7 +284,7 @@ closest_bin_i = np.argmin(np.abs(thresh - bin_edges))
 axes[0,0].axvline(bin_edges[closest_bin_i], ls='--', color='darkgreen', lw=6.5)
 # Labels
 axes[0,0].set_yticks([])
-axes[0,0].set_ylabel(rf"{mean_metric_lab} frequency")
+axes[0,0].set_ylabel(rf"$\hat{{\lambda}}$ frequency")
 axes[0,0].set_xticks(xticks, labels=xticks)
 ########
 
@@ -325,7 +321,6 @@ for tau_i, tau_f in zip(tau_i_samples, tau_f_samples):
     tau_slice = tau_flat[tau_argsort][sl:sl+ncell]
     tau_current = tau_flat.copy()
     '''inflate the last bin for any gt max, as we do in actual calcs'''
-    #tau_current[tau_current >= max(tau_edges)] = tau_edges[-2]
     tau_current[tau_current >= max(tau_vec)] = max(tau_vec)
     future_pos_filt = (tau_flat >= min(tau_slice)+tauc) & (tau_flat < max(tau_slice)+tauc)
     current_future_slice = tau_current[future_pos_filt]
@@ -348,10 +343,9 @@ axes[0,1].hist(tau_shifted[mask,...], bins=tau_edges, color='white', density=den
 axes[0,1].hist(tau_current, bins=tau_edges, color='black', histtype='step', lw=histlw, density=density);
 
 axes[0,1].set_yticks([])
-#axes[0,1].set_ylabel(r"$\tau$ frequency within range")
 axes[0,1].set_ylabel(r"$\tau$ frequency")
 axes[0,1].set_xticks(np.arange(20,100,20).astype(int))
-axes[0,1].set_xlabel(r"average fire return interval, $\tau$")
+axes[0,1].set_xlabel(r"fire return interval, $\tau$")
 #axes[0,1].set_xlim(15, 81);
 axes[0,1].set_xlim(15, xmax);
 ########
@@ -386,7 +380,7 @@ bar = axes[1,0].bar(np.arange(C_vec_baseline.size), plot_vec, color=bar_colors, 
 axes[1,0].set_ylim(0, 1.02*np.max(plot_vec))
 yticks = np.arange(0., 1.2, 0.2)
 axes[1,0].set_yticks(yticks)#[yticks >= meta_metric_nochange])
-axes[1,0].set_ylabel(fr"maximum {metric_lab}")
+axes[1,0].set_ylabel(fr"$\text{{max}}$ {metric_lab}")
 xtick_spacing = 2
 #xticks = np.arange(1, len(C_vec_baseline)+1, xtick_spacing)
 if len(C_vec_baseline) % 2 == 0:
@@ -396,10 +390,12 @@ else:
     xticks = np.arange(0, len(C_vec_baseline), xtick_spacing)
     xtick_labels = np.round((C_vec_baseline/(ncell_tot))[0::xtick_spacing], 1)
 axes[1,0].set_xticks(xticks, labels=xtick_labels);
-axes[1,0].set_xlabel(r"$\hat{\tau}$ if spread over entire range, ${R}~/~n_{tot}$")
+#axes[1,0].set_xlabel(r"$\hat{\tau}$ if spread over entire range, ${R}~/~n_{tot}$")
+#axes[1,0].set_xlabel(r"minimum per-population $\tau$ shift, $R~/~n_{tot}$")
+axes[1,0].set_xlabel(r"minimum $\hat{\Delta\tau}$, $R~/~n_{tot}$")
 axes[1,0].set_xlim(-(width/2)*1.4, len(C_vec_baseline)-1+((width/2)*1.4))
 # Plot baseline value
-axes[1,0].axhline(meta_metric_nochange, ls=':', label=f'baseline {metric_lab}, no management', c='k')
+axes[1,0].axhline(meta_metric_nochange, ls=':', label=f'no management', c='k')
 axes[1,0].legend()
 ########
 
@@ -440,8 +436,8 @@ for line_i, C_i in enumerate(C_i_samples):
         Sstar_i = np.abs(rob_thresh_vec - meta_metric_nochange).argmin()
         ymax = maxrob[Sstar_i, C_i]
 #axes[1,1].axvline(meta_metric_nochange, ls=':', c='k')
-axes[1,1].set_ylabel(fr"max robustness to uncertainty, $\omega$")
-axes[1,1].set_xlabel(f"{rob_metric_lab}")
+axes[1,1].set_ylabel(fr"$\text{{max}}~P(S \geq S^*)$")
+axes[1,1].set_xlabel(f"target range-wide stability, {rob_metric_lab}")
 handles, labels = axes[1,1].get_legend_handles_labels()
 axes[1,1].legend(handles[::-1], labels[::-1], fontsize=17)
 axes[1,1].set_xlim(meta_metric_nochange, 1)
@@ -454,7 +450,7 @@ axes[1,1].set_ylim(-0.01, ymax)
 # Add colorbar on separate axis
 cbar_ax = fig.add_axes([0.2, 0.009, 0.6, 0.025])  # [left, bottom, width, height]
 fig.colorbar(scatter, cax=cbar_ax, orientation='horizontal', 
-    label=r"optimal range fraction for intervention $n~/~n_{tot}$")
+    label=r"optimal fraction of populations managed $n~/~n_{tot}$")
 
 fig.savefig(fig_prefix + 'fig2_pre.png', bbox_inches='tight', dpi=dpi)
 fig.savefig(fig_prefix + 'fig2_pre.svg', bbox_inches='tight')

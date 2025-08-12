@@ -132,11 +132,9 @@ from scipy.interpolate import RBFInterpolator
 from scipy.optimize import minimize
 
 NN_ROB = 150
-NN_S = 100
-# SMOOTHING = 0.15
 SMOOTHING = 0.01
 
-C = 6 
+C = 6
 assert np.any(np.isclose(C_vec/ncell_tot, C))
 C_i = np.isclose(C_vec/ncell_tot, C).argmax()
 
