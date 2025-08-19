@@ -28,14 +28,15 @@ constants.update({'final_max_tau': np.nan})
 constants['meta_metric'] = 'gte_thresh'
 constants.update({'metric': 'lambda_s'})
 constants.update({'tauc_method': 'flat'})
-constants.update({'overwrite_metrics': True}) 
+constants.update({'overwrite_metrics': False}) 
 constants['overwrite_results'] = True
 metric_thresh = 0.975 # Threshold of pop metric value used for calculating meta metric
 
 # Get list of samples for each parameter
-constants['tauc_min_samples'] = np.arange(2, 18, 4)
-constants['ncell_samples'] =  150#250
-constants['slice_samples'] = 300#500
+#constants['tauc_min_samples'] = np.arange(2, 18, 4)
+constants['tauc_min_samples'] = np.arange(1,15,1)
+constants['ncell_samples'] =  100#250
+constants['slice_samples'] = 200#500
 
 # Define ordered list of parameter keys
 param_keys = ['C', 'ncell', 'slice_left',

@@ -43,8 +43,8 @@ rc('font', serif=['Computer Modern Sans Serif'] + plt.rcParams['font.serif'])
 rc('font', weight='light')
 histlw = 5.5
 cbar_lpad = 30
-dpi = 50
-#dpi = 200
+#dpi = 50
+dpi = 200
 
 # Function to read in things specific to given results as global variables
 def set_globals(results_pre):
@@ -61,9 +61,9 @@ def set_globals(results_pre):
         globals()['rob_metric_lab'] = r'$\s_{meta}^*$'
         globals()['mean_metric_lab'] = r'$<s>$'
     globals()['fn_prefix'] = f"{results_pre}/data/Aeff_{Aeff}/tfinal_{t_final}/metric_{metric}/"
-    globals()['fig_prefix'] = f"{results_pre}/figs/Aeff_{Aeff}/tfinal_{t_final}/metric_{metric}/"
-    #globals()['fig_prefix'] = os.path.join('/','Volumes', 'Macintosh HD', 'Users', 'patrick', 
-    #                                       'Google Drive', 'My Drive', 'Research', 'Regan', 'Figs/')
+    #globals()['fig_prefix'] = f"{results_pre}/figs/Aeff_{Aeff}/tfinal_{t_final}/metric_{metric}/"
+    globals()['fig_prefix'] = os.path.join('/','Volumes', 'Macintosh HD', 'Users', 'patrick', 
+                                           'Google Drive', 'My Drive', 'Research', 'Regan', 'Figs/')
 
     # Load things saved specific to these results
     globals()['metric_all'] = np.load(f"{results_pre}/data/Aeff_{Aeff}/tfinal_{t_final}/metric_{metric}/metric_all.npy")
@@ -206,7 +206,7 @@ elif metric == 'lambda_s':
     ax3.set_ylabel(rf'growth rate, $\lambda(\tau)$')
 elif metric == 's':
     ax3.set_ylabel(rf's')
-ax3.plot([], [], color='k', label=mean_metric_lab)
+ax3.plot([], [], color='k', label='baseline: '+mean_metric_lab)
 ax3.legend(bbox_to_anchor=(0.2, -0.05, 0.5, 0.5), fontsize=24)
 
 ax3.set_ylim(metric_edges[np.nonzero(im[0][min_edge_i])[0].min()], max(metric_edges))
@@ -416,16 +416,13 @@ for line_i, C_i in enumerate(C_i_samples):
     plot_vec = np.ones(len(rob_thresh_vec)) * np.nan
     c_vec = np.ones(len(rob_thresh_vec)) * np.nan
     for thresh_i, thresh in enumerate(rob_thresh_vec):
-        #if thresh_i % 2 == 0: continue
         # Get the maximum robustness across (ncell, sl) at this C
         if maxrob[thresh_i, C_i] < 1:
             plot_vec[thresh_i] = maxrob[thresh_i, C_i]
         if not np.isnan(plot_vec[thresh_i]):
             c_vec[thresh_i] = ncell_vec[int(argmaxrob[thresh_i, C_i][0])] / ncell_tot
     # Filter out some samples for clarity
-    samp_spacing = 1
-    #scatter = axes[1,1].scatter(plot_vec[::samp_spacing], rob_thresh_vec[::samp_spacing], cmap=colormap, norm=normalize,
-    #                    c=c_vec[::samp_spacing], marker=all_markers[line_i])#, s=60)
+    samp_spacing = 4
     scatter = axes[1,1].scatter(rob_thresh_vec[::samp_spacing], plot_vec[::samp_spacing], cmap=colormap, norm=normalize,
                         c=c_vec[::samp_spacing], marker=all_markers[line_i])#, s=60)
     axes[1,1].scatter([], [], label=fr"$R~/~n_{{tot}}=${np.round(C_vec[C_i]/ncell_tot, 1)}",
@@ -440,8 +437,8 @@ axes[1,1].set_ylabel(fr"$\text{{max}}~P(S \geq S^*)$")
 axes[1,1].set_xlabel(f"target range-wide stability, {rob_metric_lab}")
 handles, labels = axes[1,1].get_legend_handles_labels()
 axes[1,1].legend(handles[::-1], labels[::-1], fontsize=17)
-axes[1,1].set_xlim(meta_metric_nochange, 1)
-#axes[1,1].set_xlim(0, 1)
+#axes[1,1].set_xlim(meta_metric_nochange, 1)
+axes[1,1].set_xlim(1, meta_metric_nochange)
 xticks = np.arange(0., 1.2, 0.2)
 axes[1,1].set_yticks(xticks)
 axes[1,1].set_ylim(-0.01, ymax)
@@ -457,115 +454,115 @@ fig.savefig(fig_prefix + 'fig2_pre.svg', bbox_inches='tight')
 
 ################################################################
 
-cmap = copy.copy(cm.twilight_shifted)
-vmin = -1; vmax = 1
-norm = colors.Normalize(vmin=vmin, vmax=vmax)
-#for C_i in C_i_vec:
-for C_i in np.arange(len(C_vec)):
-    tauhat_min = np.round(C_vec[C_i]/ncell_tot, 2)
-    fig = plt.figure(figsize=np.array([6.8, 6])*2.)
-    gs = GridSpec(3, 4, figure=fig, width_ratios=[2, 2, 1.1, 1.1], height_ratios=[1, 1, 1])
-    ax1 = fig.add_subplot(gs[0, :2])  # Top-left subplot
-    ax2 = fig.add_subplot(gs[1:, :2])  # Bottom-left subplot
-    ax3 = fig.add_subplot(gs[:, 2])  # Right subplot
-    ax4 = fig.add_subplot(gs[:, 3])  # Right subplot
-    gs.update(hspace=0.28)  # Adjust vertical spacing
-
-    # Read in / set constants
-    set_globals(results_pre)
-    #stepfit_T1 = np.load(fn_prefix + f"{tauhat_min}/stepfit_T1.npy")
-    total_inoptima = np.load(fn_prefix + f"{tauhat_min}/total_inoptima.npy")
-    closest_thresh_i = np.load(fn_prefix + f"{tauhat_min}/closest_thresh_i.npy")
-    inoptima_vec = np.load(fn_prefix + f"{tauhat_min}/inoptima_vec.npy")
-
-    mapi_sorted = mapindices[tau_argsort].T
-    # Initialize array for sensitivity metric; no changes needed to case of inclusions (T1 > 0)
-    '''NOTE sampling is only approximately even across omega, could be throwing results off'''
-    sens_metric = total_inoptima / closest_thresh_i.size
-    '''DONT ACTUALLY NEED TO USE T1'''
-    #inclusion_filt = (stepfit_T1 > 0) & (stepfit_T1 <= 1)
-    # Flip sign and adjust value for cells with exclusions
-    #exclusion_filt = (stepfit_T1 < 0)
-    exclusion_filt = (sens_metric != 1) & (inoptima_vec[:, 0] == True)
-    sens_metric[exclusion_filt] = -1 * sens_metric[exclusion_filt]
-
-    #alwaysex_filt = (stepfit_T1 == 2)
-    #sens_metric[alwaysex_filt] = 0
-    '''change always in value to -1 for the sake of plotting'''
-    '''Should split the quantity thats == 1 on top & bottom in the tau plot?'''
-    #alwaysin_filt = (stepfit_T1 == 3)
-    #sens_metric[alwaysin_filt] =-1
-    sens_metric[sens_metric == 1] = -1
-
-    ### INITIAL TAU DISTRIBUTION VIZ ###
-    colorbar_samples = np.linspace(-1, 1, 51)
-    line_colors = cmap(norm(colorbar_samples))
-    tau_edges = np.linspace(min(tau_flat), 44, 80)
-    tau_step = np.diff(tau_edges)[0]
-    tau_cntrs = tau_edges + tau_step
-    all_heights = np.ones((colorbar_samples.size, tau_edges.size)) * np.nan
-    for tau_edge_i, tau_edge in enumerate(tau_edges):
-        if tau_edge_i < tau_edges.size - 1:
-            tau_filt = (tau_sorted >= tau_edge) & (tau_sorted < tau_edges[tau_edge_i+1])
-        else:
-            tau_filt = (tau_sorted >= tau_edge)
-        sensm_slice = sens_metric[tau_filt]
-        heights = np.ones(colorbar_samples.size) * np.nan
-        for c_samp_i, c_samp in enumerate(colorbar_samples):
-            heights[c_samp_i] = np.count_nonzero(sensm_slice <= c_samp) / sensm_slice.size
-        all_heights[:, tau_edge_i] = heights
-    '''
-    density hist initial tau
-    for each sens metric sample, in reverse order
-        overplot histogram of corresponding heights multiplied by that bin's density of initial tau, density=False, with corresponding color
-    '''
-    tau_densities, _, _ = ax1.hist(tau_flat, bins=tau_edges, color='black', histtype='step', lw=3.5, density=True);
-    '''Above I include all counts gte the last bin edge in the final bin
-       Numpy/matplotlib histogram doesnt do that, so I'll just cut off the last bin from above'''
-    for i, c_samp_i in enumerate(np.flip(np.arange(colorbar_samples.size))):
-        bar_heights = (all_heights[c_samp_i,:-1] * tau_densities)
-        bar_colors = cmap(norm(colorbar_samples[c_samp_i]))
-        ax1.bar(tau_cntrs[:-1], bar_heights, width=np.diff(tau_cntrs[:-1])[0], color=bar_colors)
-    ax1.set_yticks([])
-    # ax1.set_ylabel(r"$\tau$ prevalence within range")
-    ax1.set_xlabel(r"$\tau$")
-    ax1.set_xlim(tau_edges[0], tau_edges[-2])
-    ######
-
-    ### GEOGRAPHICAL MAP ###
-    colored_data = np.ones(maps_filt.shape + (4,)) * np.nan #colors in rgba
-    colored_data[mapi_sorted[0], mapi_sorted[1]] = cmap(norm(sens_metric))
-    # Color background
-    colored_data[maps_filt == False] = colors.to_rgba('black', alpha=0.3)
-    # Crop out border where all nans
-    nonzero_indices = np.nonzero(maps_filt)
-    row_min, row_max = nonzero_indices[0].min(), nonzero_indices[0].max()
-    col_min, col_max = nonzero_indices[1].min(), nonzero_indices[1].max()
-    colored_data = colored_data[row_min:row_max + 1, col_min:col_max + 1]
-
-    im = ax2.imshow(colored_data)#, aspect='auto')
-    ax2.set_yticks([])
-    ax2.set_xticks([])
-    ######
-
-    ### COLORMAP ###
-    cbar_pos = ax3.get_position()  # Get original position of the colorbar
-    new_cbar_pos = [
-        cbar_pos.x0 + 0.13,  # Shift right to create left white space
-        cbar_pos.y0 + 0.04,         # Keep vertical position
-        cbar_pos.width * 0.25,  # Narrow the width
-        cbar_pos.height * 0.9
-    ]
-    ax3.set_position(new_cbar_pos)  # Apply new position
-    sm = cm.ScalarMappable(cmap=copy.copy(cm.twilight), norm=norm)
-    sm.set_array([])
-    #cbar = fig.colorbar(sm, cax=ax3, aspect=60, ticks=[])
-    ax3.axis('off')
-
-    ax4.axis('off')
-    ######
-
-    fn = fig_prefix + f'fig3_pre_{tauhat_min}.png'
-    fig.savefig(fn, bbox_inches='tight', dpi=dpi)
-    fn = fig_prefix + f'fig3_pre_{tauhat_min}.svg'
-    fig.savefig(fn, bbox_inches='tight', dpi=dpi)
+#cmap = copy.copy(cm.twilight_shifted)
+#vmin = -1; vmax = 1
+#norm = colors.Normalize(vmin=vmin, vmax=vmax)
+##for C_i in C_i_vec:
+#for C_i in np.arange(len(C_vec)):
+#    tauhat_min = np.round(C_vec[C_i]/ncell_tot, 2)
+#    fig = plt.figure(figsize=np.array([6.8, 6])*2.)
+#    gs = GridSpec(3, 4, figure=fig, width_ratios=[2, 2, 1.1, 1.1], height_ratios=[1, 1, 1])
+#    ax1 = fig.add_subplot(gs[0, :2])  # Top-left subplot
+#    ax2 = fig.add_subplot(gs[1:, :2])  # Bottom-left subplot
+#    ax3 = fig.add_subplot(gs[:, 2])  # Right subplot
+#    ax4 = fig.add_subplot(gs[:, 3])  # Right subplot
+#    gs.update(hspace=0.28)  # Adjust vertical spacing
+#
+#    # Read in / set constants
+#    set_globals(results_pre)
+#    #stepfit_T1 = np.load(fn_prefix + f"{tauhat_min}/stepfit_T1.npy")
+#    total_inoptima = np.load(fn_prefix + f"{tauhat_min}/total_inoptima.npy")
+#    closest_thresh_i = np.load(fn_prefix + f"{tauhat_min}/closest_thresh_i.npy")
+#    inoptima_vec = np.load(fn_prefix + f"{tauhat_min}/inoptima_vec.npy")
+#
+#    mapi_sorted = mapindices[tau_argsort].T
+#    # Initialize array for sensitivity metric; no changes needed to case of inclusions (T1 > 0)
+#    '''NOTE sampling is only approximately even across omega, could be throwing results off'''
+#    sens_metric = total_inoptima / closest_thresh_i.size
+#    '''DONT ACTUALLY NEED TO USE T1'''
+#    #inclusion_filt = (stepfit_T1 > 0) & (stepfit_T1 <= 1)
+#    # Flip sign and adjust value for cells with exclusions
+#    #exclusion_filt = (stepfit_T1 < 0)
+#    exclusion_filt = (sens_metric != 1) & (inoptima_vec[:, 0] == True)
+#    sens_metric[exclusion_filt] = -1 * sens_metric[exclusion_filt]
+#
+#    #alwaysex_filt = (stepfit_T1 == 2)
+#    #sens_metric[alwaysex_filt] = 0
+#    '''change always in value to -1 for the sake of plotting'''
+#    '''Should split the quantity thats == 1 on top & bottom in the tau plot?'''
+#    #alwaysin_filt = (stepfit_T1 == 3)
+#    #sens_metric[alwaysin_filt] =-1
+#    sens_metric[sens_metric == 1] = -1
+#
+#    ### INITIAL TAU DISTRIBUTION VIZ ###
+#    colorbar_samples = np.linspace(-1, 1, 51)
+#    line_colors = cmap(norm(colorbar_samples))
+#    tau_edges = np.linspace(min(tau_flat), 44, 80)
+#    tau_step = np.diff(tau_edges)[0]
+#    tau_cntrs = tau_edges + tau_step
+#    all_heights = np.ones((colorbar_samples.size, tau_edges.size)) * np.nan
+#    for tau_edge_i, tau_edge in enumerate(tau_edges):
+#        if tau_edge_i < tau_edges.size - 1:
+#            tau_filt = (tau_sorted >= tau_edge) & (tau_sorted < tau_edges[tau_edge_i+1])
+#        else:
+#            tau_filt = (tau_sorted >= tau_edge)
+#        sensm_slice = sens_metric[tau_filt]
+#        heights = np.ones(colorbar_samples.size) * np.nan
+#        for c_samp_i, c_samp in enumerate(colorbar_samples):
+#            heights[c_samp_i] = np.count_nonzero(sensm_slice <= c_samp) / sensm_slice.size
+#        all_heights[:, tau_edge_i] = heights
+#    '''
+#    density hist initial tau
+#    for each sens metric sample, in reverse order
+#        overplot histogram of corresponding heights multiplied by that bin's density of initial tau, density=False, with corresponding color
+#    '''
+#    tau_densities, _, _ = ax1.hist(tau_flat, bins=tau_edges, color='black', histtype='step', lw=3.5, density=True);
+#    '''Above I include all counts gte the last bin edge in the final bin
+#       Numpy/matplotlib histogram doesnt do that, so I'll just cut off the last bin from above'''
+#    for i, c_samp_i in enumerate(np.flip(np.arange(colorbar_samples.size))):
+#        bar_heights = (all_heights[c_samp_i,:-1] * tau_densities)
+#        bar_colors = cmap(norm(colorbar_samples[c_samp_i]))
+#        ax1.bar(tau_cntrs[:-1], bar_heights, width=np.diff(tau_cntrs[:-1])[0], color=bar_colors)
+#    ax1.set_yticks([])
+#    # ax1.set_ylabel(r"$\tau$ prevalence within range")
+#    ax1.set_xlabel(r"$\tau$")
+#    ax1.set_xlim(tau_edges[0], tau_edges[-2])
+#    ######
+#
+#    ### GEOGRAPHICAL MAP ###
+#    colored_data = np.ones(maps_filt.shape + (4,)) * np.nan #colors in rgba
+#    colored_data[mapi_sorted[0], mapi_sorted[1]] = cmap(norm(sens_metric))
+#    # Color background
+#    colored_data[maps_filt == False] = colors.to_rgba('black', alpha=0.3)
+#    # Crop out border where all nans
+#    nonzero_indices = np.nonzero(maps_filt)
+#    row_min, row_max = nonzero_indices[0].min(), nonzero_indices[0].max()
+#    col_min, col_max = nonzero_indices[1].min(), nonzero_indices[1].max()
+#    colored_data = colored_data[row_min:row_max + 1, col_min:col_max + 1]
+#
+#    im = ax2.imshow(colored_data)#, aspect='auto')
+#    ax2.set_yticks([])
+#    ax2.set_xticks([])
+#    ######
+#
+#    ### COLORMAP ###
+#    cbar_pos = ax3.get_position()  # Get original position of the colorbar
+#    new_cbar_pos = [
+#        cbar_pos.x0 + 0.13,  # Shift right to create left white space
+#        cbar_pos.y0 + 0.04,         # Keep vertical position
+#        cbar_pos.width * 0.25,  # Narrow the width
+#        cbar_pos.height * 0.9
+#    ]
+#    ax3.set_position(new_cbar_pos)  # Apply new position
+#    sm = cm.ScalarMappable(cmap=copy.copy(cm.twilight), norm=norm)
+#    sm.set_array([])
+#    #cbar = fig.colorbar(sm, cax=ax3, aspect=60, ticks=[])
+#    ax3.axis('off')
+#
+#    ax4.axis('off')
+#    ######
+#
+#    fn = fig_prefix + f'fig3_pre_{tauhat_min}.png'
+#    fig.savefig(fn, bbox_inches='tight', dpi=dpi)
+#    fn = fig_prefix + f'fig3_pre_{tauhat_min}.svg'
+#    fig.savefig(fn, bbox_inches='tight', dpi=dpi)

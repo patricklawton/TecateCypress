@@ -51,7 +51,7 @@ assert np.any(np.isclose(C_vec/pproc.ncell_tot, C))
 
 # Get optimal decisions at a few values of q (% decrease in S_opt_baseline)
 #q_vec = np.arange(0.0, 1, 0.2)
-q_vec = np.array([0.0]) 
+q_vec = np.array([0.0, 0.25, 0.5]) 
 Sstar_i_optdecisions = np.empty(len(q_vec))
 decision_opt_uncertain = np.load(pproc.data_dir + '/decision_opt_uncertain.npy')
 rob_thresh_vec = np.load(pproc.data_dir + '/rob_thresh_vec.npy')

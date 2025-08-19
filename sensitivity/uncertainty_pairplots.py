@@ -1,5 +1,6 @@
 import numpy as np
 from matplotlib import colors, cm, rc
+import matplotlib as mpl
 from matplotlib import pyplot as plt
 import pickle
 import signac as sg
@@ -8,6 +9,9 @@ import copy as copy
 from global_functions import adjustmaps
 import h5py
 from itertools import product, combinations
+import os
+
+overwrite_results = False
 
 # Define/load things non-specific to a given set of results
 metric = 'lambda_s'
@@ -35,7 +39,8 @@ rc('font', serif=['Computer Modern Sans Serif'] + plt.rcParams['font.serif'])
 rc('font', weight='light')
 histlw = 5.5
 cbar_lpad = 30
-dpi = 40
+#dpi = 40
+dpi = 200
 
 # Function to read in things specific to given results as global variables
 def set_globals(results_pre):
@@ -52,9 +57,9 @@ def set_globals(results_pre):
         globals()['rob_metric_lab'] = r'$\s_{meta}^*$'
         globals()['mean_metric_lab'] = r'$<s>$'
     globals()['fn_prefix'] = f"{results_pre}/data/Aeff_{Aeff}/tfinal_{t_final}/metric_{metric}/"
-    globals()['fig_prefix'] = f"{results_pre}/figs/Aeff_{Aeff}/tfinal_{t_final}/metric_{metric}/"
-    #globals()['fig_prefix'] = os.path.join('/','Volumes', 'Macintosh HD', 'Users', 'patrick',
-    #                                       'Google Drive', 'My Drive', 'Research', 'Regan', 'Figs/')
+    #globals()['fig_prefix'] = f"{results_pre}/figs/Aeff_{Aeff}/tfinal_{t_final}/metric_{metric}/"
+    globals()['fig_prefix'] = os.path.join('/','Volumes', 'Macintosh HD', 'Users', 'patrick',
+                                           'Google Drive', 'My Drive', 'Research', 'Regan', 'Figs/')
 
 # Read in maps and convert fdm to tau, used by multiple plots below
 ul_coord = [1500, 2800]
@@ -78,11 +83,14 @@ tau_sorted = tau_flat[tau_argsort]
 
 # Define keys and labels for parameters
 uncertain_params = ['mu_tau', 'sigm_tau', 'mu_tauc', 'sigm_tauc', 'tau_crit']#'mean_lam_diff']
-param_labels = [r'$\mu_{\tau}$', r'$\sigma_{\tau}$', r'$\mu_{\hat{\tau}}$', 
-                r'$\sigma_{\hat{\tau}}$', r'$\hat{\tau}^*$']#r'$<\lambda_m - \bar{\lambda}>$']
+#param_labels = [r'$\mu_{\tau}$', r'$\sigma_{\tau}$', r'$\mu_{\hat{\tau}}$', 
+#                r'$\sigma_{\hat{\tau}}$', r'$\hat{\tau}^*$']#r'$<\lambda_m - \bar{\lambda}>$']
+param_labels = [r'$p_{\tau}$', r'$\sigma_{\tau}$', r'$p_{\Delta\tau}$', 
+                r'$\sigma_{\Delta\tau}$', r'$\hat{\tau}^*$']#r'$<\lambda_m - \bar{\lambda}>$']
 
 # Get all possible parameter pairs
 param_pairs = [pair for pair in combinations(range(len(uncertain_params)), 2)]
+print(param_pairs)
 
 # Read in data of S samples at optimal decisions, as well as some other things
 set_globals(results_pre)
@@ -131,8 +139,8 @@ for demographic_i in demographic_i_vec:
     if np.any(lam_samples >= lamstar):
         tau_crit_i = np.abs(lam_samples - lamstar).argmin()
         tau_crit_vec[demographic_i] = tau_samples[tau_crit_i]
-print("ATTENTION: CAPPING tau_crit AT 35 FOR THE SAKE OF PLOTTING, DONT LEAVE THIS IN HERE")
-tau_crit_vec[tau_crit_vec >= 35] = 35
+print("ATTENTION: CAPPING tau_crit AT 40 FOR THE SAKE OF PLOTTING, DONT LEAVE THIS IN HERE")
+tau_crit_vec[tau_crit_vec >= 40] = 40
 
 def get_pair_results(C_i, n_i, l_i, Sstar, num_param_bins):
     # Get the slice of range-wide stability at the specified decision parameters
@@ -213,22 +221,30 @@ C_i = np.argmin(np.abs(C_vec - C))
 print(f'C/n_tot={C_vec[C_i]/ncell_tot}')
 
 # Get results under baseline conditions
-all_results = {}
-results, param_cntrs = get_pair_results(0, 0, 0, S_opt_baseline, num_param_bins)
-all_results['baseline'] = results
+if overwrite_results:
+    all_results = {q_i: {} for q_i in range(q_vec.size)}
+    results, param_cntrs = get_pair_results(0, 0, 0, S_opt_baseline, num_param_bins)
+    all_results['baseline'] = results
+    all_results['param_cntrs'] = param_cntrs
+else:
+    with open(fn_prefix + '/pair_results.pkl', 'rb') as handle:
+        all_results = pickle.load(handle)
+        param_cntrs = all_results['param_cntrs']
 
 # Specify what percent decrease in optimal S baseline we want to look at
-for q_i in range(q_vec.size):
+#for q_i in range(q_vec.size):
+for q_i in range(1):
     # Get corresponding Sstar
     Sstar_i = Sstar_i_optdecisions[q_i]
     Sstar = rob_thresh_vec[Sstar_i]
 
-    # Get results at the specified q value for comparison to baseline
-    results, param_cntrs = get_pair_results(C_i, q_i+1, q_i+1, Sstar, num_param_bins)
-    all_results['uncertain'] = results
+    if overwrite_results:
+        # Get results at the specified q value for comparison to baseline
+        results, _ = get_pair_results(C_i, q_i+1, q_i+1, Sstar, num_param_bins)
+        all_results[q_i]['uncertain'] = results
 
-    # Take difference between results
-    all_results['uncertain-baseline'] = all_results['uncertain'] - all_results['baseline']
+        # Take difference between results
+        all_results[q_i]['uncertain-baseline'] = all_results[q_i]['uncertain'] - all_results['baseline']
 
     for condition_key in ['baseline', 'uncertain', 'uncertain-baseline']:
         # Plot them
@@ -236,14 +252,29 @@ for q_i in range(q_vec.size):
         fig, axes = plt.subplots(len(uncertain_params)-1, len(uncertain_params)-1, figsize=figdim*6)
 
         for pair_i, (param_i, param_j) in enumerate(param_pairs):
-            results_pair = all_results[condition_key][pair_i]
+            if condition_key == 'baseline':
+                results_pair = all_results[condition_key][pair_i]
+            else:
+                results_pair = all_results[q_i][condition_key][pair_i]
+
+            # Get limits of parameters on x and y axes
+            x_diff = np.diff(param_cntrs[param_j])[0]
+            x_min = param_cntrs[param_j][0] - x_diff/2
+            x_max = param_cntrs[param_j][-1] + x_diff/2
+            x_bounds = np.array([x_min, x_max])
+
+            y_diff = np.diff(param_cntrs[param_i])[0]
+            y_min = param_cntrs[param_i][0] - y_diff/2
+            y_max = param_cntrs[param_i][-1] + y_diff/2
+            y_bounds = np.array([y_min, y_max])
 
             if condition_key == 'uncertain-baseline':
                 cmap = 'PuOr_r'
                 # Get extreme value of result for colorbar limits
                 extreme = max([np.abs(np.nanmin(results_pair)), np.nanmax(results_pair)])
-                #extreme = 0.25
-                #print("HARDCODING IN COLORBAR LIMIT")
+                print(uncertain_params[param_j], uncertain_params[param_i], extreme)
+                print("HARDCODING IN COLORBAR LIMIT")
+                extreme = 1.
                 norm = colors.TwoSlopeNorm(vmin=-extreme, vcenter=0, vmax=extreme)
                 #print(f'sum of contribution differences at ({uncertain_params[param_i], uncertain_params[param_j]}): {np.sum(results_pair)}')
             else:
@@ -252,34 +283,54 @@ for q_i in range(q_vec.size):
 
             if param_i in [0, 2]:
                 origin = 'upper'
+                # Also flip ymin and ymax
+                y_bounds = np.flip(y_bounds)
             else:
                 origin = 'lower'
 
             if param_j  in [0, 2]:
                 results_pair = np.fliplr(results_pair.copy())
                 x_axis = np.flip(param_cntrs[param_j])
+                # Also flip xmin, xmax
+                x_bounds = np.flip(x_bounds)
             else:
                 x_axis = param_cntrs[param_j]
 
-            im = axes[param_i,param_j-1].imshow(results_pair, origin=origin, norm=norm, cmap=cmap)
+            extent = np.concatenate((x_bounds, y_bounds))
+            im = axes[param_i,param_j-1].imshow(results_pair, origin=origin, norm=norm, cmap=cmap, extent=extent, aspect='auto')
+            axes[param_i, param_j-1].set_box_aspect(1)
             if param_j == len(uncertain_params) - 1:
                 label = r'$\Delta P(S \geq S^*)$' if condition_key == 'uncertain-baseline' else r'$P(S \geq S^*)$'
-                #label = r'$\Delta$ contribution to $\omega$' if condition_key == 'uncertain-baseline' else r'contribution to $\omega$'
-                cbar = fig.colorbar(im, shrink=0.75, label=label)
+                cbar = fig.colorbar(im, shrink=0.75)#, label=label)
+                cbar.set_label(label, fontsize=mpl.rcParams['legend.fontsize']*1.5)
+
+                # Plot vertical line at critical tau under baseline, hardcoded for now
+                axes[param_i, param_j-1].axvline(32.895, ls='--', c='k')
             else:
                 cbar = fig.colorbar(im, shrink=0.75)
             cbar.ax.tick_params(labelsize=plt.rcParams['axes.labelsize'] * 0.75)
-            tick_spacing = 1 if num_param_bins <= 5 else 2
+            tick_spacing = 1 if num_param_bins <= 5 else 3
             numround = 1 if param_j-1 == 3 else 2
-            axes[param_i,param_j-1].set_xlabel(param_labels[param_j], fontsize=plt.rcParams['axes.titlesize']*1.75)
-            axes[param_i,param_j-1].set_xticks(np.arange(num_param_bins)[::tick_spacing],
-                                               np.round(x_axis, numround)[::tick_spacing],
-                                               size=plt.rcParams['axes.labelsize']*0.25)
-            axes[param_i,param_j-1].set_ylabel(param_labels[param_i], fontsize=plt.rcParams['axes.titlesize']*1.75)
-            axes[param_i,param_j-1].set_yticks(np.arange(num_param_bins)[::tick_spacing], np.round(param_cntrs[param_i], 2)[::tick_spacing])
+            axes[param_i,param_j-1].set_xticks(x_axis[::tick_spacing],
+                                               np.round(x_axis, numround)[::tick_spacing])
+            axes[param_i,param_j-1].set_yticks(param_cntrs[param_i][::tick_spacing], 
+                                               np.round(param_cntrs[param_i], 2)[::tick_spacing])
             axes[param_i,param_j-1].tick_params(axis='both', labelsize=plt.rcParams['axes.labelsize'] * 0.75)
+            if param_i == param_j - 1:
+                axes[param_i,param_j-1].set_xlabel(param_labels[param_j], fontsize=plt.rcParams['axes.titlesize']*2.25)
+                axes[param_i,param_j-1].set_ylabel(param_labels[param_i], fontsize=plt.rcParams['axes.titlesize']*2.25)
+            #else: 
+            #    axes[param_i,param_j-1].set_xticks([])
+            #    axes[param_i,param_j-1].set_yticks([])
 
-        #if condition_key == 'uncertain-baseline':
-        if q_i == 0: 
+        for param_i, param_j in [[1,0], [2,0], [3,0], 
+                                 [2,1], [3,1],
+                                 [3,2]]:
+            axes[param_i, param_j].set_axis_off()
+
+        if (q_i == 0) and (condition_key == 'uncertain-baseline'): 
             fig.savefig(fig_prefix + f'uncertainty_pairs_{condition_key}_{np.round(q_vec[q_i],2)}.png', bbox_inches='tight', dpi=dpi)
         plt.close(fig)
+
+    with open(fn_prefix + '/pair_results.pkl', 'wb') as handle:
+        pickle.dump(all_results, handle)
