@@ -39,8 +39,8 @@ rc('font', serif=['Computer Modern Sans Serif'] + plt.rcParams['font.serif'])
 rc('font', weight='light')
 histlw = 5.5
 cbar_lpad = 30
-#dpi = 40
-dpi = 200
+dpi = 40
+#dpi = 200
 
 # Function to read in things specific to given results as global variables
 def set_globals(results_pre):
@@ -57,9 +57,9 @@ def set_globals(results_pre):
         globals()['rob_metric_lab'] = r'$\s_{meta}^*$'
         globals()['mean_metric_lab'] = r'$<s>$'
     globals()['fn_prefix'] = f"{results_pre}/data/Aeff_{Aeff}/tfinal_{t_final}/metric_{metric}/"
-    #globals()['fig_prefix'] = f"{results_pre}/figs/Aeff_{Aeff}/tfinal_{t_final}/metric_{metric}/"
-    globals()['fig_prefix'] = os.path.join('/','Volumes', 'Macintosh HD', 'Users', 'patrick',
-                                           'Google Drive', 'My Drive', 'Research', 'Regan', 'Figs/')
+    globals()['fig_prefix'] = f"{results_pre}/figs/Aeff_{Aeff}/tfinal_{t_final}/metric_{metric}/"
+    #globals()['fig_prefix'] = os.path.join('/','Volumes', 'Macintosh HD', 'Users', 'patrick',
+    #                                       'Google Drive', 'My Drive', 'Research', 'Regan', 'Figs/')
 
 # Read in maps and convert fdm to tau, used by multiple plots below
 ul_coord = [1500, 2800]
@@ -82,15 +82,16 @@ tau_argsort = np.argsort(tau_flat)
 tau_sorted = tau_flat[tau_argsort]
 
 # Define keys and labels for parameters
-uncertain_params = ['mu_tau', 'sigm_tau', 'mu_tauc', 'sigm_tauc', 'tau_crit']#'mean_lam_diff']
-#param_labels = [r'$\mu_{\tau}$', r'$\sigma_{\tau}$', r'$\mu_{\hat{\tau}}$', 
-#                r'$\sigma_{\hat{\tau}}$', r'$\hat{\tau}^*$']#r'$<\lambda_m - \bar{\lambda}>$']
-param_labels = [r'$p_{\tau}$', r'$\sigma_{\tau}$', r'$p_{\Delta\tau}$', 
-                r'$\sigma_{\Delta\tau}$', r'$\hat{\tau}^*$']#r'$<\lambda_m - \bar{\lambda}>$']
+#uncertain_params = ['mu_tau', 'sigm_tau', 'mu_tauc', 'sigm_tauc', 'tau_crit']
+#param_labels = [r'$p_{\tau}$', r'$\sigma_{\tau}$', r'$p_{\Delta\tau}$', 
+#                r'$\sigma_{\Delta\tau}$', r'$\hat{\tau}^*$']
+uncertain_params = ['tau', 'Deltatau', 'tau_crit']
+#param_labels = [r'$p_{\tau} + \sigma_{\tau}$', r'$p_{\Delta\tau} + \sigma_{\Delta\tau}$', 
+#                r'$\hat{\tau}^*$']
+param_labels = [r'$p_{\tau}$', r'$p_{\Delta\tau}$', r'$\tau^*$']
 
 # Get all possible parameter pairs
 param_pairs = [pair for pair in combinations(range(len(uncertain_params)), 2)]
-print(param_pairs)
 
 # Read in data of S samples at optimal decisions, as well as some other things
 set_globals(results_pre)
@@ -127,7 +128,7 @@ for demographic_i in demographic_i_vec:
     # Compute the average difference in this sample's lambda from baseline across tau_samples
     lam_diff = np.mean(metric_spl_all[demographic_i](tau_samples) - baseline_lam)
     lam_diff_vec[demographic_i] = lam_diff
-#print("ATTENTION: CAPPING lam_diff AT ZERO FOR THE SAKE OF PLOTTING, DONT LEAVE THIS IN HERE")
+#print("ATTENTION: CAPPING lam_diff AT ZERO FOR THE SAKE OF PLOTTING")
 #lam_diff_vec[lam_diff_vec <= 0] = 0
 
 # Summarize uncertainty in demography by critical tau values where pops are 'stabilized'
@@ -137,9 +138,15 @@ tau_samples = np.linspace(tau_vec[1], tau_vec.max(), 1_000)
 for demographic_i in demographic_i_vec:
     lam_samples = metric_spl_all[demographic_i](tau_samples)
     if np.any(lam_samples >= lamstar):
-        tau_crit_i = np.abs(lam_samples - lamstar).argmin()
-        tau_crit_vec[demographic_i] = tau_samples[tau_crit_i]
-print("ATTENTION: CAPPING tau_crit AT 40 FOR THE SAKE OF PLOTTING, DONT LEAVE THIS IN HERE")
+        # Find intersection between line connecting points on either side of lamstar
+        lam_diffs = lam_samples - lamstar
+        pos_lam_i = np.nonzero(lam_diffs > 0)[0]
+        ydiff = (lam_samples[pos_lam_i[0]+1] - lam_samples[pos_lam_i[0]-1])
+        xdiff = (tau_samples[pos_lam_i[0]+1] - tau_samples[pos_lam_i[0]-1])
+        slope = ydiff / xdiff
+        tau_crit = ((lamstar - lam_samples[pos_lam_i[0]-1]) / slope) + tau_samples[pos_lam_i[0]-1]
+        tau_crit_vec[demographic_i] = tau_crit
+print("ATTENTION: CAPPING tau_crit AT 40 FOR THE SAKE OF PLOTTING")
 tau_crit_vec[tau_crit_vec >= 40] = 40
 
 def get_pair_results(C_i, n_i, l_i, Sstar, num_param_bins):
@@ -147,6 +154,9 @@ def get_pair_results(C_i, n_i, l_i, Sstar, num_param_bins):
     idx = ".".join(str(i) for i in [C_i, n_i, l_i])
     S_slice = np.array(phase[idx])
     x_uncertain = np.array(phase[idx + 'uncertainty_samples'])
+
+    # Make a temporary version of x_uncertain for summary statistics 
+    x_uncertain_temp = np.full((x_uncertain.shape[0], len(uncertain_params)), np.nan)
     
     # Compute robustness
     counts = np.count_nonzero(S_slice >= Sstar)
@@ -158,7 +168,22 @@ def get_pair_results(C_i, n_i, l_i, Sstar, num_param_bins):
 
     # Replace demographic samples in x_uncertain with our summary
     #x_uncertain[:, 4] = lam_diff_vec[x_uncertain[:,4].astype(int)]
-    x_uncertain[:, 4] = tau_crit_vec[x_uncertain[:,4].astype(int)]
+    x_uncertain_temp[:, 2] = tau_crit_vec[x_uncertain[:,4].astype(int)]
+
+    ## Use sum of pct changes and stdevs as summary stats
+    #x_uncertain_temp[:, 0] = x_uncertain[:,0] + x_uncertain[:,2]
+    #x_uncertain_temp[:, 1] = x_uncertain[:,1] + x_uncertain[:,3]
+
+    # Just look at p_tau and p_Deltatau
+    x_uncertain_temp[:, 0] = x_uncertain[:,0]
+    x_uncertain_temp[:, 1] = x_uncertain[:,2]
+
+    ## Look at +1 stdev away from mean pct change
+    #x_uncertain_temp[:, 0] = x_uncertain[:,0] + x_uncertain[:,1]
+    #x_uncertain_temp[:, 1] = x_uncertain[:,2] + x_uncertain[:,3]
+
+    # Replace x_uncertain with summary stats version
+    x_uncertain = x_uncertain_temp
 
     # Preallocate filters for samples within bins of each parameter
     bin_filts = {i: np.full((num_param_bins, x_uncertain.shape[0]), False) for i in range(x_uncertain.shape[-1])}
@@ -171,8 +196,6 @@ def get_pair_results(C_i, n_i, l_i, Sstar, num_param_bins):
             param_low = np.percentile(lam_diff_vec, 0.1)
             param_high = np.percentile(lam_diff_vec, 99.9)
         elif uncertain_params[param_i] == 'tau_crit':
-            #param_low = np.nanpercentile(tau_crit_vec, 0.1)
-            #param_high = np.nanpercentile(tau_crit_vec, 99.9)
             param_low = np.nanmin(tau_crit_vec)
             param_high = np.nanmax(tau_crit_vec)
         else:
@@ -249,7 +272,7 @@ for q_i in range(1):
     for condition_key in ['baseline', 'uncertain', 'uncertain-baseline']:
         # Plot them
         figdim = np.array([5,4])
-        fig, axes = plt.subplots(len(uncertain_params)-1, len(uncertain_params)-1, figsize=figdim*6)
+        fig, axes = plt.subplots(len(uncertain_params)-1, len(uncertain_params)-1, figsize=figdim*4)
 
         for pair_i, (param_i, param_j) in enumerate(param_pairs):
             if condition_key == 'baseline':
@@ -269,26 +292,25 @@ for q_i in range(1):
             y_bounds = np.array([y_min, y_max])
 
             if condition_key == 'uncertain-baseline':
-                cmap = 'PuOr_r'
+                cmap = 'RdPu'
                 # Get extreme value of result for colorbar limits
                 extreme = max([np.abs(np.nanmin(results_pair)), np.nanmax(results_pair)])
-                print(uncertain_params[param_j], uncertain_params[param_i], extreme)
                 print("HARDCODING IN COLORBAR LIMIT")
-                extreme = 1.
-                norm = colors.TwoSlopeNorm(vmin=-extreme, vcenter=0, vmax=extreme)
-                #print(f'sum of contribution differences at ({uncertain_params[param_i], uncertain_params[param_j]}): {np.sum(results_pair)}')
+                extreme = 0.65
+                #norm = colors.TwoSlopeNorm(vmin=-extreme, vcenter=0, vmax=extreme)
+                norm = colors.Normalize(vmin=0, vmax=extreme)
             else:
                 cmap = 'viridis'
                 norm = colors.Normalize(vmin=np.nanmin(results_pair), vmax=np.nanmax(results_pair))
 
-            if param_i in [0, 2]:
+            if param_i in [0,1]:#, 2]:
                 origin = 'upper'
                 # Also flip ymin and ymax
                 y_bounds = np.flip(y_bounds)
             else:
                 origin = 'lower'
 
-            if param_j  in [0, 2]:
+            if param_j  in [0,1]:#, 2]:
                 results_pair = np.fliplr(results_pair.copy())
                 x_axis = np.flip(param_cntrs[param_j])
                 # Also flip xmin, xmax
@@ -301,31 +323,32 @@ for q_i in range(1):
             axes[param_i, param_j-1].set_box_aspect(1)
             if param_j == len(uncertain_params) - 1:
                 label = r'$\Delta P(S \geq S^*)$' if condition_key == 'uncertain-baseline' else r'$P(S \geq S^*)$'
-                cbar = fig.colorbar(im, shrink=0.75)#, label=label)
-                cbar.set_label(label, fontsize=mpl.rcParams['legend.fontsize']*1.5)
+                cbar = fig.colorbar(im, shrink=0.80)#, label=label)
+                cbar.set_label(label, fontsize=mpl.rcParams['legend.fontsize']*1.75, labelpad=17)
 
                 # Plot vertical line at critical tau under baseline, hardcoded for now
                 axes[param_i, param_j-1].axvline(32.895, ls='--', c='k')
-            else:
-                cbar = fig.colorbar(im, shrink=0.75)
-            cbar.ax.tick_params(labelsize=plt.rcParams['axes.labelsize'] * 0.75)
+            #else:
+            #    cbar = fig.colorbar(im, shrink=0.75)
+            #cbar.ax.tick_params(labelsize=plt.rcParams['axes.labelsize'] * 0.75)
             tick_spacing = 1 if num_param_bins <= 5 else 3
             numround = 1 if param_j-1 == 3 else 2
             axes[param_i,param_j-1].set_xticks(x_axis[::tick_spacing],
                                                np.round(x_axis, numround)[::tick_spacing])
             axes[param_i,param_j-1].set_yticks(param_cntrs[param_i][::tick_spacing], 
                                                np.round(param_cntrs[param_i], 2)[::tick_spacing])
-            axes[param_i,param_j-1].tick_params(axis='both', labelsize=plt.rcParams['axes.labelsize'] * 0.75)
+            axes[param_i,param_j-1].tick_params(axis='both', labelsize=plt.rcParams['axes.labelsize'] * 1)
             if param_i == param_j - 1:
-                axes[param_i,param_j-1].set_xlabel(param_labels[param_j], fontsize=plt.rcParams['axes.titlesize']*2.25)
-                axes[param_i,param_j-1].set_ylabel(param_labels[param_i], fontsize=plt.rcParams['axes.titlesize']*2.25)
+                axes[param_i,param_j-1].set_xlabel(param_labels[param_j], fontsize=plt.rcParams['axes.titlesize']*2.5)
+                axes[param_i,param_j-1].set_ylabel(param_labels[param_i], fontsize=plt.rcParams['axes.titlesize']*2.5)
             #else: 
             #    axes[param_i,param_j-1].set_xticks([])
             #    axes[param_i,param_j-1].set_yticks([])
 
-        for param_i, param_j in [[1,0], [2,0], [3,0], 
-                                 [2,1], [3,1],
-                                 [3,2]]:
+        #for param_i, param_j in [[1,0], [2,0], [3,0], 
+        #                         [2,1], [3,1],
+        #                         [3,2]]:
+        for param_i, param_j in [[1,0]]:
             axes[param_i, param_j].set_axis_off()
 
         if (q_i == 0) and (condition_key == 'uncertain-baseline'): 

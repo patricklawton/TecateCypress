@@ -571,7 +571,7 @@ class Phase:
         '''could pre-generate tauc slices to speed up'''
         if self.tauc_method == "flat":
             tauc = C / ncell
-            tauc_slice = np.repeat(tauc, ncell)
+            #tauc_slice = np.repeat(tauc, ncell)
         else:
             C_i = np.nonzero(self.C_vec == C)[0][0]
             ncell_i = np.nonzero(self.ncell_vec == ncell)[0][0]
@@ -583,9 +583,11 @@ class Phase:
             tauc_slice = self.compute_tauc_slice([v,w], self.tauc_method, tau_slice_ref)
         
         # Add uncertainty to tauc slice
-        mu_tauc = (1 + self.mu_tauc) * tauc
-        sigm_tauc = self.sigm_tauc * mu_tauc
-        tauc_slice = self.rng.normal(loc=mu_tauc, scale=sigm_tauc, size=ncell)
+        '''
+        Draw per-pop % changes from baseline with normal noise, then apply to tauc values
+        '''
+        perpop_p = self.rng.normal(loc=self.mu_tauc, scale=self.sigm_tauc, size=ncell)
+        tauc_slice = (1 + perpop_p) * tauc
 
         # Find where tauc will push tau beyond max
         xs_filt = (tauc_slice > final_max_tauc) 
@@ -595,8 +597,12 @@ class Phase:
         # Now replace them in the full array of tau
         self.tau_expect[slice_indices] = replacement_tau 
 
-        # Replace any tau lt min with min
+        # Replace any tau lt min with min (again)
+        # Have to do this twice bc tauc can become negative under uncertainty
         self.tau_expect = np.where(self.tau_expect < self.min_tau, self.min_tau, self.tau_expect)
+
+        ## Make sure all tau values are reasonable (i.e. not negative or below min)
+        #assert np.all(self.tau_expect >= self.min_tau)
 
         # Store the mean value of excess resources, keep at nan if no excess
         if not hasattr(self, 'num_eps_samples'):
@@ -647,9 +653,15 @@ class Phase:
         self.eps_tau = self.rng.normal(loc=mu_tau, scale=sigm_tau, size=len(self.tau_flat)) 
 
     def generate_tau(self):
-        mu_tau = (1 + self.mu_tau) * self.tau_flat
-        sigm_tau = self.sigm_tau * mu_tau
-        return self.rng.normal(loc=mu_tau, scale=sigm_tau, size=len(self.tau_flat))
+        '''
+        Draw per-pop % changes from baseline with normal noise, then apply to tau distribution
+        '''
+        perpop_p = self.rng.normal(loc=self.mu_tau, scale=self.sigm_tau, size=len(self.tau_flat))
+        self.tau_expect = (1 + perpop_p) * self.tau_flat
+
+        # Replace any tau lt min with min
+        self.tau_expect = np.where(self.tau_expect < self.min_tau, self.min_tau, self.tau_expect)
+        #return (1 + perpop_p) * self.tau_flat
 
     def generate_eps_tau_vectorized(self):
         assert self.mu_tau.shape == self.sigm_tau.shape

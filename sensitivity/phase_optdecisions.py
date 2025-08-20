@@ -33,7 +33,7 @@ constants['overwrite_results'] = True
 metric_thresh = 0.975 # Threshold of pop metric value used for calculating meta metric
 
 # Define the number of eps samples per decision combination
-constants['num_eps_combs'] = 5_000_000
+constants['num_eps_combs'] = 2_500_000#5_000_000
 
 # Define ordered list of parameter keys
 param_keys = ['C', 'ncell', 'slice_left',
@@ -256,13 +256,11 @@ for rank_sample_i, decision_i in enumerate(range(pproc.rank_start, pproc.rank_st
                     param_val = float(x[i])
                 setattr(pproc, param, param_val)
 
-            # Reset tau values to baseline
-            pproc.tau_expect = pproc.tau_flat
+            ## Reset tau values to baseline
+            #pproc.tau_expect = pproc.tau_flat
 
             # Add in uncertainty on baseline tau values
-            '''Note that at this stage tau values may become negative; 
-               they are resticted to positive in change_tau_expect'''
-            pproc.tau_expect = pproc.generate_tau() 
+            pproc.generate_tau() 
 
             # Shift selected tau values (including uncertainty)
             pproc.change_tau_expect(pproc.C, pproc.ncell, pproc.slice_left)
