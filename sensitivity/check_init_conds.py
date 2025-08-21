@@ -12,6 +12,7 @@ from global_functions import lambda_s, s
 from mpi4py import MPI
 import pickle
 import os
+import sys
 
 # Initialize MPI stuff
 comm = MPI.COMM_WORLD
@@ -34,37 +35,39 @@ params = {}
 for pr in ['mortality', 'fecundity']:
     with open('../model_fitting/{}/map.json'.format(pr), 'r') as handle:
         params.update(json.load(handle))
+#print(json.dumps(params, indent=4))
 
 # Constants
 c = 1.42
 delta_t = 1
+Aeff = 7.29
 num_reps = 1_000
-metrics = ['lambda_s', 's']
+metrics = ['lambda_s']
 data_dir = "checkinits_data"
 
 # Nominal values of other parameters
 nominals = {
-    'Aeff': 7.29, 
+    'K_adult': 1_000, 
     'b': 40, 
     't_final': 300,
     'q': 0.9 
 }
 # Theoretical (or ad-hoc) maxima/minima for parameters
 minima = {
-    'Aeff': 1, 
-    'b': 2, 
+    'K_adult': 500, 
+    'b': 2 / gamma(1+1/c), 
     't_final': 100,
-    'q': np.nan 
+    'q': 0.1 
 }
 maxima = {
-    'Aeff': np.nan, 
-    'b': 60, 
+    'K_adult': 5_000, 
+    'b': 60 / gamma(1+1/c), 
     't_final': 800,
     'q': 0.99 
 }
 # Samples for each parameter range within bounds
 num_samples = {
-    'Aeff': 8,
+    'K_adult': 8,
     'b': 15,
     't_final': 15,
     'q': 8
@@ -120,7 +123,8 @@ rank_metric_evals = np.full((len(metrics), rank_evals_size, len(ranges.keys()) +
 # Loop over combinations
 comb_i = 0
 for comb in rank_combinations:
-    N_0_1 = comb['Aeff']*params['K_adult']
+    #N_0_1 = comb['Aeff']*params['K_adult']
+    N_0_1 = Aeff * comb['K_adult']
     N_0_1_vec = np.repeat(N_0_1, num_reps)
     t_vec = np.arange(delta_t, comb['t_final']+delta_t, delta_t)
     init_age = params['a_mature'] - (np.log((1/comb['q'])-1) / params['eta_rho']) # Age where (q*100)% of reproductive capacity reached
@@ -128,7 +132,7 @@ for comb in rank_combinations:
 
     # Initialize model instance with the specified parameters
     model = Model(**params)
-    model.set_effective_area(comb['Aeff'])
+    model.set_effective_area(Aeff)
     model.init_N(N_0_1_vec, init_age)
     model.set_t_vec(t_vec)
     model.set_weibull_fire(b=comb['b'], c=c)
