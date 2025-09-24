@@ -32,7 +32,7 @@ sdm_min = 0.32649827003479004
 sdm_mean = 0.51
 Aeff_vec = np.array([np.round(A_cell, 2)])
 t_final_vec = np.array([300])
-demographic_samples_vec = np.array([5_000])
+demographic_samples_vec = np.array([15_000])
 method_vec = ["discrete"]
 
 for Aeff, t_final, demographic_samples, method in product(Aeff_vec, t_final_vec, 
