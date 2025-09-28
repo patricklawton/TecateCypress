@@ -51,7 +51,7 @@ for Aeff, t_final, demographic_samples, method in product(Aeff_vec, t_final_vec,
 
     for i in range(demographic_samples):
         sp = {'params': {}, 'Aeff': Aeff, 't_final': t_final, 'method': method, 
-              'demographic_index': len(existing_samples) + i + 1}
+              'demographic_index': len(existing_samples) + i}
         for p_i, p in enumerate(mort_samples[i]):
             sp['params'].update({mort_labels[p_i]: float(p)})
         for p_i, p in enumerate(fec_samples[i]):
