@@ -7,6 +7,7 @@ from matplotlib.patches import Patch
 import matplotlib as mpl
 import matplotlib.ticker as mticker
 from mpl_toolkits.axes_grid1.inset_locator import inset_axes
+from pyproj import Transformer
 import pickle
 import h5py
 from scipy.special import gamma
@@ -77,8 +78,45 @@ nonzero_indices = np.nonzero(pproc.maps_filt)
 row_min, row_max = nonzero_indices[0].min(), nonzero_indices[0].max()
 col_min, col_max = nonzero_indices[1].min(), nonzero_indices[1].max()
 colored_data = colored_data[row_min:row_max + 1, col_min:col_max + 1]
+print((row_min, row_max), (col_min, col_max))
+print((pproc.ul_coord[1], pproc.lr_coord[1]), (pproc.ul_coord[0], pproc.lr_coord[0]))
 
-im1 = ax1.imshow(colored_data)
+# Hardcode some things from map (.asc)  headers
+cellsize  = 270.0
+xllcorner = -373955.8364 + pproc.ul_coord[0] * cellsize
+yllcorner = -604543.3342 + pproc.ul_coord[1] * cellsize
+
+# Get extent to use coordinates with imshow
+print(colored_data.shape, (row_max-row_min, col_max-col_min))
+extent = [
+    xllcorner + col_min * cellsize,           # left
+    xllcorner + (col_max + 1) * cellsize,           # right
+    yllcorner + (row_max + 1) * cellsize,           # bottom
+    yllcorner + row_min * cellsize,           # top
+]
+
+# Latitude and longitude (WGS84)
+cities = {
+    "Riverside": (-117.3962, 33.9533),
+    "Santa Ana": (-117.8677, 33.7455),
+    "San Diego": (-117.161087, 32.715736),
+    "Oceanside": (-117.325836, 33.211666),
+}
+transformer = Transformer.from_crs("EPSG:4326", "EPSG:3310", always_xy=True)
+
+# Convert to map coordinates
+x_cities, y_cities, names = [], [], []
+for name, (lon, lat) in cities.items():
+    x, y = transformer.transform(lon, lat)
+    x_cities.append(x)
+    y_cities.append(y)
+    names.append(name)
+
+#im1 = ax1.imshow(colored_data)
+im1 = ax1.imshow(colored_data, extent=extent, origin='upper')
+
+ax1.scatter(x_cities, y_cities, color='cyan', marker='*', s=220, zorder=3)
+
 # Add the colorbar to inset axis
 cbar_ax = inset_axes(ax1, width="5%", height="60%", loc='center',
                      bbox_to_anchor=(-0.1, -0.15, 0.65, 0.9),  # Centered on the plot,
@@ -487,6 +525,7 @@ tau_sorted = pproc.tau_flat[pproc.tau_argsort_ref]
 mapindices = np.argwhere(pproc.maps_filt)
 
 q_vec = np.arange(0.0, 1.0, 0.05)
+#q_vec = np.arange(0.0, 1.0, 0.025)
 delta_taul_interp = np.full(q_vec.size, np.nan)
 delta_tauh_interp = np.full(q_vec.size, np.nan)
 taul_interp = np.full(q_vec.size, np.nan)
