@@ -42,6 +42,23 @@ def lambda_s(N_tot, compressed, valid_timesteps=None, ext_mask=None,  burn_in_en
     lam_s_all = growthrates ** (1 / valid_timesteps)
     return lam_s_all
 
+# Class to rescale inputs and outputs to [0,1] for numerical stability
+# Also store descalers to interpret interpolated values
+class Rescaler:
+    def __init__(self, mins, maxes):
+        """
+        mins: vector of minima
+        maxes: vector of maxima
+        """
+        self.mins = mins
+        self.maxes = maxes
+
+    def rescale(self, x):
+        return (x - self.mins) / (self.maxes - self.mins)
+
+    def descale(self, x):
+        return (x * (self.maxes - self.mins)) + self.mins
+
 def s(N_tot, compressed, valid_timesteps=None, ext_mask=None,  burn_in_end_i=0):
     if compressed:
         # Place zeros for extirpated replicas' final abundance

@@ -4,25 +4,20 @@ from model import Model
 import signac as sg
 from flow import FlowProject
 import pickle
-from scipy.optimize import curve_fit
 # Additional imports for phase analysis
-from matplotlib import pyplot as plt
-import matplotlib
-from mpl_toolkits.axes_grid1.inset_locator import inset_axes
-import scipy
 from scipy.special import gamma
-from scipy.interpolate import make_lsq_spline
-import os
-import json
-from tqdm.auto import tqdm
+from scipy.interpolate import make_lsq_spline, RBFInterpolator
+from scipy.optimize import minimize
 from mpi4py import MPI
-import timeit
 import copy
 import sys
-import itertools
-from itertools import product
+import os
+import json
 import h5py
-from global_functions import adjustmaps, lambda_s, s
+from tqdm.auto import tqdm
+from global_functions import adjustmaps, lambda_s, Rescaler
+from itertools import product
+
 MPI.COMM_WORLD.Set_errhandler(MPI.ERRORS_RETURN)
 
 # Open up signac project
@@ -88,88 +83,6 @@ def run_sims(job):
     job.doc['simulated'] = True
 
 @FlowProject.pre(lambda job: job.doc.get('simulated'))
-@FlowProject.post(lambda job: job.doc.get('fractional_change_computed'))
-@FlowProject.operation
-def compute_fractional_change(job):
-    slice_i = 200 #i.e. the end of the burn in period
-    avg_start_i = round(job.sp.t_final * 0.10)
-    #Aeff = job.sp['Aeff'] #ha
-    #N_0_1 = Aeff*mort_fixed['K_adult']
-    #num_reps = np.array(job.data[f'N_tot/{min(b_vec)}']).shape[0]
-    N_tot_mean_all = np.ones((len(b_vec), job.sp.t_final)) * np.nan
-    with job.data:
-        for b_i, b in enumerate(b_vec):
-            #'''Remove rows with bad init abundance, don't know why it's happening yet'''
-            #N_tot = np.array(job.data[f'N_tot/{b}'])
-            #check_N0 = np.nonzero(N_tot[:,0] > N_0_1)[0]
-            #N_tot = np.delete(N_tot, check_N0, axis=0)
-            #N_tot_mean = N_tot.mean(axis=0)
-            #''''''
-            N_tot_mean = np.array(job.data[f'N_tot_mean/{b}'])
-            N_tot_mean_all[b_i] = N_tot_mean
-            #job.data[f'fractional_change/{b}'] = (np.mean(N_tot_mean[-slice_i:]) - N_0_1) / N_0_1
-        N_0_all = N_tot_mean_all[:, slice_i]
-        r_all = (N_tot_mean_all[:, -avg_start_i:].mean(axis=1) - N_0_all) / N_0_all
-        # If N=0 by end of the burn in, set to -1
-        r_all[np.isnan(r_all)] = -1.0
-        for b_i, b in enumerate(b_vec):
-            job.data[f'fractional_change/{b}'] = r_all[b_i]
-    job.doc['fractional_change_computed'] = True
-
-@FlowProject.pre(lambda job: job.doc.get('simulated'))
-@FlowProject.post(lambda job: job.doc.get('Nf_computed'))
-@FlowProject.operation
-def compute_Nf(job):
-    slice_i = round(job.sp.t_final * 0.25)
-    for b in b_vec:
-        with job.data:
-            N_tot_mean = np.array(job.data[f'N_tot_mean/{b}'])
-        job.data[f'Nf/{b}'] = np.mean(N_tot_mean[-slice_i:])
-    job.doc['Nf_computed'] = True
-
-@FlowProject.pre(lambda job: job.doc.get('simulated'))
-@FlowProject.post(lambda job: job.doc.get('decay_rate_computed'))
-@FlowProject.operation
-def compute_decay_rate(job):
-    def line(x, m, b):
-        return m*x + b
-
-    with job.data:
-        census_t = np.array(job.data["census_t"])
-        for b in b_vec:
-            N_tot_mean = np.array(job.data[f"N_tot_mean/{b}"])
-
-            burn_in_end_i = 200
-            final_i = len(N_tot_mean)
-
-            x = census_t[burn_in_end_i:final_i]
-            y = N_tot_mean[burn_in_end_i:final_i]
-            popt, pcov = curve_fit(line, x, y)
-            job.data[f'decay_rate/{b}'] = popt[0] / line(x[0], *popt)
-    job.doc['decay_rate_computed'] = True
-
-@FlowProject.pre(lambda job: job.doc.get('simulated'))
-@FlowProject.post(lambda job: job.doc.get('mu_s_computed'))
-@FlowProject.operation
-def compute_mu_s(job):
-    with job.data:
-        census_t = np.array(job.data["census_t"])
-        for b in b_vec:
-            N_tot_mean = np.array(job.data[f"N_tot_mean/{b}"])
-            burn_in_end_i = 0
-            zero_is = np.nonzero(N_tot_mean == 0)[0]
-            if len(zero_is) > 0:
-                final_i = min(zero_is)
-            else:
-                final_i = len(N_tot_mean)
-            t = census_t[burn_in_end_i:final_i]
-            N_mean_t = N_tot_mean[burn_in_end_i:final_i]
-
-            mu_s = np.product(N_mean_t[1:] / np.roll(N_mean_t, 1)[1:]) ** (1/len(t))
-            job.data[f'mu_s/{b}'] = mu_s 
-    job.doc['mu_s_computed'] = True
-
-@FlowProject.pre(lambda job: job.doc.get('simulated'))
 @FlowProject.post(lambda job: job.doc.get('lambda_s_computed'))
 @FlowProject.operation
 def compute_lambda_s(job):
@@ -197,28 +110,6 @@ def compute_lambda_s(job):
 
     job.doc['lambda_s_computed'] = True
 
-@FlowProject.pre(lambda job: job.doc.get('simulated'))
-@FlowProject.post(lambda job: job.doc.get('s_computed'))
-@FlowProject.operation
-def compute_s(job):
-    with job.data:
-        compressed = True
-        for b in b_vec:
-            if compressed:
-                valid_timesteps = np.array(job.data[f"valid_timesteps/{b}"])
-                ext_mask = np.array(job.data[f"ext_mask/{b}"])
-                N_tot = np.array(job.data[f"first_and_final/{b}"])
-            else:
-                valid_timesteps = None
-                ext_mask = None
-                N_tot = np.array(job.data[f"N_tot/{b}"])
-            s_all = s(N_tot, compressed=compressed, valid_timesteps=valid_timesteps, ext_mask=ext_mask)
-            if np.any(np.isnan(s_all)): print('theres nans')
-            job.data[f's/{b}'] = np.nanmean(s_all) 
-            job.data[f's_all/{b}'] = s_all
-
-    job.doc['s_computed'] = True
-
 if __name__ == "__main__":
     FlowProject().main()
     
@@ -243,25 +134,23 @@ class Phase:
         # Set generator for random uncertainties
         self.rng = np.random.default_rng()
         
-        # Create empty file for final results (if overwriting)
+        # Create directory for final results (if not already there)
         if self.rank == self.root:
             self.data_dir = f"{self.meta_metric}/data/Aeff_{self.Aeff}/tfinal_{self.t_final}/metric_{self.metric}"
             if not os.path.isdir(self.data_dir):
                 os.makedirs(self.data_dir)
-            fn = self.data_dir + f"/phase_{self.tauc_method}.h5"
-            if (not os.path.isfile(fn)) or self.overwrite_results:
-                with h5py.File(fn, 'w') as handle:
-                    pass #Just create file and leave empty for now
 
     def initialize(self):
         '''
-        Read in and/or organize data used for subsequent analysis
-        Do other miscellaneous pre-processing, for example define state variable space
+        Read in and organize data used for subsequent analysis
+        Also pre-process (interpolate) population sim data if needed 
         '''
         if self.rank != self.root:
             # Init data to be read on root
             self.tau_flat = None
             self.data_dir = None
+            self.figs_dir = None
+            self.num_demographic_samples = None
         else:
             # Handle data reading on root alone
             project = sg.get_project()
@@ -279,6 +168,7 @@ class Phase:
                 tau_all = np.load(fn)
 
             self.data_dir = f"{self.meta_metric}/data/Aeff_{self.Aeff}/tfinal_{self.t_final}/metric_{self.metric}"
+            self.figs_dir = f"{self.meta_metric}/figs/Aeff_{self.Aeff}/tfinal_{self.t_final}/metric_{self.metric}"
             fn = self.data_dir + f"/metric_all.npy"
             if (not os.path.isfile(fn)) or self.overwrite_metrics:
                 # Loop over all jobs and process metric data
@@ -289,12 +179,7 @@ class Phase:
                         # Get the metric values across all b (i.e. tau) samples for this demo param sample
                         metric_vec = []
                         for b in self.b_vec:
-                            if self.metric == 'P_s':
-                                # Just consider the cummulative extinction probability by some timestep T
-                                T = 200
-                                metric_vec.append(1.0 - float(data[f'frac_extirpated/{b}'][T-1]))
-                            else:
-                                metric_vec.append(float(data[f'{self.metric}/{b}']))
+                            metric_vec.append(float(data[f'{self.metric}/{b}']))
 
                         # Store metric samples
                         metric_all = np.append(metric_all, metric_vec)
@@ -309,55 +194,17 @@ class Phase:
                 # Save collected metric data to file
                 with open(fn, 'wb') as handle:
                     np.save(fn, metric_all)
-                    
-                ## Create interpolating function for average metric(tau) values
-                #metric_vec = np.ones(self.tau_vec.size) * np.nan
-                #for tau_i, tau in enumerate(self.tau_vec):
-                #    tau_filt = (tau_all == tau)
-                #    metric_slice = metric_all[tau_filt]
-                #    metric_vec[tau_i] = np.mean(metric_slice)
-                #t = self.tau_vec[2:-2:2] 
-                #k = 3
-                #t = np.r_[(self.tau_vec[1],)*(k+1), t, (self.tau_vec[-1],)*(k+1)]
-                #metric_spl = make_lsq_spline(self.tau_vec[1:], metric_vec[1:], t, k)
-                #metric_spl_all.update({0: metric_spl}) # Store on demographic index 0
 
                 # Save interpolated metric(tau) functions to file
                 with open(self.data_dir + "/metric_spl_all.pkl", "wb") as handle:
-                    pickle.dump(metric_spl_all, handle)
-                    
-            # Plot the metric probability density
-            if (not os.path.isfile(self.data_dir + f"/metric_all.npy")) or self.overwrite_metrics:
-                print(f"Creating {self.metric} histogram") 
-                fig, ax = plt.subplots(figsize=(13,8))
-                tau_diffs = np.diff(self.tau_vec)
-                tau_step = tau_diffs[1]
-                tau_edges = np.concatenate((
-                                [self.tau_vec[0]],
-                                [tau_diffs[0]/2],
-                                np.arange(self.tau_vec[1]+tau_step/2, self.tau_vec[-1]+tau_step, tau_step)
-                                           ))
-                min_edge_i = 2
-                metric_min = min(metric_all[(tau_all >= tau_edges[min_edge_i]) & (tau_all < tau_edges[min_edge_i+1])])
-                metric_edges = np.linspace(metric_min, metric_all.max()*1.005, 50)
-                cmap = copy.copy(matplotlib.cm.YlGn)
-                im = ax.hist2d(tau_all, metric_all, bins=[tau_edges, metric_edges],
-                                 norm=matplotlib.colors.LogNorm(vmax=int(len(metric_all)/len(self.b_vec))),
-                                 density=False,
-                                cmap=cmap)
-                # Add the colorbar to inset axis
-                cbar_ax = inset_axes(ax, width="5%", height="50%", loc='center',
-                                     bbox_to_anchor=(0.5, -0.2, 0.55, 1.1),
-                                     bbox_transform=ax.transAxes, borderpad=0)
-                sm = matplotlib.cm.ScalarMappable(cmap=cmap, norm=None)
-                cbar = fig.colorbar(sm, cax=cbar_ax, orientation="vertical", ticks=[0, 0.25, 0.5, 0.75, 1.])
-                ax.set_xlabel(r'$\tau$')
-                ax.set_ylabel(self.metric)
-                figs_dir = f"{self.meta_metric}/figs/Aeff_{self.Aeff}/tfinal_{self.t_final}/metric_{self.metric}/"
-                if not os.path.isdir(figs_dir):
-                    os.makedirs(figs_dir)
-                fig.savefig(figs_dir + f"sensitivity", bbox_inches='tight', dpi=50)
-                plt.close(fig)
+                    pickle.dump(metric_spl_all, handle)                    
+            else:
+                # Read in all splined interpolations of metric(tau)
+                with open(self.data_dir + "/metric_spl_all.pkl", "rb") as handle:
+                    metric_spl_all = pickle.load(handle)
+            
+            # Set total number of pop model param sets to instance att
+            self.num_demographic_samples = len(metric_spl_all)
 
             # Read in FDM
             usecols = np.arange(self.ul_coord[0], self.lr_coord[0])
@@ -382,14 +229,25 @@ class Phase:
             tau_raster = b_raster * gamma(1+1/self.c)
 
             # Flatten and filter FDM & SDM
-            # Ignore tau above what we simulated, only a small amount
-            # Why are there any zeros in FDM at all?
-            maps_filt = (sdm > 0) & (fdm > 0) #& (tau_raster <= max(self.tau_vec))
+            maps_filt = (sdm > 0) & (fdm > 0) 
             self.tau_flat = tau_raster[maps_filt]
-        
+ 
         # Broadcast data used later to all ranks
         self.tau_flat = self.comm.bcast(self.tau_flat, root=self.root)
         self.data_dir = self.comm.bcast(self.data_dir, root=self.root)
+        self.figs_dir = self.comm.bcast(self.figs_dir, root=self.root)
+        self.num_demographic_samples = self.comm.bcast(self.num_demographic_samples, root=self.root)
+
+        # Optionally store some map related data
+        if hasattr(self, 'extra_attributes') and (self.extra_attributes != None):
+            named_extra_atts = ['tau_raster', 'maps_filt', 'metric_spl_all']
+            assert (np.all([att in named_extra_atts for att in self.extra_attributes]))
+            if 'tau_raster' in self.extra_attributes:
+                self.tau_raster = self.comm.bcast(tau_raster, root=self.root)
+            if 'maps_filt' in self.extra_attributes:
+                self.maps_filt = self.comm.bcast(maps_filt, root=self.root)
+            if 'metric_spl_all' in self.extra_attributes:
+                self.metric_spl_all = self.comm.bcast(metric_spl_all, root=self.root)
 
         # Store the total number of cells as an instance variable
         self.ncell_tot = len(self.tau_flat)
@@ -405,7 +263,7 @@ class Phase:
         else:
             self.slice_right_max = len(tau_sorted) - 1
         
-    def init_strategy_variables(self, overwrite=False, suffix=''): 
+    def init_decision_parameters(self, overwrite=False, suffix=''): 
         tau_sorted = self.tau_flat[self.tau_argsort_ref] 
         # Generate samples of remaining state variables
         # Get samples of total shift to fire regime (C)  
@@ -431,9 +289,6 @@ class Phase:
         else:
             sys.exit('slice_samples needs to be int or numpy array')
 
-        if self.tauc_method != "flat":
-            self.generate_scale_params(tau_sorted)
-
         if self.rank == self.root:
             if overwrite:
                 # Save all state variables
@@ -441,125 +296,18 @@ class Phase:
                 np.save(self.data_dir + f"/ncell_vec{suffix}.npy", self.ncell_vec)
                 np.save(self.data_dir + f"/slice_left_all{suffix}.npy", self.slice_left_all)
 
-                if self.tauc_method != "flat":
-                    np.save(self.data_dir + f"/v_all_{self.tauc_method}.npy", self.v_all)
-                    np.save(self.data_dir + f"/w_all_{self.tauc_method}.npy", self.w_all)
-
                 # If mc sampling, save number of uncertainty samples to file
                 if hasattr(self, 'num_eps_combs'):
                     np.save(self.data_dir + f'/num_eps_combs{suffix}.npy', self.num_eps_combs)
-
-            # Initialize data for meta metric across (C, ncell, slice_left) space
-            if not hasattr(self, 'num_eps_combs'):
-                self.phase = np.ones((
-                                      len(self.C_vec), len(self.ncell_vec), len(self.slice_left_all)
-                                    )) * np.nan
-                self.phase_xs = np.ones((
-                                        len(self.C_vec), len(self.ncell_vec), len(self.slice_left_all)
-                                       )) * np.nan
-
-    def generate_scale_params(self, tau_sorted):
-        # Generate tauc scaling parameters, if needed
-        check1 = os.path.isfile(self.data_dir + f"/v_all_{self.tauc_method}.npy")
-        check2 = os.path.isfile(self.data_dir + f"/w_all_{self.tauc_method}.npy")
-        if np.all([check1, check2, self.overwrite_scaleparams == False]):
-            generate_params = False
-            self.v_all = np.load(self.data_dir + f"/v_all_{self.tauc_method}.npy")
-            self.w_all = np.load(self.data_dir + f"/w_all_{self.tauc_method}.npy")
-        else:
-            generate_params = True
-
-        if generate_params:
-            if self.rank != self.root:
-                self.v_all = None
-                self.w_all = None
-            else:
-                print(f"Generating scaling parameters for {self.tauc_method}")
-                self.v_all = np.ones((len(self.C_vec), len(self.ncell_vec), len(self.slice_left_all))) * np.nan
-                self.w_all = np.ones((len(self.C_vec), len(self.ncell_vec), len(self.slice_left_all))) * np.nan
-
-            # Distribute work among ranks
-            task_list = list(product(enumerate(self.C_vec), enumerate(self.ncell_vec), enumerate(self.slice_left_all)))
-            rank_tasks = np.array_split(task_list, self.num_procs)[self.rank]  # Split tasks across ranks
-            # Each rank performs optimization on its assigned subset of tasks
-            rank_v_all = []
-            rank_w_all = []
-
-            for (C_i, C), (ncell_i, ncell), (slice_left_i, slice_left) in rank_tasks:
-                self.slice_left_max = self.slice_right_max - ncell
-                if slice_left > self.slice_left_max: continue
-
-                tau_slice = tau_sorted[slice_left:slice_left+ncell]
-                '''Try translating the initial tau so they start at zero'''
-                tau_slice = tau_slice - min(tau_slice)
-
-                if self.tauc_method == "initlinear":
-                    x0 = [-0.003, 900]
-                    result = self.maximize_preflat(self.tauc_method, C, ncell, tau_slice, x0=x0)
-                elif self.tauc_method == "initinverse":
-                    penalty_weight = 0.05
-                    result = self.maximize_preflat(self.tauc_method, C, ncell, tau_slice, penalty_weight=penalty_weight)
-                    while not result.success:
-                        penalty_weight *= 0.5
-                        result = self.maximize_preflat(self.tauc_method, C, ncell, tau_slice, penalty_weight=penalty_weight)
-
-                rank_v_all.append((C_i, ncell_i, slice_left_i, result.x[0]))
-                rank_w_all.append((C_i, ncell_i, slice_left_i, result.x[1]))
-
-            # Gather results from all ranks on the root rank
-            gathered_v_all = self.comm.gather(rank_v_all, root=self.root)
-            gathered_w_all = self.comm.gather(rank_w_all, root=self.root)
-            # Combine results on the root rank
-            if self.rank == self.root:
-                for rank_v, rank_w in zip(gathered_v_all, gathered_w_all):
-                    for (C_i, ncell_i, slice_left_i, v_value) in rank_v:
-                        self.v_all[C_i, ncell_i, slice_left_i] = v_value
-                    for (C_i, ncell_i, slice_left_i, w_value) in rank_w:
-                        self.w_all[C_i, ncell_i, slice_left_i] = w_value
-            # Broadcast to all ranks
-            self.v_all = self.comm.bcast(self.v_all, root=self.root)
-            self.w_all = self.comm.bcast(self.w_all, root=self.root)
-
-    def compute_tauc_slice(self, x, method, tau_slice):
-        if method == 'initlinear':
-            tauc_slice = x[0]*tau_slice + x[1]
-        elif method == 'initinverse':
-            tauc_slice = x[0] / ((tau_slice/x[1]) + 1)
-        return tauc_slice    
-
-    def maximize_preflat(self, method, C, ncell, tau_slice, x0=None, penalty_weight=0.05):
-        # Our objective function, the expected value of all tauc > (C/ncell)
-        def tauc_expect_preflat(x):
-            tauc_slice = self.compute_tauc_slice(x, method, tau_slice)
-            tau_mid = (max(tau_slice) - min(tau_slice)) / 2
-            # Multiply by -1 bc we want max, not min
-            return -1 * np.mean(tauc_slice[tau_slice < tau_mid])
-
-        constraints = []
-        # Sum of all tauc must be eq to C
-        def tauc_total_con(x):
-            tauc_slice = self.compute_tauc_slice(x, method, tau_slice)
-            return np.sum(tauc_slice) - C
-        constraints.append({'type': 'eq', 'fun': tauc_total_con})
-        if method == 'initlinear':
-            # Need additional constraint that all tauc > 0
-            def tauc_positive(x):
-                tauc_slice = self.compute_tauc_slice(x, method, tau_slice)
-                return np.min(tauc_slice)
-            constraints.append({'type': 'ineq', 'fun': tauc_positive})
-            bounds = [(None,0), (0,None)]
-            result = scipy.optimize.minimize(tauc_expect_preflat, x0, constraints=constraints, bounds=bounds)
-        elif method == 'initinverse':
-            # Use a global optimization algorithm for this scaling method
-            def penalized_objective(x, penalty_weight=penalty_weight):
-                obj_value = tauc_expect_preflat(x)
-                constraint_violation = tauc_total_con(x)
-                # Add penalty for violating the equality constraint
-                penalty = penalty_weight * constraint_violation**2
-                return obj_value + penalty
-            bounds = [(0,1e4), (0,1e1)]
-            result = scipy.optimize.differential_evolution(penalized_objective, bounds=bounds)
-        return result
+    
+    def load_decision_parameters(self, suffix=''):
+        '''
+        Load pre-existing decision parameters given an initialized Phase instance
+        '''
+        self.C_vec = np.load(self.data_dir + f'/C_vec{suffix}.npy')
+        self.ncell_vec = np.load(self.data_dir + f'/ncell_vec{suffix}.npy')
+        self.slice_left_all = np.load(self.data_dir + f'/slice_left_all{suffix}.npy')
+        self.slice_left_max = self.slice_right_max - min(self.ncell_vec)
 
     def change_tau_expect(self, C, ncell, slice_left):
         slice_indices = self.tau_argsort_ref[slice_left:slice_left + ncell]
@@ -569,18 +317,7 @@ class Phase:
         # First create array of replacement tau
         replacement_tau = np.ones(ncell) #Initialize
         '''could pre-generate tauc slices to speed up'''
-        if self.tauc_method == "flat":
-            tauc = C / ncell
-            #tauc_slice = np.repeat(tauc, ncell)
-        else:
-            C_i = np.nonzero(self.C_vec == C)[0][0]
-            ncell_i = np.nonzero(self.ncell_vec == ncell)[0][0]
-            slice_left_i = np.nonzero(self.slice_left_all == slice_left)[0][0]
-            v = self.v_all[C_i, ncell_i, slice_left_i]
-            w = self.w_all[C_i, ncell_i, slice_left_i]
-            tau_slice_ref = self.tau_flat[slice_indices]
-            tau_slice_ref = tau_slice_ref - min(tau_slice_ref)
-            tauc_slice = self.compute_tauc_slice([v,w], self.tauc_method, tau_slice_ref)
+        tauc = C / ncell
         
         # Add uncertainty to tauc slice
         '''
@@ -604,49 +341,6 @@ class Phase:
         ## Make sure all tau values are reasonable (i.e. not negative or below min)
         #assert np.all(self.tau_expect >= self.min_tau)
 
-        # Store the mean value of excess resources, keep at nan if no excess
-        if not hasattr(self, 'num_eps_samples'):
-            xsresources = (tauc_slice - final_max_tauc)[xs_filt]
-            if hasattr(self, 'xs_means_rank') and (len(xsresources) > 0):
-                self.xs_means_rank[self.global_sample_i-self.rank_start] = np.sum(xsresources) / C
-
-    def change_tau_expect_vectorized(self, C_vec, ncell_vec, slice_left_vec, mu_tauc_vec, sigm_tauc_vec):
-        n_samples = len(C_vec)
-
-        for i in range(n_samples):
-            C = C_vec[i]
-            ncell = ncell_vec[i]
-            slice_left = slice_left_vec[i]
-            mu_tauc = mu_tauc_vec[i]
-            sigm_tauc = sigm_tauc_vec[i]
-
-            # Get indices for this sample
-            slice_indices = self.tau_argsort_ref[slice_left:slice_left + ncell]
-
-            # Extract current tau slice
-            tau_slice = self.tau_expect[i, slice_indices]
-            final_max_tauc = self.final_max_tau - tau_slice
-
-            # Compute tauc with noise
-            tauc = C / ncell
-            tauc_slice = np.full(ncell, tauc)
-            eps_tauc = self.rng.normal(loc=mu_tauc, scale=sigm_tauc, size=ncell)
-            tauc_slice += eps_tauc
-
-            # Apply capping logic
-            replacement_tau = np.where(
-                tauc_slice > final_max_tauc,
-                self.final_max_tau,
-                tau_slice + tauc_slice
-            )
-
-            # Insert back into tau_expect
-            self.tau_expect[i, slice_indices] = replacement_tau
-
-        # Clip with min_tau
-        self.tau_expect = np.where(self.tau_expect < self.min_tau, self.min_tau, self.tau_expect)
-
-
     def generate_eps_tau(self):
         mu_tau = self.mu_tau * self.tau_flat
         sigm_tau = np.abs(mu_tau * self.sigm_tau)
@@ -661,19 +355,6 @@ class Phase:
 
         # Replace any tau lt min with min
         self.tau_expect = np.where(self.tau_expect < self.min_tau, self.min_tau, self.tau_expect)
-        #return (1 + perpop_p) * self.tau_flat
-
-    def generate_eps_tau_vectorized(self):
-        assert self.mu_tau.shape == self.sigm_tau.shape
-        #self.eps_tau = self.rng.normal(
-        #                               loc=np.tile(self.mu_tau, (len(self.tau_flat),1)).T, 
-        #                               scale=np.tile(self.sigm_tau, (len(self.tau_flat),1)).T, 
-        #                               size=(len(self.mu_tau), len(self.tau_flat))
-        #                              )
-        mu_tau = self.mu_tau[:, None]
-        sigm_tau = self.sigm_tau[:, None]     # shape (n, 1)
-        m = len(self.tau_flat)
-        self.eps_tau = self.rng.normal(loc=mu_tau, scale=sigm_tau, size=(len(mu_tau), m))
 
     def generate_eps_tauc(self, mu_tauc, sigm_tauc, ncell):
         self.eps_tauc = self.rng.normal(loc=mu_tauc, scale=sigm_tauc, size=ncell) 
@@ -683,7 +364,6 @@ class Phase:
         if hasattr(self, 'num_train'):
             # Handle case where we're generating training data for NN
             num_samples = self.num_train 
-        #if hasattr(self, 'slice_left_all'):
         elif hasattr(self, 'total_samples'):
             num_samples = self.total_samples
         else:
@@ -703,210 +383,433 @@ class Phase:
             self.rank_start = -1
             self.rank_samples = 0
 
-        if not hasattr(self, 'num_eps_combs'):
-            # Initialize data for this rank's chunk of samples
-            self.metric_expect_rank = np.ones(self.rank_samples) * np.nan
-            #self.xs_means_rank = np.ones(self.rank_samples) * np.nan
-
-            # Add one sample for computing the no change scenario
-            if (hasattr(self, 'slice_left_all')) and (ncell==max(self.ncell_vec)) and (self.rank==self.root):
-                self.rank_samples += 1
+        # Initialize data for this rank's chunk of samples
+        self.metric_expect_rank = np.ones(self.rank_samples) * np.nan
 
     def calculate_metric_expect(self):
         # Get expected value of metric
         '''Replace any tau > max simulated with max tau, similar approximation as before'''
         tau_with_cutoff = np.where(self.tau_expect > self.tau_vec.max(), self.tau_vec.max(), self.tau_expect)
         metric_dist = self.metric_spl(tau_with_cutoff)
-        if self.metric == 'P_s':
-            # Metric value is bounded by zero, anything lt zero is an interpolation error
-            metric_dist[metric_dist < 0] = 0.0
-            if np.any(metric_dist < 0): sys.exit(f"metric_expect is negative ({self.metric_expect}), exiting!")
         self.metric_expect = np.mean(metric_dist)
 
-    def calculate_metric_gte(self, threshold, vectorized=False):
+    def calculate_metric_gte(self, threshold):
         # Get density of metric_k values above some threshold
         '''Replace any tau > max simulated with max tau, similar approximation as before'''
         tau_with_cutoff = np.where(self.tau_expect > self.tau_vec.max(), self.tau_vec.max(), self.tau_expect)
         metric_dist = self.metric_spl(tau_with_cutoff)
-        if self.metric == 'P_s':
-            #threshold = 0.5
-            # Metric value is bounded by zero, anything lt zero is an interpolation error
-            metric_dist[metric_dist < 0] = 0.0
-            if np.any(metric_dist < 0): sys.exit(f"metric_expect is negative ({self.metric_expect}), exiting!")
         '''Still calling this metric_expect for now but should change this to metapop_metric or something'''
-        if vectorized:
-            self.metric_expect = np.count_nonzero(metric_dist >= threshold, axis=1) / self.ncell_tot
+        self.metric_expect = np.count_nonzero(metric_dist >= threshold) / self.ncell_tot
+
+    def compute_nochange(self, metric_thresh):
+        with open(self.data_dir + "/metric_spl_all.pkl", "rb") as handle:
+            metric_spl_all = pickle.load(handle)
+        self.tau_expect = self.tau_flat
+        self.metric_spl = metric_spl_all[0]
+        self.calculate_metric_gte(metric_thresh)
+        np.save(self.data_dir + '/meta_metric_nochange.npy', self.metric_expect)
+
+    def process_samples(self, minima, maxima, suffix, metric_thresh):
+        # Define ordered list of parameter keys
+        param_keys = ['C', 'ncell', 'slice_left',
+                      'mu_tau', 'sigm_tau', 'mu_tauc', 'sigm_tauc', 'demographic_index']
+
+        # Read in all splined interpolations of metric(tau)
+        with open(self.data_dir + "/metric_spl_all.pkl", "rb") as handle:
+            metric_spl_all = pickle.load(handle)
+
+        # Generate parameter combinations
+        if self.rank != self.root:
+            x_decision = None
+            decision_indices = None
+            fixed_metric_mask = None
         else:
-            self.metric_expect = np.count_nonzero(metric_dist >= threshold) / self.ncell_tot
+            '''Could move next few lines to initialize method and save to file / instance att'''
+            # Store indices of demographic samples that will have a fixed value of S=0
+            fixed_metric_mask = np.full(len(metric_spl_all), False)
+            tau_test = np.linspace(self.min_tau, self.final_max_tau, 1000)
+            for demographic_index, metric_spl in metric_spl_all.items():
+                # Check that spline lower bound makes sense
+                assert metric_spl(self.min_tau) > 0
+                # Check if lambda ever greater than threshold
+                if np.all(metric_spl(tau_test) < metric_thresh) and (self.meta_metric == 'gte_thresh'):
+                    fixed_metric_mask[demographic_index] = True
+            print(f'{np.count_nonzero(fixed_metric_mask)} of {len(metric_spl_all)} demograhpic samples are always unstable')
 
-    def process_samples(self, C, ncell):
-        '''is relocating these indicies significantly slowing things down?'''
-        C_i = np.nonzero(self.C_vec == C)[0][0]
-        ncell_i = np.nonzero(self.ncell_vec == ncell)[0][0]
-        self.slice_left_max = self.slice_right_max - ncell
-        # Loop over sampled realizations of this fire alteration strategy
-        for rank_sample_i, slice_left_i in enumerate(range(self.rank_start, self.rank_start + self.rank_samples)):
-            self.global_sample_i = slice_left_i # Referenced in change_tau_expect
+            ## Initialize decision combinations ### 
+            max_decision_combs = self.C_vec.size * self.ncell_vec.size * self.slice_left_all.size
+            x_decision = np.full((max_decision_combs, 3), np.nan)
 
-            # First, reset tau with uncertainty
-            self.generate_eps_tau()
-            self.tau_expect = self.tau_flat + self.eps_tau
+            # Generate combinations
+            if isinstance(self.ncell_samples, np.ndarray) and isinstance(self.slice_samples, np.ndarray):
+                decision_combs = [_ for _ in zip(self.C_vec, self.ncell_vec, self.slice_left_all)]
+            elif isinstance(self.ncell_samples, int) and isinstance(self.slice_samples, int):
+                decision_combs = product(self.C_vec,
+                                self.ncell_vec,
+                                self.slice_left_all)
+            else:
+                sys.exit("ncell_samples and slice_samples need to be the same type of either int or ndarray")
 
-            # Check that we are not on the no change scenario
-            if rank_sample_i < len(self.metric_expect_rank): 
-                slice_left = self.slice_left_all[slice_left_i]
-                # Also, check that slice is within allowed range
-                if slice_left > self.slice_left_max: continue
-                # Now, adjust the tau distribution at cells in slice
-                self.change_tau_expect(C, ncell, slice_left)
+            # Place combinations in x_decision
+            for decision_comb_i, decision_comb in enumerate(decision_combs):
+                # Check that slice is within allow range
+                if decision_comb[2] > (self.slice_right_max - decision_comb[1]): continue
+                x_decision[decision_comb_i, :] = decision_comb
 
-            # Calculate the metric value
-            if self.meta_metric == 'distribution_avg':
-                # Calculate <metric>
-                self.calculate_metric_expect()
-            elif self.meta_metric == 'gte_thresh':
-                # Calculate <metric>_k density above some threshold
-                self.calculate_metric_gte()
+            # Filter out any invalid param samples
+            nan_filt = np.any(np.isnan(x_decision), axis=1)
+            x_decision = x_decision[~nan_filt, :]
 
-            # Store sample if not computing no change scenario
-            if rank_sample_i < len(self.metric_expect_rank): 
-                self.metric_expect_rank[slice_left_i-self.rank_start] = self.metric_expect
-            # Otherwise save <metric> under no change
-            elif self.rank == self.root:
-                self.data_dir = f"{self.meta_metric}/data/Aeff_{self.Aeff}/tfinal_{self.t_final}/metric_{self.metric}"
-                fn = self.data_dir + f"/phase_{self.tauc_method}.h5"
-                with h5py.File(fn, "a") as handle:
-                    data_key = f"{np.round(self.mu_tau, 3)}/{np.round(self.sigm_tau, 3)}/"
-                    data_key += f"{np.round(self.mu_tauc, 3)}/{np.round(self.sigm_tauc, 3)}/metric_nochange"
-                    if data_key in handle:
-                        handle[data_key][...] = self.metric_expect 
-                    else:
-                        handle[data_key] = self.metric_expect
+            # Also filter out any repeats
+            x_decision = np.unique(x_decision, axis=0)
 
-        # Collect data across ranks
-        # Initialize data to store sample means across all ranks
-        sendcounts = np.array(self.comm.gather(len(self.metric_expect_rank), root=self.root))
-        if self.rank == self.root:
-            sampled_metric_expect = np.empty(sum(sendcounts))        
-            sampled_xs_means = np.ones(sum(sendcounts)) * np.nan
-        else:
-            sampled_metric_expect = None
-            sampled_xs_means = None
-        # Now gather data
-        self.comm.Gatherv(self.metric_expect_rank, sampled_metric_expect, root=self.root)
-        self.comm.Gatherv(self.xs_means_rank, sampled_xs_means, root=self.root)
+            # Compute the final number of decision combinations
+            num_decision_combs = x_decision.shape[0]
 
-        if self.rank == self.root:
-            # Save data to full phase matrix
-            self.phase[C_i, ncell_i, :] = sampled_metric_expect
-            self.phase_xs[C_i, ncell_i, :] = sampled_xs_means
+            # Shuffle to give all procs ~ the same amount of work
+            self.rng.shuffle(x_decision)
 
-    def store_phase(self, xs=False): 
-        if self.rank == self.root:
-            fn = self.data_dir + f"/phase_{self.tauc_method}.h5"
-            with h5py.File(fn, "a") as handle:
-                data_key = f"{np.round(self.mu_tau, 3)}/{np.round(self.sigm_tau, 3)}/"
-                data_key += f"{np.round(self.mu_tauc, 3)}/{np.round(self.sigm_tauc, 3)}/phase"
-                if xs:
-                    data_key += "_xs"
-                    data = self.phase_xs
+            if suffix != "_baseline":
+                # Generate keys for each decision combination for use in the h5 file
+                # for example, (C_i=0, n_i=1, l_i=0) -> '0.1.0'
+                decision_indices = np.zeros((num_decision_combs, 3)).astype(int)
+                
+                # Make sure all parameter values can be mapped to decision vectors
+                assert np.all(np.isin(x_decision[:,0], self.C_vec))
+                assert np.all(np.isin(x_decision[:,1], self.ncell_vec))
+                assert np.all(np.isin(x_decision[:,2], self.slice_left_all))
+
+                # Now actually generate and save the index keys 
+                if isinstance(self.ncell_samples, np.ndarray) and isinstance(self.slice_samples, np.ndarray):
+                    decision_indices[:,0] = np.array([np.argwhere(self.C_vec == v)[0][0] for v in x_decision[:,0]])
+                    decision_indices[:,1] = np.array([np.argwhere(self.ncell_vec == v)[0][0] for v in x_decision[:,1]])
+                    decision_indices[:,2] = np.array([np.argwhere(self.slice_left_all == v)[0][0] for v in x_decision[:,2]])
                 else:
-                    data = self.phase
-                if data_key in handle:
-                    handle[data_key][...] = self.phase 
-                else:
-                    handle[data_key] = self.phase
-    
-    def plot_phase_slice(self, C, tau_sorted, xs=False):
+                    decision_indices[:,0] = np.searchsorted(self.C_vec, x_decision[:,0])
+                    decision_indices[:,1] = np.searchsorted(self.ncell_vec, x_decision[:,1])
+                    decision_indices[:,2] = np.searchsorted(self.slice_left_all, x_decision[:,2])
+                decision_indices = np.array(['.'.join([str(x) for x in indices]) for indices in decision_indices])
+                np.save(self.data_dir + f'/decision_indices{suffix}.npy', decision_indices)
+            else:
+                # For baseline we don't use these indices; just put a dummy index in
+                decision_indices = np.array(['0.0.0'])
+
+        # Broadcast samples to all ranks
+        x_decision = self.comm.bcast(x_decision, root=self.root)
+        decision_indices = self.comm.bcast(decision_indices, root=self.root)
+        fixed_metric_mask = self.comm.bcast(fixed_metric_mask, root=self.root)
+
+        # Initialize results file
+        results = h5py.File(self.data_dir + f'/phase{suffix}.h5', 'w', driver='mpio', comm=MPI.COMM_WORLD)
+        for idx in decision_indices:
+            if suffix != "_baseline": 
+                results.create_dataset(idx, (self.num_eps_combs,), dtype='float64')
+                results.create_dataset(idx + 'uncertainty_samples', (self.num_eps_combs, len(minima)), dtype='float64')
+            else:
+                results.create_dataset(idx, (x_decision.shape[0],), dtype='float64')
+                results.create_dataset(idx + 'decision_samples', x_decision.shape, dtype='float64')
+
+        # Set number of samples as instance attribute
+        self.total_samples = x_decision.shape[0]
+
+        # Initialze stuff for parallel processing
+        self.prep_rank_samples()
         if self.rank == self.root:
-            # Get bins of initial tau for phase plotting per (eps_tau, C)
-            tau_range = 50 - tau_sorted[0]
-            self.plotting_tau_bw = tau_range / self.plotting_tau_bw_ratio
-            self.plotting_tau_bin_edges = np.arange(tau_sorted[0], 50, self.plotting_tau_bw)
-            self.plotting_tau_bin_cntrs = np.array([edge + self.plotting_tau_bw/2 for edge in self.plotting_tau_bin_edges])
+            pbar = tqdm(total=self.rank_samples, position=0, dynamic_ncols=True, file=sys.stderr)
+            pbar_step = int(self.rank_samples/100) if self.rank_samples >= 100 else 1
 
-            # Store the mean tau in each preset slice for reference later
-            self.tau_means_ref = []
-            for ncell in self.ncell_vec:
-                tau_means_ncell = np.ones(len(self.slice_left_all)) * np.nan
-                self.slice_left_max = self.slice_right_max - ncell
-                for slice_i, slice_left in enumerate(self.slice_left_all):
-                    if slice_left <= self.slice_left_max:
-                        tau_means_ncell[slice_i] = np.mean(tau_sorted[slice_left:slice_left+ncell])
-                self.tau_means_ref.append(tau_means_ncell)
+        # Generate meta metric values (i.e. results)
+        for rank_sample_i, decision_i in enumerate(range(self.rank_start, self.rank_start + self.rank_samples)):
+            # Initialize array for results at this decision
+            meta_metric_all = np.full(self.num_eps_combs, np.nan)
 
-            C_i = np.nonzero(self.C_vec == C)[0][0]
-            phase_slice = self.phase[C_i, :, :]
-            if xs:
-                phase_slice = self.phase_xs[C_i, :, :]
+            # Initialize x_all with repeats of this particular decision
+            x_all = np.tile(x_decision[decision_i], (self.num_eps_combs, 1))
 
-            # Read in no change value
-            fn = self.data_dir + f"/phase_{self.tauc_method}.h5"
-            with h5py.File(fn, "r") as handle:
-                data_key = f"{np.round(self.mu_tau, 3)}/{np.round(self.sigm_tau, 3)}/"
-                data_key += f"{np.round(self.mu_tauc, 3)}/{np.round(self.sigm_tauc, 3)}/metric_nochange"
-                metric_nochange = handle[data_key][()]
+            # Add columns for uncertain param samples
+            x_all = np.hstack((
+                                  x_all,
+                                  np.full((x_all.shape[0], len(minima)), np.nan)
+                              ))
 
-            # Coarse grain data into plotting matrix
-            plotting_matrix = np.ones((len(self.plotting_tau_bin_edges), len(self.ncell_vec))) * np.nan
-            for ncell_i in range(len(self.ncell_vec)):
-                for tau_i, tau_left in enumerate(self.plotting_tau_bin_edges):
-                    if tau_i < len(self.plotting_tau_bin_edges) - 2:
-                        tau_filt = (self.tau_means_ref[ncell_i] >= tau_left) & (self.tau_means_ref[ncell_i] < tau_left+self.plotting_tau_bw)
+            # Loop over each uncertain param to populate samples 
+            for i, uncertain_param in enumerate(param_keys[3:]):
+                uncertain_param_i = i + 3
+                 
+                # Get min, max and type for this param
+                _min = minima[uncertain_param]
+                _max = maxima[uncertain_param]
+                assert (type(_min)==type(_min))
+                _type = type(_min)
+
+                if _min == _max:
+                    samples = np.repeat(_min, self.num_eps_combs)
+                else:
+                    # Generate and store nonzero samples
+                    if uncertain_param in ['mu_tau', 'mu_tauc']:
+                        # Pct change from baseline will be drawn from beta distributions 
+                        alpha = 1.5 # Start by defining an ad-hoc value for alpha
+
+                        # Solve for the transformed mode of zero
+                        x_mode = (-_min) / (_max - _min)
+
+                        # Use transformed mode to solve for 2nd shape parameter _beta
+                        _beta = ((alpha - 1) / x_mode) - alpha + 2
+
+                        # Draw samples from the beta distribution and apply linear transform
+                        samples = self.rng.beta(alpha, _beta, self.num_eps_combs)
+                        samples = _min + ((_max - _min) * samples)
+                    elif uncertain_param in ['sigm_tau', 'sigm_tauc']:
+                        # Multipliers to get spread of tau/tauc post pct change, assume uniform
+                        samples = self.rng.uniform(_min, _max, self.num_eps_combs)
+                    elif uncertain_param == 'demographic_index':
+                        # Samples of pop parameters follow inferred posterior, so just select
+                        # indices of pre-generated samples uniformly
+                        samples = self.rng.integers(_min, _max, self.num_eps_combs, endpoint=True)
                     else:
-                        tau_filt = self.tau_means_ref[ncell_i] >= tau_left
-                    metric_expect_slice = phase_slice[ncell_i, tau_filt]
-                    if (len(metric_expect_slice) > 0) and (np.all(np.isnan(metric_expect_slice)) == False):
-                        plotting_matrix[len(self.plotting_tau_bin_edges)-1-tau_i, ncell_i] = np.mean(metric_expect_slice)
+                        sys.exit(f'No protocol specified for how to draw samples of {uncertain_param}') 
+                x_all[:, uncertain_param_i] = samples
 
-            # Now actually make the plot
-            fig, ax = plt.subplots(figsize=(12,12))
-            axfontsize = 16
-            if xs:
-                metric_lab = '$<xs>$' 
+            # Compute outcome under all uncertainty samples
+            for x_i, x in enumerate(x_all):
+                # First, check if lambda(tau) < lambda^* for all tau; for these S=0
+                if fixed_metric_mask[int(x[-1])]:
+                    meta_metric_all[x_i] = 0.0
+                
+                # Otherwise, actually compute the new value of S
+                else:
+                    # Assign parameter values for this sample
+                    for i, param in enumerate(param_keys):
+                        if i in [1,2]:
+                            param_val = int(x[i])
+                        elif param == 'demographic_index':
+                            # Retrieve the spline function for this demographic sample
+                            demographic_index = int(x[i])
+                            param_val = metric_spl_all[demographic_index]
+                            param = 'metric_spl'
+                        else:
+                            param_val = float(x[i])
+                        setattr(self, param, param_val)
+
+                    # Add in uncertainty on baseline tau values
+                    self.generate_tau() 
+
+                    # Shift selected tau values (including uncertainty)
+                    self.change_tau_expect(self.C, self.ncell, self.slice_left)
+
+                    # Compute and store metric value
+                    if self.meta_metric == 'gte_thresh':
+                        self.calculate_metric_gte(metric_thresh)
+                    if suffix == '_baseline':
+                        self.metric_expect_rank[rank_sample_i] = self.metric_expect    
+                    else:
+                        meta_metric_all[x_i] = self.metric_expect
+
+            # Store meta metric values and uncertainty samples in h5
+            if suffix != '_baseline':
+                key = decision_indices[decision_i]
+                results[key][:] = meta_metric_all
+                results[key + 'uncertainty_samples'][:] = x_all[:, 3:]
+
+            # Update progress (root only)
+            if (self.rank == self.root) and (rank_sample_i % pbar_step == 0):
+                pbar.update(pbar_step); print()
+
+        if suffix == '_baseline':
+            # We use a dummy key for the baseline case    
+            key = '0.0.0'
+
+            # Gather data; first initialize data to store samples across all ranks
+            sendcounts = np.array(self.comm.gather(len(self.metric_expect_rank), root=self.root))
+            if self.rank == self.root:
+                sampled_metric_expect = np.empty(sum(sendcounts))
             else:
-                metric_labels = ['$<P_s>$', '$<r>$', '$<\mu>$', '$<\lambda>$']
-                metrics = np.array(['P_s', 'r', 'mu_s', 'lambda_s'])
-                metric_i = np.nonzero(metrics == self.metric)[0][0]
-                metric_lab = metric_labels[metric_i]
-            cmap = copy.copy(matplotlib.cm.plasma)
-            plotting_matrix = np.ma.masked_where(np.isnan(plotting_matrix),  plotting_matrix)
-            plotting_matrix_flat = plotting_matrix.flatten()
-            if len(plotting_matrix_flat[plotting_matrix_flat != np.ma.masked]) == 0:
-                phase_max = 0
-            else:
-                phase_max = max(plotting_matrix_flat[plotting_matrix_flat != np.ma.masked])
-            cmap.set_bad('white')
-            im = ax.imshow(plotting_matrix, norm=matplotlib.colors.Normalize(vmin=metric_nochange, vmax=phase_max), cmap=cmap)
-            cbar = ax.figure.colorbar(im, ax=ax, location="right", shrink=0.6)
-            cbar.ax.set_ylabel(fr'{metric_lab}', rotation=-90, fontsize=axfontsize, labelpad=20)
-            ytick_spacing = 2
-            ytick_labels = np.flip(self.plotting_tau_bin_cntrs)[::ytick_spacing]
-            yticks = np.arange(0,len(self.plotting_tau_bin_cntrs),ytick_spacing)
-            ax.set_yticks(yticks, labels=np.round(ytick_labels, decimals=3));
-            ax.set_ylabel(fr'Average initial $\tau$ in area where $\tau$ is changed', fontsize=axfontsize)
-            xtick_spacing = 3
-            xticks = np.arange(0,len(self.ncell_vec),xtick_spacing)
-            xtick_labels = np.round(self.ncell_vec/self.ncell_tot, 3)
-            ax.set_xticks(xticks, labels=xtick_labels[::xtick_spacing]);
-            ax.set_xlabel(r'Fraction of species range where $\tau$ is altered ($A/A_{\text{range}}$)', fontsize=axfontsize)
-            if self.tauc_method == "flat":
-                tauc_vec = C / self.ncell_vec
-            else:
-                tauc_vec = None
-            if hasattr(tauc_vec, "__len__"):
-                secax = ax.secondary_xaxis('top')
-                secax.set_xticks(xticks, labels=np.round(tauc_vec[::xtick_spacing], decimals=3));
-                secax.set_xlabel(r'Change in $\tau$ per unit area ($\hat{\tau}$)', fontsize=axfontsize)
-            # Save to file
-            figs_dir = f"{self.meta_metric}/figs/Aeff_{self.Aeff}/tfinal_{self.t_final}/metric_{self.metric}/"
-            figs_dir += f"mutau_{np.round(self.mu_tau,3)}/sigmtau_{np.round(self.sigm_tau, 3)}/"
-            figs_dir += f"mutauc_{np.round(self.mu_tauc,3)}/sigmtauc_{np.round(self.sigm_tauc, 3)}/C_{C}"
-            if not os.path.isdir(figs_dir):
-                os.makedirs(figs_dir)
-            if xs:
-                fn = figs_dir + f"/phase_xs_slice_{self.tauc_method}.png"
-            else:
-                fn = figs_dir + f"/phase_slice_{self.tauc_method}.png"
-            fig.savefig(fn, bbox_inches='tight', dpi=50)
-            plt.close(fig)
+                sampled_metric_expect = None
+            self.comm.Gatherv(self.metric_expect_rank, sampled_metric_expect, root=self.root)
+
+            results[key][:] = sampled_metric_expect
+            results[key + 'decision_samples'][:] = x_decision
+
+        if self.rank == self.root:
+            pbar.close()
+
+        results.close()
+
+    def postprocess_phase_uncertain(self):
+        phase = h5py.File(self.data_dir + '/phase_uncertain.h5', 'r')
+        decision_indices = np.load(self.data_dir + '/decision_indices_uncertain.npy')
+        Sstar_vec = np.linspace(0, 1, 150) # Range of target outcomes for computing robustness
+        np.save(self.data_dir + "/Sstar_vec.npy", Sstar_vec)
+
+        # Calculate the robustness at each threshold and strategy combination
+        rob_all = np.full((
+                            Sstar_vec.size, self.C_vec.size, 
+                            self.ncell_vec.size, self.slice_left_all.size
+                          ), np.nan)
+        for thresh_i, thresh in enumerate(Sstar_vec):
+            for indices in decision_indices:
+                C_i, ncell_i, sl_i = [int(i) for i in indices.split('.')]
+                key = ''.join([str(x) for x in indices])
+                meta_metric_samples = np.array(phase[key])
+                counts = np.count_nonzero(meta_metric_samples >= thresh)
+                robustness = counts / self.num_eps_combs 
+                rob_all[thresh_i, C_i, ncell_i, sl_i] = robustness
+
+        # Save robustness results to file
+        if self.rank == self.root:
+            np.save(self.data_dir + "/rob_all.npy", rob_all)
+            
+        # Now find the strategies which optimize robustness per threshold, C combination
+        maxrob = np.full((len(Sstar_vec), len(self.C_vec)), np.nan)
+        argmaxrob = np.full((len(Sstar_vec), len(self.C_vec), 2), np.nan)
+        for (thresh_i, thresh), (C_i, C) in product(enumerate(Sstar_vec), enumerate(self.C_vec)):
+            rob_slice = rob_all[thresh_i, C_i]
+            if np.any(~np.isnan(rob_slice)):
+                # Store the max robustness at this (thresh, C) coordinate
+                maxrob[thresh_i, C_i] = np.nanmax(rob_slice)
+                
+                # Also store the optimal param indices
+                optimal_param_i = np.unravel_index(np.nanargmax(rob_slice, axis=None), rob_slice.shape)
+                argmaxrob[thresh_i, C_i] = optimal_param_i
+
+        # Save maxrob and argmaxrob to files
+        np.save(self.data_dir + "/maxrob.npy", maxrob)
+        np.save(self.data_dir + "/argmaxrob.npy", argmaxrob)
+
+        # Close phase results file
+        phase.close()
+
+    def interp_optima_baseline(self, taucmin, nn):
+        # Read decision params and S values into x_obs and y_obs, respectively
+        with h5py.File(self.data_dir + '/phase_baseline.h5', 'r') as phase:
+            x_obs = np.array(phase['0.0.0decision_samples'])
+            y_obs = np.array(phase['0.0.0'])
+
+        # Filter for selected C val, checking that its in data first
+        assert np.any(np.isclose(self.C_vec/self.ncell_tot, taucmin))
+        C_i = np.isclose(self.C_vec/self.ncell_tot, taucmin).argmax()
+        C_mask = (x_obs[:, 0] == (self.C_vec[C_i]))
+        x_obs = x_obs[C_mask, 1:]
+        y_obs = y_obs[C_mask]
+
+        # Rescale inputs and outputs
+        x_rescaler = Rescaler(x_obs.min(axis=0), x_obs.max(axis=0))
+        x_obs = x_rescaler.rescale(x_obs)
+        y_rescaler = Rescaler(y_obs.min(axis=0), y_obs.max(axis=0))
+        y_obs = y_rescaler.rescale(y_obs)
+
+        # Interpolate S(n, l) 
+        interp_baseline = RBFInterpolator(x_obs, y_obs, neighbors=nn, smoothing=0.0)
+
+        # Define objective function for optimization 
+        def objective(decision_params):
+            S = interp_baseline([decision_params])
+            return -S
+
+        # Use optimal decision from exisiting samples as starting point
+        argmax = np.nanargmax(y_obs)
+        x0 = x_obs[argmax]
+
+        # Optimize using scipy
+        bounds = ((0, 1), (0, 1)) # Remeber, we rescaled the training data
+        cons = [{'type': 'ineq', 'fun': lambda x:  1 - x[1] - x[0]}] # Constrain l < (n_tot - n)
+        res = minimize(objective, x0, method='COBYLA', bounds=bounds, constraints=cons)
+        x_opt = x_rescaler.descale(res.x).astype(int)
+        S_opt = y_rescaler.descale(-res.fun)
+
+        # Save results to file
+        np.save(self.data_dir + '/decision_opt_baseline.npy', x_opt) 
+        np.save(self.data_dir + '/S_opt_baseline.npy', S_opt)
+
+    def interp_optima_uncertain(self, taucmin, nn, smoothing, num_restarts):
+        # Read in required data
+        decision_indices = np.load(self.data_dir + '/decision_indices.npy')
+        Sstar_vec = np.load(self.data_dir + "/Sstar_vec.npy")
+        rob_all = np.load(self.data_dir + "/rob_all.npy")
+        meta_metric_nochange = float(np.load(self.data_dir + '/meta_metric_nochange.npy'))
+        S_opt_baseline = np.load(self.data_dir + '/S_opt_baseline.npy')
+        n_opt_baseline, l_opt_baseline = np.load(self.data_dir + '/decision_opt_baseline.npy')
+
+        # Filter for selected C val, checking that its in data first
+        assert np.any(np.isclose(self.C_vec/self.ncell_tot, taucmin))
+        C_i = np.isclose(self.C_vec/self.ncell_tot, taucmin).argmax()
+        rob_all_filtered = rob_all[:, C_i, ...]
+
+        # Read robustness vals and decision params into y_obs and x_obs, respectively
+        y_obs = rob_all_filtered.flatten()
+        indices = np.unravel_index(np.arange(y_obs.size), rob_all_filtered.shape)
+        x_obs = np.full((y_obs.size, len(rob_all_filtered.shape)), np.nan)
+        x_obs[:, 0] = Sstar_vec[indices[0]]
+        x_obs[:, 1] = self.ncell_vec[indices[1]]
+        x_obs[:, 2] = self.slice_left_all[indices[2]]
+
+        # Replace results for invalid param sets with zero
+        nan_filt = np.isnan(y_obs)
+        y_obs[nan_filt] = 0.0
+
+        # Rescale inputs and outputs
+        x_rescaler = Rescaler(x_obs.min(axis=0), x_obs.max(axis=0))
+        x_obs = x_rescaler.rescale(x_obs)
+        y_rescaler = Rescaler(y_obs.min(axis=0), y_obs.max(axis=0))
+        y_obs = y_rescaler.rescale(y_obs)
+
+        # Interpolate robustness(S^*, n, l) given C
+        interp = RBFInterpolator(x_obs, y_obs, neighbors=nn, smoothing=smoothing)
+
+        # Define objective function for optimization 
+        def objective(decision_params, *args):
+            Sstar = args[0]
+
+            # Get robustness value from interpolation
+            x = np.full(len(decision_params)+1, np.nan)
+            x[0] = Sstar
+            x[1:] = decision_params
+            try:
+                robustness = interp([x])
+            except:
+                robustness = 0
+
+            return -robustness # Negate bc using minimization algorithm
+
+        # Now step through S^* values and find decisions that optimize robustness
+        n_opt_interp = np.full(Sstar_vec.size, np.nan)
+        l_opt_interp = np.full(Sstar_vec.size, np.nan)
+        for Sstar_i, Sstar in enumerate(Sstar_vec):
+            # Use optimal decisions from exisiting samples as starting points
+            argsort = np.argsort(rob_all_filtered[Sstar_i, :], axis=None)
+            nan_filt = np.isnan(rob_all_filtered[Sstar_i, :].ravel()[argsort])
+            argsort = argsort[~nan_filt]
+
+            n_opt_samples = []
+            l_opt_samples = []
+
+            for x0_position in argsort[-num_restarts:]:
+                n0_i, l0_i = np.unravel_index(x0_position, rob_all_filtered.shape[1:])
+                n0, l0 = (self.ncell_vec[n0_i], self.slice_left_all[l0_i])
+
+                # Rescale to interpolation scale
+                Sstar, n0, l0 = x_rescaler.rescale([Sstar, n0, l0])
+
+                # Use an optimizer that can handle some noise in the objective
+                x0 = np.array([n0, l0])
+                cons = [
+                    {'type': 'ineq', 'fun': lambda x: x[0]},          # n >= 0
+                    {'type': 'ineq', 'fun': lambda x: 1 - x[0]},      # n <= 1
+                    {'type': 'ineq', 'fun': lambda x: x[1]},          # l >= 0
+                    {'type': 'ineq', 'fun': lambda x: 1 - x[1]},      # l <= 1
+                    {'type': 'ineq', 'fun': lambda x: 1 - x[0] - x[1]}  # l < (1 - n)
+                ]
+                res = minimize(objective, x0, args=(Sstar,), method='COBYLA', constraints=cons)
+
+                _, n_opt, l_opt = x_rescaler.descale([Sstar, res.x[0], res.x[1]])
+                n_opt_samples.append(n_opt)
+                l_opt_samples.append(l_opt)
+
+            # Take the mean over multiple optimization runs
+            n_opt_interp[Sstar_i] = np.mean(n_opt_samples)
+            l_opt_interp[Sstar_i] = np.mean(l_opt_samples)
+
+        decision_opt_uncertain = np.full((Sstar_vec.size, 2), np.nan)
+        decision_opt_uncertain[:, 0] = n_opt_interp
+        decision_opt_uncertain[:, 1] = l_opt_interp
+        np.save(self.data_dir + '/decision_opt_uncertain.npy', decision_opt_uncertain.astype(int))
