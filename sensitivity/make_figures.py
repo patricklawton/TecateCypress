@@ -78,22 +78,6 @@ nonzero_indices = np.nonzero(pproc.maps_filt)
 row_min, row_max = nonzero_indices[0].min(), nonzero_indices[0].max()
 col_min, col_max = nonzero_indices[1].min(), nonzero_indices[1].max()
 colored_data = colored_data[row_min:row_max + 1, col_min:col_max + 1]
-print((row_min, row_max), (col_min, col_max))
-print((pproc.ul_coord[1], pproc.lr_coord[1]), (pproc.ul_coord[0], pproc.lr_coord[0]))
-
-# Hardcode some things from map (.asc)  headers
-cellsize  = 270.0
-xllcorner = -373955.8364 + pproc.ul_coord[0] * cellsize
-yllcorner = -604543.3342 + pproc.ul_coord[1] * cellsize
-
-# Get extent to use coordinates with imshow
-print(colored_data.shape, (row_max-row_min, col_max-col_min))
-extent = [
-    xllcorner + col_min * cellsize,           # left
-    xllcorner + (col_max + 1) * cellsize,           # right
-    yllcorner + (row_max + 1) * cellsize,           # bottom
-    yllcorner + row_min * cellsize,           # top
-]
 
 # Latitude and longitude (WGS84)
 cities = {
@@ -102,9 +86,13 @@ cities = {
     "San Diego": (-117.161087, 32.715736),
     "Oceanside": (-117.325836, 33.211666),
 }
-transformer = Transformer.from_crs("EPSG:4326", "EPSG:3310", always_xy=True)
 
-# Convert to map coordinates
+# Offsets for the label relative to the marker (in map units, meters here)
+y_offsets = [1500, -10000, -10000, -10000]
+x_offsets = [1500, -20000, -20000, -24000]
+
+# Convert city lat/long to map coordinates
+transformer = Transformer.from_crs("EPSG:4326", "EPSG:3310", always_xy=True)
 x_cities, y_cities, names = [], [], []
 for name, (lon, lat) in cities.items():
     x, y = transformer.transform(lon, lat)
@@ -112,14 +100,53 @@ for name, (lon, lat) in cities.items():
     y_cities.append(y)
     names.append(name)
 
-#im1 = ax1.imshow(colored_data)
+# header values
+nrows_total = 3905
+ncols_total = 3385
+xll0 = -373955.8364
+yll0 = -604543.3342
+cellsize = 270.0
+
+# Crop offsets (absolute indices into the full grid; row index counted FROM TOP)
+ul_col, ul_row_from_top = pproc.ul_coord   # [1500, 2800]
+lr_col, lr_row_from_top = pproc.lr_coord   # [2723, 3905]
+
+# After masking & cropping we computed relative nonzero indices:
+# Convert to absolute indices in the original full grid:
+abs_row_min = ul_row_from_top + row_min      # absolute row index (from top)
+abs_row_max = ul_row_from_top + row_max
+abs_col_min = ul_col + col_min               # absolute column index (from left)
+abs_col_max = ul_col + col_max
+
+# Now compute extent for origin='upper' (row 0 = top)
+left  = xll0 + abs_col_min * cellsize
+right = xll0 + (abs_col_max + 1) * cellsize
+top   = yll0 + nrows_total * cellsize - abs_row_min * cellsize
+bottom= yll0 + nrows_total * cellsize - (abs_row_max + 1) * cellsize
+
+extent = [left, right, bottom, top]
+
+# Plot keeping origin='upper'
 im1 = ax1.imshow(colored_data, extent=extent, origin='upper')
 
-ax1.scatter(x_cities, y_cities, color='cyan', marker='*', s=220, zorder=3)
+for name, x, y, x_off, y_off in zip(names, x_cities, y_cities, x_offsets, y_offsets):
+    # Plot the marker
+    ax1.scatter(x, y, color='white', marker='*', s=300, zorder=3)
+
+    # Plot the text label with offset
+    txt = ax1.text(
+        x + x_off, y + y_off,  # slightly offset from marker
+        name,
+        color='white',
+        fontsize=mpl.rcParams['legend.fontsize']*0.9,
+        ha='left',
+        va='bottom',
+        zorder=4
+    )
 
 # Add the colorbar to inset axis
 cbar_ax = inset_axes(ax1, width="5%", height="60%", loc='center',
-                     bbox_to_anchor=(-0.1, -0.15, 0.65, 0.9),  # Centered on the plot,
+                     bbox_to_anchor=(-0.2, -0.15, 0.65, 0.9),  # Centered on the plot,
                      bbox_transform=ax1.transAxes, borderpad=0)
 sm = cm.ScalarMappable(cmap=cmap, norm=norm)
 cbar = fig.colorbar(sm, cax=cbar_ax, orientation="vertical")#, ticks=[0, 0.25, 0.5, 0.75, 1])
@@ -127,7 +154,7 @@ cbar_ticks = cbar.get_ticks()
 cbar.set_ticks(cbar_ticks)
 cbar_ticklabels = [rf'$\leq${cbar_ticks[0]}'] + [t for t in cbar_ticks[1:-1]] + [rf'$\geq${cbar_ticks[-1]}']
 cbar.set_ticklabels(cbar_ticklabels)
-cbar.set_label(r'baseline fire return interval, $\hat{\tau}_k$', color='white', rotation=-90, labelpad=cbar_lpad)
+cbar.set_label(r'baseline fire return interval, $\hat{\tau}_k$', color='white', rotation=-90, labelpad=cbar_lpad*1.25)
 cbar.ax.tick_params(labelcolor='white', color='white')
 ax1.set_xticks([])
 ax1.set_yticks([])
@@ -265,7 +292,7 @@ clrs = [custom_colors[3],
         custom_colors[2],
         '#EEB7BC', #pink 50% opacity
         'white']
-nodes = [0.0, 0.6, 0.85, 1.0]
+nodes = [0.0, 0.6, 0.8, 1.0]
 colormap = colors.LinearSegmentedColormap.from_list(
     "white_to_target", list(zip(nodes, clrs))
 )
@@ -684,9 +711,33 @@ for i, q in enumerate(q_samples):
     colored_data = colored_data[row_min:row_max + 1, col_min:col_max + 1]
 
     ax_label = 'bottom left' if i == 0 else 'bottom right'
-    im = axd[ax_label].imshow(colored_data)
+    im = axd[ax_label].imshow(colored_data, extent=extent)
     axd[ax_label].set_yticks([])
     axd[ax_label].set_xticks([])
+
+    for name, x, y, x_off, y_off in zip(names, x_cities, y_cities, x_offsets, y_offsets):
+        #if name not in ['Riverside', 'San Diego']: continue
+        if name == 'Riverside':
+            y_off += 3000
+
+        elif name == 'San Diego':
+            y_off -= 3000
+            x_off -= 12000
+        else:
+            continue
+        # Plot the marker
+        axd[ax_label].scatter(x, y, color='white', marker='*', s=100, zorder=3)
+
+        # Plot the text label with offset
+        txt = axd[ax_label].text(
+            x + x_off, y + y_off,  # slightly offset from marker
+            name,
+            color='white',
+            fontsize=mpl.rcParams['legend.fontsize']*0.5,
+            ha='left',
+            va='bottom',
+            zorder=4
+        )
 
 fig.savefig(pproc.figs_dir + '/fig4_pre.png', bbox_inches='tight')
 
