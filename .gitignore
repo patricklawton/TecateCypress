@@ -39,3 +39,4 @@ final_figs
 checkinits_data
 train_*
 model*.pkl
+shared_maps

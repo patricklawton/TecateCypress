@@ -169,6 +169,8 @@ class Phase:
 
             self.data_dir = f"{self.meta_metric}/data/Aeff_{self.Aeff}/tfinal_{self.t_final}/metric_{self.metric}"
             self.figs_dir = f"{self.meta_metric}/figs/Aeff_{self.Aeff}/tfinal_{self.t_final}/metric_{self.metric}"
+            #self.figs_dir = os.path.join('/','Volumes', 'Macintosh HD', 'Users', 'patrick',
+            #                             'Google Drive', 'My Drive', 'Research', 'Regan', 'Figs/')
             fn = self.data_dir + f"/metric_all.npy"
             if (not os.path.isfile(fn)) or self.overwrite_metrics:
                 # Loop over all jobs and process metric data

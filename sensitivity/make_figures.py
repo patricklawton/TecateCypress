@@ -3,16 +3,24 @@ import numpy as np
 from matplotlib import colors, cm, rc
 from matplotlib import pyplot as plt
 from matplotlib.gridspec import GridSpec
-from matplotlib.patches import Patch
+from matplotlib.patches import Patch, Polygon
 import matplotlib as mpl
 import matplotlib.ticker as mticker
 from mpl_toolkits.axes_grid1.inset_locator import inset_axes
+import geopandas as gpd
+from shapely.geometry import box
+import cartopy.feature as cfeature
 from pyproj import Transformer
 import pickle
 import h5py
 from scipy.special import gamma
+from scipy.interpolate import make_splrep
+from scipy.optimize import root_scalar
 import copy as copy
 from itertools import combinations, product
+
+# Which figures to run
+flist = [2, 4]
 
 # Update global plotting parameters
 rc('axes', labelsize=24)  # Font size for x and y labels
@@ -25,11 +33,125 @@ rc('legend', fontsize=19)
 rc('font', family='sans-serif')
 rc('font', serif=['Computer Modern Sans Serif'] + plt.rcParams['font.serif'])
 rc('font', weight='light')
+rc('font', size=19)
 histlw = 5.5
 cbar_lpad = 30
 dpi = 50
 #dpi = 200
 custom_colors = ['lightgrey', '#e69f00', '#ee6778', '#a04a95'] #pop
+
+def add_map_decorations(
+    ax,
+    scale_fraction=0.15,
+    scale_loc=(0.05, 0.05),
+    north_loc=(0.85, 0.12),
+    color='white'
+):
+    """
+    Adds an automatically sized scale bar and north arrow to a projected map.
+
+    Parameters
+    ----------
+    ax : matplotlib.axes.Axes
+        Axes containing the map in projected units (meters).
+    scale_fraction : float
+        Fraction of map width for the scale bar length (default 0.15).
+    scale_loc : tuple (x_frac, y_frac)
+        Fractional position of the scale bar lower-left corner in axis coordinates (0–1).
+    north_loc : tuple (x_frac, y_frac)
+        Fractional position of the north arrow lower corner in axis coordinates (0–1).
+    color : str
+        Color of the decorations.
+    """
+    xlim = ax.get_xlim()
+    ylim = ax.get_ylim()
+    map_width = xlim[1] - xlim[0]
+    map_height = ylim[1] - ylim[0]
+
+    # --- Scale bar ---
+    raw_length = map_width * scale_fraction
+    nice_lengths_km = np.array([1, 2, 5, 10, 25, 50, 100, 200, 500, 1000])
+    length_km = nice_lengths_km[np.abs(nice_lengths_km*1000 - raw_length).argmin()]
+    length_m = length_km * 1000
+
+    x_start = xlim[0] + scale_loc[0] * map_width
+    y_start = ylim[0] + scale_loc[1] * map_height
+
+    ax.plot([x_start, x_start + length_m], [y_start, y_start],
+            color=color, linewidth=10, solid_capstyle='butt', zorder=20)
+    ax.text(x_start + length_m/2, y_start - 0.02*map_height,
+            f"{length_km} km", color=color, ha='center', va='top', zorder=21,
+            fontsize=mpl.rcParams['axes.labelsize']*1.)
+
+    # --- North arrow ---
+    x_start = xlim[0] + north_loc[0] * map_width
+    y_start = ylim[0] + north_loc[1] * map_height
+    width = 0.02 * map_width
+    height = 0.06 * map_height
+
+    triangle = Polygon([
+        (x_start - width/2, y_start),
+        (x_start + width/2, y_start),
+        (x_start, y_start + height)
+    ], facecolor=color, edgecolor=color, zorder=20)
+    ax.add_patch(triangle)
+    ax.text(x_start, y_start + height + 0.01*map_height, 'N',
+            color=color, ha='center', va='bottom', zorder=21, 
+            fontsize=mpl.rcParams['axes.labelsize']*1.)
+
+def add_california_inset(ax, main_extent, inset_pos=[0.7, 0.7, 0.25, 0.25],
+                         box_color='red', box_alpha=0.5, inset_title=None):
+    """
+    inset_pos : list [x0, y0, width, height]
+        Position and size of the inset axes in axes fraction (0–1).
+    box_color : str
+        Color of the extent box on the inset.
+    box_alpha : float
+        Transparency of the box (0–1).
+    """
+    # Create inset axes
+    inset_ax = ax.inset_axes(inset_pos)
+    inset_ax.set_aspect('equal')
+
+    # Load US geometry and clip to California
+    states = gpd.read_file("../shared_maps/cb_2018_us_state_500k/cb_2018_us_state_500k.shp").to_crs('EPSG:3310')
+    california = states[states['NAME'] == 'California']
+    california.plot(ax=inset_ax, color='lightgray', edgecolor='black')
+
+    # Draw the box representing main map extent
+    xmin, xmax, ymin, ymax = main_extent
+    extent_box = box(xmin, ymin, xmax, ymax)
+    extent_gdf = gpd.GeoDataFrame(geometry=[extent_box], crs='EPSG:3310')
+    extent_gdf.plot(ax=inset_ax, facecolor='none', edgecolor=box_color, linewidth=4, alpha=box_alpha)
+
+    # Clean up inset axes
+    inset_ax.set_xticks([])
+    inset_ax.set_yticks([])
+    inset_ax.set_title(inset_title, fontsize=8)
+
+    # Zoom inset to California bounds
+    inset_ax.set_xlim(california.total_bounds[0], california.total_bounds[2])
+    inset_ax.set_ylim(california.total_bounds[1], california.total_bounds[3])
+
+    return inset_ax
+
+def add_ocean_overlay(ax, extent):
+    left, right, bottom, top = extent 
+
+    # Define the map extent polygon in the same CRS as raster (EPSG:3310)
+    map_bounds = box(left, bottom, right, top)
+
+    # Load Natural Earth "ocean" polygons (10m resolution) and project to EPSG:3310
+    ocean = gpd.GeoDataFrame(
+        geometry=list(cfeature.NaturalEarthFeature('physical', 'ocean', '10m').geometries()),
+        crs='EPSG:4326'
+    ).to_crs('EPSG:3310')
+
+    # Clip to map bounds
+    ocean_clip = gpd.clip(ocean, map_bounds)
+
+    # Plot the shaded ocean overlay
+    ocean_clip.plot(ax=ax, facecolor='royalblue', alpha=0.25, edgecolor='none', zorder=2)
 
 # Define constants for a Phase instance to collect existing data
 constants = {}
@@ -51,657 +173,27 @@ constants['metric'] = 'lambda_s'
 constants['overwrite_metrics'] = False
 constants['extra_attributes'] = ['tau_raster', 'maps_filt', 'metric_spl_all']
 
-# Create instance and retrieve exisitng data
-pproc = Phase(**constants)
-pproc.initialize()
-pproc.load_decision_parameters(suffix="_baseline")
-
 #########
 # FIG 2 #
 #########
 
-fig = plt.figure(figsize=np.array([14, 6])*2.)
-gs = GridSpec(4, 4, figure=fig, width_ratios=[1,1,1,1], height_ratios=[1,1,1,1])
-ax1 = fig.add_subplot(gs[:, :2])  # Left panel for FDM
-ax2 = fig.add_subplot(gs[0, 2:])  # Top right for tau hist
-ax3 = fig.add_subplot(gs[1:, 2:])  # Bottom right for P(S) vs tau
-
-#### FDM map ####
-cmap = copy.copy(cm.YlOrRd_r)
-vmin = 15; vmax = 45
-norm = colors.Normalize(vmin=vmin, vmax=vmax)
-colored_data = cmap(norm(pproc.tau_raster))
-# Color background
-colored_data[pproc.maps_filt == False] = colors.to_rgba('black', alpha=0.3)
-# Crop out border where all nans
-nonzero_indices = np.nonzero(pproc.maps_filt)
-row_min, row_max = nonzero_indices[0].min(), nonzero_indices[0].max()
-col_min, col_max = nonzero_indices[1].min(), nonzero_indices[1].max()
-colored_data = colored_data[row_min:row_max + 1, col_min:col_max + 1]
-
-# Latitude and longitude (WGS84)
-cities = {
-    "Riverside": (-117.3962, 33.9533),
-    "Santa Ana": (-117.8677, 33.7455),
-    "San Diego": (-117.161087, 32.715736),
-    "Oceanside": (-117.325836, 33.211666),
-}
-
-# Offsets for the label relative to the marker (in map units, meters here)
-y_offsets = [1500, -10000, -10000, -10000]
-x_offsets = [1500, -20000, -20000, -24000]
-
-# Convert city lat/long to map coordinates
-transformer = Transformer.from_crs("EPSG:4326", "EPSG:3310", always_xy=True)
-x_cities, y_cities, names = [], [], []
-for name, (lon, lat) in cities.items():
-    x, y = transformer.transform(lon, lat)
-    x_cities.append(x)
-    y_cities.append(y)
-    names.append(name)
-
-# header values
-nrows_total = 3905
-ncols_total = 3385
-xll0 = -373955.8364
-yll0 = -604543.3342
-cellsize = 270.0
-
-# Crop offsets (absolute indices into the full grid; row index counted FROM TOP)
-ul_col, ul_row_from_top = pproc.ul_coord   # [1500, 2800]
-lr_col, lr_row_from_top = pproc.lr_coord   # [2723, 3905]
-
-# After masking & cropping we computed relative nonzero indices:
-# Convert to absolute indices in the original full grid:
-abs_row_min = ul_row_from_top + row_min      # absolute row index (from top)
-abs_row_max = ul_row_from_top + row_max
-abs_col_min = ul_col + col_min               # absolute column index (from left)
-abs_col_max = ul_col + col_max
-
-# Now compute extent for origin='upper' (row 0 = top)
-left  = xll0 + abs_col_min * cellsize
-right = xll0 + (abs_col_max + 1) * cellsize
-top   = yll0 + nrows_total * cellsize - abs_row_min * cellsize
-bottom= yll0 + nrows_total * cellsize - (abs_row_max + 1) * cellsize
-
-extent = [left, right, bottom, top]
-
-# Plot keeping origin='upper'
-im1 = ax1.imshow(colored_data, extent=extent, origin='upper')
-
-for name, x, y, x_off, y_off in zip(names, x_cities, y_cities, x_offsets, y_offsets):
-    # Plot the marker
-    ax1.scatter(x, y, color='white', marker='*', s=300, zorder=3)
-
-    # Plot the text label with offset
-    txt = ax1.text(
-        x + x_off, y + y_off,  # slightly offset from marker
-        name,
-        color='white',
-        fontsize=mpl.rcParams['legend.fontsize']*0.9,
-        ha='left',
-        va='bottom',
-        zorder=4
-    )
-
-# Add the colorbar to inset axis
-cbar_ax = inset_axes(ax1, width="5%", height="60%", loc='center',
-                     bbox_to_anchor=(-0.2, -0.15, 0.65, 0.9),  # Centered on the plot,
-                     bbox_transform=ax1.transAxes, borderpad=0)
-sm = cm.ScalarMappable(cmap=cmap, norm=norm)
-cbar = fig.colorbar(sm, cax=cbar_ax, orientation="vertical")#, ticks=[0, 0.25, 0.5, 0.75, 1])
-cbar_ticks = cbar.get_ticks()
-cbar.set_ticks(cbar_ticks)
-cbar_ticklabels = [rf'$\leq${cbar_ticks[0]}'] + [t for t in cbar_ticks[1:-1]] + [rf'$\geq${cbar_ticks[-1]}']
-cbar.set_ticklabels(cbar_ticklabels)
-cbar.set_label(r'baseline fire return interval, $\hat{\tau}_k$', color='white', rotation=-90, labelpad=cbar_lpad*1.25)
-cbar.ax.tick_params(labelcolor='white', color='white')
-ax1.set_xticks([])
-ax1.set_yticks([])
-
-#### P(S) vs tau ####
-# Define bins for tau axis
-tau_plot = np.linspace(pproc.tau_vec[0], pproc.tau_vec[-1], 90)
-tau_diffs = np.diff(tau_plot)
-tau_step = tau_diffs[1]
-tau_edges = np.concatenate((
-                [tau_plot[0]],
-                [tau_diffs[0]/2],
-                np.arange(tau_plot[1]+tau_step/2, tau_plot[-1]+tau_step, tau_step)
-                           ))
-min_edge_i = np.argmin(np.abs(tau_edges - 10))
-
-# Collect interpolated lambda values at selected tau values
-tau_plot_all = np.tile(tau_plot, pproc.num_demographic_samples)
-metric_interp_all = np.array([])
-for demographic_index in range(pproc.num_demographic_samples):
-    metric_spl = pproc.metric_spl_all[demographic_index]
-    metric_interp_all = np.append(metric_interp_all, metric_spl(tau_plot))
-
-# Define bins for lambda axis
-metric_min = min(metric_interp_all[(tau_plot_all >= tau_edges[min_edge_i]) & (tau_plot_all < tau_edges[min_edge_i+1])])
-metric_max = np.quantile(metric_interp_all, 0.99)
-metric_edges = np.linspace(metric_min, metric_max*1.015, 60)
-
-# Use hist2d to plot
-clrs = ['white', 
-        '#edd09b', #this is 50% opacity
-        custom_colors[1]]
-nodes = [0.0, 0.6, 1.0]
-cmap = colors.LinearSegmentedColormap.from_list(
-    "white_to_target", list(zip(nodes, clrs))
-)
-norm = colors.LogNorm(vmin=1, vmax=pproc.num_demographic_samples)
-cmap.set_bad('white')
-im = ax3.hist2d(tau_plot_all, metric_interp_all, bins=[tau_edges, metric_edges],
-                norm=norm,
-                density=False,
-                cmap=cmap)
-
-# Add the colorbar to inset axis
-cbar_ax = inset_axes(ax3, width="5%", height="50%", loc='center',
-                     bbox_to_anchor=(0.5, -0.2, 0.55, 1.1),
-                     bbox_transform=ax3.transAxes, borderpad=0)
-sm = cm.ScalarMappable(cmap=cmap, norm=norm)
-ticks = np.array([1,10, 100, 500]) * 10
-ticklabels = np.round(ticks/pproc.num_demographic_samples, 3)
-cbar = fig.colorbar(sm, cax=cbar_ax, orientation="vertical", ticks=ticks,
-                   format=mticker.FixedFormatter(ticklabels))
-
-# Plot interpolation function for <metric> wrt tau
-metric_spl = pproc.metric_spl_all[0]
-tau_samples = np.arange(0, 140, 2)
-ax3.plot(tau_samples, metric_spl(tau_samples), color='k')
-
-# Labels etc
-cbar.set_label(rf'$P(\lambda|\tau_k)$', rotation=-90, labelpad=cbar_lpad)
-ax3.set_ylabel(rf'growth rate, $\lambda(\tau_k)$')
-ax3.plot([], [], color='k', label=r'baseline: $\hat{\lambda}(\tau_k)$')
-ax3.legend(bbox_to_anchor=(0.2, -0.05, 0.5, 0.5), fontsize=24)
-ax3.set_ylim(metric_edges[np.nonzero(im[0][min_edge_i])[0].min()], max(metric_edges))
-ax3.set_xlim(tau_edges[min_edge_i], max(tau_edges))
-ax3.set_xlabel(r'fire return interval, $\tau_k$')
-
-#### INITIAL TAU DISTRIBUTION ####
-tau_edges = np.arange(0, int(max(tau_edges)+0.5)+1, 1)
-ax2.hist(pproc.tau_flat, bins=tau_edges, color='black', histtype='step', lw=histlw, density=True);
-ax2.set_yticks([])
-ax2.set_ylabel(r"$\hat{\tau}_k$ frequency")
-ax2.set_xticks([])
-# Use the boundaries of the P(S) imshow plot for the tau limits
-ax2.set_xlim(ax3.get_xlim())
-gs.update(hspace=0.01)  # Adjust vertical spacing
-gs.update(wspace=0.3)
-
-fig.savefig(pproc.figs_dir + '/fig2_pre.png', bbox_inches='tight', dpi=dpi)
-fig.savefig(pproc.figs_dir + '/fig2_pre.svg', bbox_inches='tight')
-
-#########
-# FIG 3 #
-#########
-
-# Initalize figure
-fig = plt.figure(figsize=np.array([7.75, 5])*2.5)
-gs = GridSpec(3, 2, figure=fig, width_ratios=[1,1], height_ratios=[1.5,1,1])
-ax1 = fig.add_subplot(gs[0, 0])
-ax2 = fig.add_subplot(gs[0, 1])
-ax3 = fig.add_subplot(gs[1:, 0])
-ax4 = fig.add_subplot(gs[1:, 1])
-axes = np.array([[ax1,ax2],
-                 [ax3,ax4]
-                ])
-gs.update(hspace=0.4)
-
-#### VIZ OF METAPOP METRIC ####
-tau_max = max(tau_edges)
-#color = 'limegreen'
-color = custom_colors[1]
-metric_spl = pproc.metric_spl_all[0]
-metric_interp = metric_spl(pproc.tau_flat[pproc.tau_flat < tau_max])
-bin_step = 0.0025
-bin_edges = np.concatenate(([0], np.arange(bin_step/2, 1+bin_step, bin_step)))
-counts, bin_edges, hist = axes[0,0].hist(metric_interp, bins=bin_edges, color=color, 
-                                         histtype='step', lw=histlw);
-xticks = [0.9, 0.95, 1]
-axes[0,0].set_xlim(min(metric_interp),1.0+bin_step)
-axes[0,0].set_xlabel(rf"baseline growth rate, $\hat{{\lambda}}$")
-bin_i = np.argmin(np.abs(bin_edges - metric_thresh))
-axes[0,0].hist(metric_interp[metric_interp >= bin_edges[bin_i]], 
-               bins=bin_edges, color=color,
-               histtype='bar', alpha=0.6);
-closest_bin_i = np.argmin(np.abs(metric_thresh - bin_edges))
-axes[0,0].axvline(bin_edges[closest_bin_i], ls='--', color='k', lw=6.5)
-# Labels
-axes[0,0].set_yticks([])
-axes[0,0].set_ylabel(rf"$\hat{{\lambda}}$ frequency")
-axes[0,0].set_xticks(xticks, labels=xticks)
-
-#### FIRE REGIME SHIFT EXAMPLES ####
-tau_centers = 0.5 * (tau_edges[:-1] + tau_edges[1:])
-tau_i_samples = [22, 24]
-tau_f_samples = [24, 35]
-tau_current = pproc.tau_flat.copy()
-current_counts, _ = np.histogram(tau_current, bins=tau_edges)
-mask = np.ones(tau_current.size, dtype=bool)
-C_i = np.argmin(np.abs((pproc.C_vec/pproc.ncell_tot) - 10))
-C = pproc.C_vec[C_i]
-
-vmin = 0; vmax = 1
-norm = colors.Normalize(vmin=vmin, vmax=vmax)
-clrs = [custom_colors[3], 
-        custom_colors[2],
-        '#EEB7BC', #pink 50% opacity
-        'white']
-nodes = [0.0, 0.6, 0.8, 1.0]
-colormap = colors.LinearSegmentedColormap.from_list(
-    "white_to_target", list(zip(nodes, clrs))
-)
-bins = 50
-density = False
-alpha = 1
-
-for tau_i, tau_f in zip(tau_i_samples, tau_f_samples):
-    bin_i = np.argmin(np.abs(tau_edges - tau_i))
-    sl = np.count_nonzero(pproc.tau_flat <= tau_edges[bin_i])
-    bin_f = np.argmin(np.abs(tau_edges - tau_f))
-    ncell = np.count_nonzero(pproc.tau_flat < tau_edges[bin_f]) - sl
-    color = colormap(norm(ncell/pproc.ncell_tot))
-    tauc = C / ncell
-    mask[pproc.tau_argsort_ref[sl:sl+ncell]] = False
-
-    axes[0,1].hist(pproc.tau_flat[(pproc.tau_flat >= tau_edges[bin_i]) & (pproc.tau_flat < tau_edges[bin_f])],
-                   bins=tau_edges, color=color, alpha=alpha, density=density);
-
-    tau_slice = pproc.tau_flat[pproc.tau_argsort_ref][sl:sl+ncell]
-    tau_current = pproc.tau_flat.copy()
-    '''inflate the last bin for any gt max, as we do in actual calcs'''
-    tau_current[tau_current >= max(pproc.tau_vec)] = max(pproc.tau_vec)
-    future_pos_filt = (pproc.tau_flat >= min(tau_slice)+tauc) & (pproc.tau_flat < max(tau_slice)+tauc)
-    current_future_slice = tau_current[future_pos_filt]
-    if tau_i == min(tau_i_samples):
-        xmax = max(current_future_slice)+2
-    post_shift = np.concatenate((tau_slice+tauc, current_future_slice))
-    # Find where post shift hist is nonzero
-    post_bin_i = np.argmin(np.abs(tau_edges - min(post_shift)))
-    # Mask zero counts in shifted distributions
-    counts, edges = np.histogram(post_shift, bins=tau_edges, density=density)
-    nonzero = counts > 0
-    axes[0,1].hist(
-        post_shift,
-        bins=tau_edges[:-1][nonzero].tolist() + [tau_edges[1:][nonzero][-1]],
-        color=color,
-        edgecolor=color,     # solid outline in same color
-        alpha=alpha,
-        linewidth=histlw,
-        density=density,
-        histtype='stepfilled',
-    )
-
-    tau_shifted = pproc.tau_flat.copy()
-    tau_shifted[pproc.tau_argsort_ref[sl:sl+ncell]] += tauc
-    '''inflate the last bin for any gt max, as we do in actual calcs'''
-    tau_shifted[tau_shifted >= max(tau_edges)] = tau_edges[-2]
-
-axes[0,1].hist(tau_shifted[mask,...], bins=tau_edges, color='white', density=density);
-axes[0,1].hist(tau_current, bins=tau_edges, color='black', histtype='step', lw=histlw, density=density);
-
-axes[0,1].set_yticks([])
-axes[0,1].set_ylabel(r"$\tau_k$ frequency")
-axes[0,1].set_xticks(np.arange(20,100,20).astype(int))
-axes[0,1].set_xlabel(r"fire return interval, $\tau_k$")
-axes[0,1].set_xlim(15, xmax);
-
-#### RESULTS UNDER ZERO UNCERTAINTY ####
-# Load results for baseline
-with h5py.File(pproc.data_dir + '/phase_baseline.h5', 'r') as phase:
-    decision_samples = np.array(phase['0.0.0decision_samples'])
-    meta_metric_all = np.array(phase['0.0.0'])
-meta_metric_nochange = float(np.load(pproc.data_dir + '/meta_metric_nochange.npy'))
-
-plot_vec = np.ones_like(pproc.C_vec) * np.nan
-c_vec = np.ones_like(pproc.C_vec) * np.nan
-for C_i, C in enumerate(pproc.C_vec):
-    _filt = decision_samples[:,0] == C
-    argmax = np.nanargmax(meta_metric_all[_filt])
-    plot_vec[C_i] = meta_metric_all[_filt][argmax]
-    c_vec[C_i] = decision_samples[_filt,:][argmax][1]
-c_vec = c_vec / pproc.ncell_tot
-
-width = 0.875
-vmin = 0; vmax = 1
-norm = colors.Normalize(vmin=vmin, vmax=vmax)
-sm = cm.ScalarMappable(cmap=colormap, norm=norm)
-bar_colors = colormap(norm(c_vec))
-bar = axes[1,0].bar(np.arange(pproc.C_vec.size), plot_vec, color=bar_colors, width=width)
-axes[1,0].set_ylim(0, 1.02*np.max(plot_vec))
-yticks = np.arange(0., 1.2, 0.2)
-axes[1,0].set_yticks(yticks)
-axes[1,0].set_ylabel(fr"$\text{{max}}~S$")
-xtick_spacing = 2
-if len(pproc.C_vec) % 2 == 0:
-    xticks = np.arange(1, len(pproc.C_vec)+1, xtick_spacing)
-    xtick_labels = np.round((pproc.C_vec/(pproc.ncell_tot))[1::xtick_spacing], 1)
-else:
-    xticks = np.arange(0, len(pproc.C_vec), xtick_spacing)
-    xtick_labels = np.round((pproc.C_vec/(pproc.ncell_tot))[0::xtick_spacing], 1)
-axes[1,0].set_xticks(xticks, labels=xtick_labels);
-axes[1,0].set_xlabel(r"minimum $\hat{\Delta\tau}_k$, $R~/~n_{tot}$")
-axes[1,0].set_xlim(-(width/2)*1.4, len(pproc.C_vec)-1+((width/2)*1.4))
-# Plot baseline value
-axes[1,0].axhline(meta_metric_nochange, ls=':', label=f'no management', c='k')
-axes[1,0].legend()
-
-#### OPTIMA ACROSS ROBUSTNESS REQUIREMENTS ####
-# Reinitialize phase instance with uncertainty samples 
-constants.update({'extra_attributes': None})
-pproc = Phase(**constants)
-pproc.initialize()
-pproc.load_decision_parameters(suffix="_uncertain")
-
-# Load post-processed results
-maxrob = np.load(pproc.data_dir + "/maxrob.npy")
-argmaxrob = np.load(pproc.data_dir + "/argmaxrob.npy")
-Sstar_vec = np.load(pproc.data_dir + "/Sstar_vec.npy")
-
-vmax = 1; vmin = 0
-normalize = colors.Normalize(vmin=vmin, vmax=vmax)
-all_markers = ['o','^','D','s','H','*']
-all_linestyles = ['dotted', 'dashdot', 'dashed', 'solid']
-C_i_samples = [i for i in range(pproc.C_vec.size)][::1]
-
-for line_i, C_i in enumerate(C_i_samples):
-    plot_vec = np.ones(len(Sstar_vec)) * np.nan
-    c_vec = np.ones(len(Sstar_vec)) * np.nan
-    for thresh_i, thresh in enumerate(Sstar_vec):
-        # Get the maximum robustness across (ncell, sl) at this C
-        if maxrob[thresh_i, C_i] < 1:
-            plot_vec[thresh_i] = maxrob[thresh_i, C_i]
-        if not np.isnan(plot_vec[thresh_i]):
-            c_vec[thresh_i] = pproc.ncell_vec[int(argmaxrob[thresh_i, C_i][0])] / pproc.ncell_tot
-    # Filter out some samples for clarity
-    samp_spacing = 4
-    scatter = axes[1,1].scatter(Sstar_vec[::samp_spacing], plot_vec[::samp_spacing], cmap=colormap, norm=normalize,
-                        c=c_vec[::samp_spacing], marker=all_markers[line_i])
-    axes[1,1].scatter([], [], label=fr"$R~/~n_{{tot}}=${np.round(pproc.C_vec[C_i]/pproc.ncell_tot, 1)}",
-               c='black', marker=all_markers[line_i])
-
-    # Get the max robustness under Sstar=S_baseline_nochange for y lim
-    if C_i == max(C_i_samples):
-        Sstar_i = np.abs(Sstar_vec - meta_metric_nochange).argmin()
-        ymax = maxrob[Sstar_i, C_i]
-axes[1,1].set_ylabel(fr"$\text{{max}}~P(S \geq S^*)$")
-axes[1,1].set_xlabel(fr"target range-wide stability, $S^*$")
-handles, labels = axes[1,1].get_legend_handles_labels()
-axes[1,1].legend(handles[::-1], labels[::-1], fontsize=17)
-axes[1,1].set_xlim(1, meta_metric_nochange)
-xticks = np.arange(0., 1.2, 0.2)
-axes[1,1].set_yticks(xticks)
-axes[1,1].set_ylim(-0.01, ymax)
-
-# Add colorbar on separate axis
-cbar_ax = fig.add_axes([0.2, 0.009, 0.6, 0.025])  # [left, bottom, width, height]
-fig.colorbar(scatter, cax=cbar_ax, orientation='horizontal',
-    label=r"optimal fraction of populations managed $n~/~n_{tot}$")
-
-fig.savefig(pproc.figs_dir + '/fig3_pre.png', bbox_inches='tight', dpi=dpi)
-fig.savefig(pproc.figs_dir + '/fig3_pre.svg', bbox_inches='tight')
-
-#########
-# FIG 4 #
-#########
-xlens = np.array([1.0433, 1.0433]) # left to right
-ylens = np.array([2.25/3, 0.2, 0.55, 1])  # top, legend row, mid, bottom
-scale = 5
-xlens *= scale; ylens *= scale
-figsize = np.array([np.sum(xlens), np.sum(ylens)])
-#custom_colors = ['lightgrey', 'coral', 'orchid', 'blueviolet']
-#custom_colors = ['lightgrey', '#CCBB44', '#EE6778', '#AA3377'] #paul tol bright
-#custom_colors = ['lightgrey', '#FFB00D', '#FF5F00', '#DD227D'] #ibm
-#custom_colors = ['lightgrey', '#5B8EFD', '#725DEF', '#DD227D'] #ibm 2
-#custom_colors = ['lightgrey', '#D55E00', '#009E37', '#AA3377'] #ito 
-#custom_colors = ['lightgrey', '#E69F00', '#5CA89A', '#C36a77'] #ito 2
-#custom_colors = ['lightgrey', '#e69f00', '#ee6778', '#a04a95'] #pop
-#custom_colors = ['lightgrey', '#ff5f00', '#dd227d', '#725def'] #pop2
-
-# Define subplot mosaic
-fig, axd = plt.subplot_mosaic(
-    [['top', 'top'],
-     ['legend', 'legend'],
-     ['mid left', 'mid right'],
-     ['bottom left', 'bottom right']],
-    figsize=figsize,
-    layout="constrained",
-    height_ratios=ylens
-)
-
-# Add subplot labels
-labels = {
-    'top': 'a',
-    'mid left': 'b',
-    'mid right': 'c',
-    'bottom left': 'd',
-    'bottom right': 'e'
-}
-
-# Draw once to get renderer measurements
-fig.canvas.draw()
-renderer = fig.canvas.get_renderer()
-
-for key, label in labels.items():
-    ax = axd[key]
-    bbox = ax.get_position()
-
-    # Get y-label bounding box in figure coordinates
-    ylab = ax.yaxis.get_label()
-    ylab_bbox_disp = ylab.get_window_extent(renderer=renderer)
-    ylab_bbox_fig = ylab_bbox_disp.transformed(fig.transFigure.inverted())
-
-    # Left offset: start just left of y-label
-    x_pos = ylab_bbox_fig.x0 + 0.05 # small gap
-
-    # Vertical position: slightly above plot box
-    #if key in ['d', 'e']:
-    #    y_pos = bbox.y1 - 0.4
-    #else:
-    y_pos = bbox.y1 + 0.005
-
-    fig.text(
-        x_pos,
-        y_pos,
-        f"({label})",
-        fontsize=25,
-        fontweight='bold',
-        ha='right',
-        va='bottom'
-    )
-# Hide the legend axes frame and ticks
-axd['legend'].axis('off')
-
-# Make legend handles
-#custom_colors_forlegend = ['coral', 'blueviolet', 'orchid', 'lightgrey']
-custom_colors_forlegend = np.array(custom_colors)[[1,3,2,0]]
-legend_labels = ['baseline only', 'uncertain only', 'both', 'neither']
-handles = [Patch(facecolor=c, edgecolor='black', label=l)
-           for c, l in zip(custom_colors_forlegend, legend_labels)]
-
-# Place legend in the 'legend' subplot
-axd['legend'].axis('off')
-axd['legend'].legend(
-    handles=handles,
-    loc='center',
-    frameon=False,
-    ncol=len(handles),   # all in one row
-    handlelength=2.
-)
-
-# Reinitialize phase instance with samples taken at optimal decisions
-constants.update({'extra_attributes': ['maps_filt', 'metric_spl_all']})
-pproc = Phase(**constants)
-pproc.initialize()
-pproc.load_decision_parameters(suffix="_optdecisions")
-
-# Load some other stuff we need
-S_opt_baseline = np.load(pproc.data_dir + '/S_opt_baseline.npy')
-n_opt_baseline, l_opt_baseline = np.load(pproc.data_dir + '/decision_opt_baseline.npy')
-decision_opt_uncertain = np.load(pproc.data_dir + '/decision_opt_uncertain.npy')
-n_opt_interp = decision_opt_uncertain[:,0]
-l_opt_interp = decision_opt_uncertain[:,1]
-rob_all = np.load(pproc.data_dir + "/rob_all.npy")
-decision_indices = np.load(pproc.data_dir + '/decision_indices_optdecisions.npy')
-tau_sorted = pproc.tau_flat[pproc.tau_argsort_ref]
-mapindices = np.argwhere(pproc.maps_filt)
-
-q_vec = np.arange(0.0, 1.0, 0.05)
-#q_vec = np.arange(0.0, 1.0, 0.025)
-delta_taul_interp = np.full(q_vec.size, np.nan)
-delta_tauh_interp = np.full(q_vec.size, np.nan)
-taul_interp = np.full(q_vec.size, np.nan)
-tauh_interp = np.full(q_vec.size, np.nan)
-
-for q_i, q in enumerate(q_vec):
-    # Now get the optimal decisions for (1-q) * optimal S baseline
-    Sstar_i = np.argmin(np.abs(Sstar_vec - ((1 - q) * S_opt_baseline)) )
-    n_opt_rob = int(n_opt_interp[Sstar_i])
-    l_opt_rob = int(l_opt_interp[Sstar_i])
-    
-    # Replace this q value with the closest one we have available
-    Sstar = Sstar_vec[Sstar_i]
-    q_vec[q_i] = 1 - (Sstar / S_opt_baseline)
-        
-    delta_taul_interp[q_i] = tau_sorted[l_opt_rob] - tau_sorted[l_opt_baseline]
-    delta_tauh_interp[q_i] = tau_sorted[l_opt_rob+n_opt_rob] - tau_sorted[l_opt_baseline+n_opt_baseline]
-    taul_interp[q_i] = tau_sorted[l_opt_rob]
-    tauh_interp[q_i] = tau_sorted[l_opt_rob+n_opt_rob]
-
-# Restrict the range of plotting to a desired q value
-q_lim = 0.51
-q_mask = q_vec <= q_lim
-
-# Get the points where before and after crossing baseline and color them differently
-alpha = 0.85#0.6
-
-# First handle lower bound of optimal tau slice
-lte_baseline_q = q_vec[delta_taul_interp[q_mask & (delta_taul_interp <= 0)].argmax() + 1]
-lte_baseline_mask = (q_vec < lte_baseline_q)
-marker_x_positions = np.linspace(min(q_vec[q_mask]), max(q_vec[q_mask]), 50)
-marker_y_positions = np.full_like(marker_x_positions, tau_sorted[l_opt_baseline])
-axd['top'].plot(marker_x_positions*100, marker_y_positions, '--', markersize=8, color='k', label='baseline, $R~/~n_{tot}=6.0$')
-y2 = np.full(np.count_nonzero(q_mask & lte_baseline_mask), tau_sorted[l_opt_baseline])
-axd['top'].fill_between( # First handle less than baseline
-    q_vec[q_mask & lte_baseline_mask]*100,
-    taul_interp[q_mask & lte_baseline_mask],
-    y2,
-    color=custom_colors[3],
-    alpha=alpha,
-    zorder=-1
-)
-y1 = np.full(np.count_nonzero(q_mask & ~lte_baseline_mask), tau_sorted[l_opt_baseline])
-axd['top'].fill_between( # Now handle greater than baseline
-    q_vec[q_mask & ~lte_baseline_mask]*100,
-    y1,
-    taul_interp[q_mask & ~lte_baseline_mask],
-    color=custom_colors[1],
-    alpha=alpha,
-    zorder=-1
-)
-
-# Now handle upper bound of optimal tau slice
-lte_baseline_q = q_vec[delta_tauh_interp[q_mask & (delta_tauh_interp <= 0)].argmax() + 1]
-lte_baseline_mask = (q_vec < lte_baseline_q)
-marker_y_positions = np.full_like(marker_x_positions, tau_sorted[l_opt_baseline+n_opt_baseline])
-axd['top'].plot(marker_x_positions*100, marker_y_positions, '--', markersize=8, color='k')
-y2 = np.full(np.count_nonzero(q_mask & lte_baseline_mask), tau_sorted[l_opt_baseline + n_opt_baseline])
-axd['top'].fill_between( # First handle less than baseline
-    q_vec[q_mask & lte_baseline_mask]*100,
-    tauh_interp[q_mask & lte_baseline_mask],
-    y2,
-    color=custom_colors[1],
-    alpha=alpha,
-    zorder=-1
-)
-y1 = np.full(np.count_nonzero(q_mask & ~lte_baseline_mask), tau_sorted[l_opt_baseline + n_opt_baseline])
-axd['top'].fill_between( # Now handle greater than baseline
-    q_vec[q_mask & ~lte_baseline_mask]*100,
-    y1,
-    tauh_interp[q_mask & ~lte_baseline_mask],
-    color=custom_colors[3],
-    alpha=alpha,
-    zorder=-1
-)
-
-axd['top'].set_xlabel(r'% decrease from baseline $\text{max}(S)$ to target outcome, $S^*$')
-axd['top'].set_xlim(-1, 50)
-axd['top'].set_ylabel(r'optimal $\hat{\tau}_k$')
-axd['top'].legend()
-
-# Define reference indices for per population tau
-tau_indices = np.arange(tau_sorted.size)
-
-q_samples = [0.0, 0.5]
-for i, q in enumerate(q_samples):
-    # Set the S^* value we're plotting
-    q_i = np.argmin(np.abs(q_vec - q))
-    q = q_vec[q_i]
-
-    # Get the optimal decision at this {S^*, R} combination
-    Sstar_rob_i = np.argmin(np.abs(Sstar_vec - ((1 - q) * S_opt_baseline)) )
-    n_opt = int(n_opt_interp[Sstar_rob_i])
-    l_opt = int(l_opt_interp[Sstar_rob_i])
-
-    # Define results vector
-    results_vector = np.full(tau_sorted.size, np.nan)
-    # where each population is given a number to indicate optimality under:
-    #   1 -> baseline condiitons only
-    #   2 -> baseline and uncertain conditions (risk aversion)
-    #   3 -> uncertain conditions only
-    #   0 -> everything else
-
-    # Create relevant masks
-    baseline_mask = (tau_indices > l_opt_baseline) & (tau_indices < l_opt_baseline + n_opt_baseline)
-    uncertain_mask = (tau_indices > l_opt) & (tau_indices < l_opt + n_opt)
-    baseline_only_mask = baseline_mask & (~uncertain_mask)
-    uncertain_only_mask = uncertain_mask & (~baseline_mask)
-    both_mask = baseline_mask & uncertain_mask
-    neither_mask = ~(baseline_mask | uncertain_mask)
-
-    # Use masks to assign values to each population
-    results_vector[neither_mask] = 0
-    results_vector[baseline_only_mask] = 1
-    results_vector[both_mask] = 2
-    results_vector[uncertain_only_mask] = 3
-
-    # Define colormaping for categories
-    labels = ['neither', 'baseline only', 'both', 'uncertain only']
-    cmap = colors.ListedColormap(custom_colors)
-    vmin = 0; vmax = len(custom_colors) - 1
+if 2 in flist:
+    # Create instance and retrieve exisitng data
+    pproc = Phase(**constants)
+    pproc.initialize()
+    pproc.load_decision_parameters(suffix="_baseline")
+
+    fig = plt.figure(figsize=np.array([14, 6])*2.)
+    gs = GridSpec(4, 4, figure=fig, width_ratios=[1,1,1,1], height_ratios=[1,1,1,1])
+    ax1 = fig.add_subplot(gs[:, :2])  # Left panel for FDM
+    ax2 = fig.add_subplot(gs[0, 2:])  # Top right for tau hist
+    ax3 = fig.add_subplot(gs[1:, 2:])  # Bottom right for P(S) vs tau
+
+    #### FDM map ####
+    cmap = copy.copy(cm.YlOrRd_r)
+    vmin = 15; vmax = 45
     norm = colors.Normalize(vmin=vmin, vmax=vmax)
-
-    ### TAU DISTRIBUTION VIZ ###
-
-    stack_data = [tau_sorted[results_vector == i] for i in range(len(custom_colors))]
-
-    bins = np.linspace(min(pproc.tau_flat), 50, 80)
-
-    # Plot the stacked histogram
-    ax_label = 'mid left' if i == 0 else 'mid right'
-    axd[ax_label].hist(
-        stack_data,
-        bins=bins,
-        stacked=True,
-        color=custom_colors,
-        label=[labels[i] for i in range(len(custom_colors))]
-    )
-
-    axd[ax_label].set_xlabel(r'$\hat{\tau}_k$')
-    axd[ax_label].set_ylabel(r'$\hat{\tau}_k$ frequency')
-    axd[ax_label].set_yticks([])
-
-    ### GEOGRAPHICAL MAP ###
-
-    mapi_sorted = mapindices[pproc.tau_argsort_ref].T
-
-    colored_data = np.ones(pproc.maps_filt.shape + (4,)) * np.nan #colors in rgba
-    colored_data[mapi_sorted[0], mapi_sorted[1]] = cmap(norm(results_vector))
+    colored_data = cmap(norm(pproc.tau_raster))
     # Color background
     colored_data[pproc.maps_filt == False] = colors.to_rgba('black', alpha=0.3)
     # Crop out border where all nans
@@ -710,36 +202,678 @@ for i, q in enumerate(q_samples):
     col_min, col_max = nonzero_indices[1].min(), nonzero_indices[1].max()
     colored_data = colored_data[row_min:row_max + 1, col_min:col_max + 1]
 
-    ax_label = 'bottom left' if i == 0 else 'bottom right'
-    im = axd[ax_label].imshow(colored_data, extent=extent)
-    axd[ax_label].set_yticks([])
-    axd[ax_label].set_xticks([])
+    # Latitude and longitude (WGS84)
+    cities = {
+        "Los Angeles": (-118.243683, 34.052235),
+        #"Riverside": (-117.3962, 33.9533),
+        #"Santa Ana": (-117.8677, 33.7455),
+        "San Diego": (-117.161087, 32.715736),
+        #"Oceanside": (-117.325836, 33.211666),
+    }
+
+    # Offsets for the label relative to the marker (in map units, meters here)
+    #y_offsets = [1500, -10000, -10000, -10000]
+    #x_offsets = [1500, -20000, -20000, -24000]
+    y_offsets = [-15000, -15000]
+    x_offsets = [-20000, -20000]
+
+    # Convert city lat/long to map coordinates
+    transformer = Transformer.from_crs("EPSG:4326", "EPSG:3310", always_xy=True)
+    x_cities, y_cities, names = [], [], []
+    for name, (lon, lat) in cities.items():
+        x, y = transformer.transform(lon, lat)
+        x_cities.append(x)
+        y_cities.append(y)
+        names.append(name)
+
+    # header values
+    nrows_total = 3905
+    ncols_total = 3385
+    xll0 = -373955.8364
+    yll0 = -604543.3342
+    cellsize = 270.0
+
+    # Crop offsets (absolute indices into the full grid; row index counted FROM TOP)
+    ul_col, ul_row_from_top = pproc.ul_coord   # [1500, 2800]
+    lr_col, lr_row_from_top = pproc.lr_coord   # [2723, 3905]
+
+    # After masking & cropping we computed relative nonzero indices:
+    # Convert to absolute indices in the original full grid:
+    abs_row_min = ul_row_from_top + row_min      # absolute row index (from top)
+    abs_row_max = ul_row_from_top + row_max
+    abs_col_min = ul_col + col_min               # absolute column index (from left)
+    abs_col_max = ul_col + col_max
+
+    # Now compute extent for origin='upper' (row 0 = top)
+    left  = xll0 + abs_col_min * cellsize
+    right = xll0 + (abs_col_max + 1) * cellsize
+    top   = yll0 + nrows_total * cellsize - abs_row_min * cellsize
+    bottom= yll0 + nrows_total * cellsize - (abs_row_max + 1) * cellsize
+
+    extent = [left, right, bottom, top]
+
+    # Plot keeping origin='upper'
+    im1 = ax1.imshow(colored_data, extent=extent, origin='upper')
 
     for name, x, y, x_off, y_off in zip(names, x_cities, y_cities, x_offsets, y_offsets):
-        #if name not in ['Riverside', 'San Diego']: continue
-        if name == 'Riverside':
-            y_off += 3000
-
-        elif name == 'San Diego':
-            y_off -= 3000
-            x_off -= 12000
-        else:
-            continue
         # Plot the marker
-        axd[ax_label].scatter(x, y, color='white', marker='*', s=100, zorder=3)
+        ax1.scatter(x, y, color='white', marker='o', s=300, zorder=3)
 
         # Plot the text label with offset
-        txt = axd[ax_label].text(
+        txt = ax1.text(
             x + x_off, y + y_off,  # slightly offset from marker
             name,
             color='white',
-            fontsize=mpl.rcParams['legend.fontsize']*0.5,
+            fontsize=mpl.rcParams['legend.fontsize']*1,
             ha='left',
             va='bottom',
             zorder=4
         )
 
-fig.savefig(pproc.figs_dir + '/fig4_pre.png', bbox_inches='tight')
+    # Plot the shaded ocean overlay
+    add_ocean_overlay(ax1, extent)
+
+    # Add Cali inset
+    add_california_inset(ax1, main_extent=[left, right, bottom, top],
+                     inset_pos=[0.66, 0.645, 0.33, 0.33], box_color='red', box_alpha=0.5)
+
+    # Add scale and north arrow
+    add_map_decorations(
+        ax1,
+        scale_fraction=0.1,           
+        scale_loc=(0.37, 0.13),         
+        north_loc=(0.425, 0.18), 
+        color='white'
+    )
+
+    # Add the colorbar to inset axis
+    cbar_ax = inset_axes(ax1, width="5%", height="60%", loc='center',
+                         #bbox_to_anchor=(-0.15, -0.14, 0.65, 0.9),  # Centered on the plot,
+                         bbox_to_anchor=(-0.3, -0.14, 0.65, 0.9),  # Centered on the plot,
+                         bbox_transform=ax1.transAxes, borderpad=0)
+    sm = cm.ScalarMappable(cmap=cmap, norm=norm)
+    cbar = fig.colorbar(sm, cax=cbar_ax, orientation="vertical")#, ticks=[0, 0.25, 0.5, 0.75, 1])
+    cbar_ticks = cbar.get_ticks()
+    cbar.set_ticks(cbar_ticks)
+    cbar_ticklabels = [rf'$\leq${cbar_ticks[0]}'] + [t for t in cbar_ticks[1:-1]] + [rf'$\geq${cbar_ticks[-1]}']
+    cbar.set_ticklabels(cbar_ticklabels)
+    cbar.set_label(r'baseline fire return interval, $\hat{\tau}_k$', color='white', rotation=-90, 
+                   labelpad=cbar_lpad*1.1, fontsize=mpl.rcParams['axes.labelsize']*1.07)
+    cbar.ax.tick_params(labelcolor='white', color='white')
+    ax1.set_xticks([])
+    ax1.set_yticks([])
+
+    #### P(S) vs tau ####
+    # Define bins for tau axis
+    tau_plot = np.linspace(pproc.tau_vec[0], pproc.tau_vec[-1], 90)
+    tau_diffs = np.diff(tau_plot)
+    tau_step = tau_diffs[1]
+    tau_edges = np.concatenate((
+                    [tau_plot[0]],
+                    [tau_diffs[0]/2],
+                    np.arange(tau_plot[1]+tau_step/2, tau_plot[-1]+tau_step, tau_step)
+                               ))
+    min_edge_i = np.argmin(np.abs(tau_edges - 10))
+
+    # Collect interpolated lambda values at selected tau values
+    tau_plot_all = np.tile(tau_plot, pproc.num_demographic_samples)
+    metric_interp_all = np.array([])
+    for demographic_index in range(pproc.num_demographic_samples):
+        metric_spl = pproc.metric_spl_all[demographic_index]
+        metric_interp_all = np.append(metric_interp_all, metric_spl(tau_plot))
+
+    # Define bins for lambda axis
+    metric_min = min(metric_interp_all[(tau_plot_all >= tau_edges[min_edge_i]) & (tau_plot_all < tau_edges[min_edge_i+1])])
+    metric_max = np.quantile(metric_interp_all, 0.99)
+    metric_edges = np.linspace(metric_min, metric_max*1.015, 60)
+
+    # Use hist2d to plot
+    clrs = ['white', 
+            '#edd09b', #this is 50% opacity
+            custom_colors[1]]
+    nodes = [0.0, 0.6, 1.0]
+    cmap = colors.LinearSegmentedColormap.from_list(
+        "white_to_target", list(zip(nodes, clrs))
+    )
+    norm = colors.LogNorm(vmin=1, vmax=pproc.num_demographic_samples)
+    cmap.set_bad('white')
+    im = ax3.hist2d(tau_plot_all, metric_interp_all, bins=[tau_edges, metric_edges],
+                    norm=norm,
+                    density=False,
+                    cmap=cmap)
+
+    # Add the colorbar to inset axis
+    cbar_ax = inset_axes(ax3, width="5%", height="50%", loc='center',
+                         bbox_to_anchor=(0.5, -0.2, 0.55, 1.1),
+                         bbox_transform=ax3.transAxes, borderpad=0)
+    sm = cm.ScalarMappable(cmap=cmap, norm=norm)
+    ticks = np.array([1,10, 100, 500]) * 10
+    ticklabels = np.round(ticks/pproc.num_demographic_samples, 3)
+    cbar = fig.colorbar(sm, cax=cbar_ax, orientation="vertical", ticks=ticks,
+                       format=mticker.FixedFormatter(ticklabels))
+
+    # Plot interpolation function for <metric> wrt tau
+    metric_spl = pproc.metric_spl_all[0]
+    tau_samples = np.arange(0, 140, 2)
+    ax3.plot(tau_samples, metric_spl(tau_samples), color='k')
+
+    # Labels etc
+    cbar.set_label(rf'$P(\lambda|\tau_k)$', rotation=-90, labelpad=cbar_lpad)
+    ax3.set_ylabel(rf'growth rate, $\lambda(\tau_k)$')
+    ax3.plot([], [], color='k', label=r'baseline: $\hat{\lambda}(\tau_k)$')
+    ax3.legend(bbox_to_anchor=(0.2, -0.05, 0.5, 0.5), fontsize=24)
+    ax3.set_ylim(metric_edges[np.nonzero(im[0][min_edge_i])[0].min()], max(metric_edges))
+    ax3.set_xlim(tau_edges[min_edge_i], max(tau_edges))
+    ax3.set_xlabel(r'fire return interval, $\tau_k$')
+
+    #### INITIAL TAU DISTRIBUTION ####
+    tau_edges = np.arange(0, int(max(tau_edges)+0.5)+1, 1)
+    ax2.hist(pproc.tau_flat, bins=tau_edges, color='black', histtype='step', lw=histlw, density=True);
+    ax2.set_yticks([])
+    ax2.set_ylabel(r"$\hat{\tau}_k$ frequency")
+    ax2.set_xticks([])
+    # Use the boundaries of the P(S) imshow plot for the tau limits
+    ax2.set_xlim(ax3.get_xlim())
+    gs.update(hspace=0.01)  # Adjust vertical spacing
+    gs.update(wspace=0.3)
+
+    fig.savefig(pproc.figs_dir + '/fig2_pre.png', bbox_inches='tight', dpi=dpi)
+    fig.savefig(pproc.figs_dir + '/fig2_pre.svg', bbox_inches='tight')
+
+#########
+# FIG 3 #
+#########
+
+if 3 in flist:
+    # Initalize figure
+    fig = plt.figure(figsize=np.array([7.75, 5])*2.5)
+    gs = GridSpec(3, 2, figure=fig, width_ratios=[1,1], height_ratios=[1.5,1,1])
+    ax1 = fig.add_subplot(gs[0, 0])
+    ax2 = fig.add_subplot(gs[0, 1])
+    ax3 = fig.add_subplot(gs[1:, 0])
+    ax4 = fig.add_subplot(gs[1:, 1])
+    axes = np.array([[ax1,ax2],
+                     [ax3,ax4]
+                    ])
+    gs.update(hspace=0.4)
+
+    #### VIZ OF METAPOP METRIC ####
+    tau_max = max(tau_edges)
+    #color = 'limegreen'
+    color = custom_colors[1]
+    metric_spl = pproc.metric_spl_all[0]
+    metric_interp = metric_spl(pproc.tau_flat[pproc.tau_flat < tau_max])
+    bin_step = 0.0025
+    bin_edges = np.concatenate(([0], np.arange(bin_step/2, 1+bin_step, bin_step)))
+    counts, bin_edges, hist = axes[0,0].hist(metric_interp, bins=bin_edges, color=color, 
+                                             histtype='step', lw=histlw);
+    xticks = [0.9, 0.95, 1]
+    axes[0,0].set_xlim(min(metric_interp),1.0+bin_step)
+    axes[0,0].set_xlabel(rf"baseline growth rate, $\hat{{\lambda}}$")
+    bin_i = np.argmin(np.abs(bin_edges - metric_thresh))
+    axes[0,0].hist(metric_interp[metric_interp >= bin_edges[bin_i]], 
+                   bins=bin_edges, color=color,
+                   histtype='bar', alpha=0.6);
+    closest_bin_i = np.argmin(np.abs(metric_thresh - bin_edges))
+    axes[0,0].axvline(bin_edges[closest_bin_i], ls='--', color='k', lw=6.5)
+    # Labels
+    axes[0,0].set_yticks([])
+    axes[0,0].set_ylabel(rf"$\hat{{\lambda}}$ frequency")
+    axes[0,0].set_xticks(xticks, labels=xticks)
+
+    #### FIRE REGIME SHIFT EXAMPLES ####
+    tau_centers = 0.5 * (tau_edges[:-1] + tau_edges[1:])
+    tau_i_samples = [22, 24]
+    tau_f_samples = [24, 35]
+    tau_current = pproc.tau_flat.copy()
+    current_counts, _ = np.histogram(tau_current, bins=tau_edges)
+    mask = np.ones(tau_current.size, dtype=bool)
+    C_i = np.argmin(np.abs((pproc.C_vec/pproc.ncell_tot) - 10))
+    C = pproc.C_vec[C_i]
+
+    vmin = 0; vmax = 1
+    norm = colors.Normalize(vmin=vmin, vmax=vmax)
+    clrs = [custom_colors[3], 
+            custom_colors[2],
+            '#EEB7BC', #pink 50% opacity
+            'white']
+    nodes = [0.0, 0.6, 0.8, 1.0]
+    colormap = colors.LinearSegmentedColormap.from_list(
+        "white_to_target", list(zip(nodes, clrs))
+    )
+    bins = 50
+    density = False
+    alpha = 1
+
+    for tau_i, tau_f in zip(tau_i_samples, tau_f_samples):
+        bin_i = np.argmin(np.abs(tau_edges - tau_i))
+        sl = np.count_nonzero(pproc.tau_flat <= tau_edges[bin_i])
+        bin_f = np.argmin(np.abs(tau_edges - tau_f))
+        ncell = np.count_nonzero(pproc.tau_flat < tau_edges[bin_f]) - sl
+        color = colormap(norm(ncell/pproc.ncell_tot))
+        tauc = C / ncell
+        mask[pproc.tau_argsort_ref[sl:sl+ncell]] = False
+
+        axes[0,1].hist(pproc.tau_flat[(pproc.tau_flat >= tau_edges[bin_i]) & (pproc.tau_flat < tau_edges[bin_f])],
+                       bins=tau_edges, color=color, alpha=alpha, density=density);
+
+        tau_slice = pproc.tau_flat[pproc.tau_argsort_ref][sl:sl+ncell]
+        tau_current = pproc.tau_flat.copy()
+        '''inflate the last bin for any gt max, as we do in actual calcs'''
+        tau_current[tau_current >= max(pproc.tau_vec)] = max(pproc.tau_vec)
+        future_pos_filt = (pproc.tau_flat >= min(tau_slice)+tauc) & (pproc.tau_flat < max(tau_slice)+tauc)
+        current_future_slice = tau_current[future_pos_filt]
+        if tau_i == min(tau_i_samples):
+            xmax = max(current_future_slice)+2
+        post_shift = np.concatenate((tau_slice+tauc, current_future_slice))
+        # Find where post shift hist is nonzero
+        post_bin_i = np.argmin(np.abs(tau_edges - min(post_shift)))
+        # Mask zero counts in shifted distributions
+        counts, edges = np.histogram(post_shift, bins=tau_edges, density=density)
+        nonzero = counts > 0
+        axes[0,1].hist(
+            post_shift,
+            bins=tau_edges[:-1][nonzero].tolist() + [tau_edges[1:][nonzero][-1]],
+            color=color,
+            edgecolor=color,     # solid outline in same color
+            alpha=alpha,
+            linewidth=histlw,
+            density=density,
+            histtype='stepfilled',
+        )
+
+        tau_shifted = pproc.tau_flat.copy()
+        tau_shifted[pproc.tau_argsort_ref[sl:sl+ncell]] += tauc
+        '''inflate the last bin for any gt max, as we do in actual calcs'''
+        tau_shifted[tau_shifted >= max(tau_edges)] = tau_edges[-2]
+
+    axes[0,1].hist(tau_shifted[mask,...], bins=tau_edges, color='white', density=density);
+    axes[0,1].hist(tau_current, bins=tau_edges, color='black', histtype='step', lw=histlw, density=density);
+
+    axes[0,1].set_yticks([])
+    axes[0,1].set_ylabel(r"$\tau_k$ frequency")
+    axes[0,1].set_xticks(np.arange(20,100,20).astype(int))
+    axes[0,1].set_xlabel(r"fire return interval, $\tau_k$")
+    axes[0,1].set_xlim(15, xmax);
+
+    #### RESULTS UNDER ZERO UNCERTAINTY ####
+    # Load results for baseline
+    with h5py.File(pproc.data_dir + '/phase_baseline.h5', 'r') as phase:
+        decision_samples = np.array(phase['0.0.0decision_samples'])
+        meta_metric_all = np.array(phase['0.0.0'])
+    meta_metric_nochange = float(np.load(pproc.data_dir + '/meta_metric_nochange.npy'))
+
+    plot_vec = np.ones_like(pproc.C_vec) * np.nan
+    c_vec = np.ones_like(pproc.C_vec) * np.nan
+    for C_i, C in enumerate(pproc.C_vec):
+        _filt = decision_samples[:,0] == C
+        argmax = np.nanargmax(meta_metric_all[_filt])
+        plot_vec[C_i] = meta_metric_all[_filt][argmax]
+        c_vec[C_i] = decision_samples[_filt,:][argmax][1]
+    c_vec = c_vec / pproc.ncell_tot
+
+    width = 0.875
+    vmin = 0; vmax = 1
+    norm = colors.Normalize(vmin=vmin, vmax=vmax)
+    sm = cm.ScalarMappable(cmap=colormap, norm=norm)
+    bar_colors = colormap(norm(c_vec))
+    bar = axes[1,0].bar(np.arange(pproc.C_vec.size), plot_vec, color=bar_colors, width=width)
+    axes[1,0].set_ylim(0, 1.02*np.max(plot_vec))
+    yticks = np.arange(0., 1.2, 0.2)
+    axes[1,0].set_yticks(yticks)
+    axes[1,0].set_ylabel(fr"$\text{{max}}~S$")
+    xtick_spacing = 2
+    if len(pproc.C_vec) % 2 == 0:
+        xticks = np.arange(1, len(pproc.C_vec)+1, xtick_spacing)
+        xtick_labels = np.round((pproc.C_vec/(pproc.ncell_tot))[1::xtick_spacing], 1)
+    else:
+        xticks = np.arange(0, len(pproc.C_vec), xtick_spacing)
+        xtick_labels = np.round((pproc.C_vec/(pproc.ncell_tot))[0::xtick_spacing], 1)
+    axes[1,0].set_xticks(xticks, labels=xtick_labels);
+    axes[1,0].set_xlabel(r"minimum $\hat{\Delta\tau}_k$, $R~/~n_{tot}$")
+    axes[1,0].set_xlim(-(width/2)*1.4, len(pproc.C_vec)-1+((width/2)*1.4))
+    # Plot baseline value
+    axes[1,0].axhline(meta_metric_nochange, ls=':', label=f'no management', c='k')
+    axes[1,0].legend()
+
+    #### OPTIMA ACROSS ROBUSTNESS REQUIREMENTS ####
+    # Reinitialize phase instance with uncertainty samples 
+    constants.update({'extra_attributes': None})
+    pproc = Phase(**constants)
+    pproc.initialize()
+    pproc.load_decision_parameters(suffix="_uncertain")
+
+    # Load post-processed results
+    maxrob = np.load(pproc.data_dir + "/maxrob.npy")
+    argmaxrob = np.load(pproc.data_dir + "/argmaxrob.npy")
+    Sstar_vec = np.load(pproc.data_dir + "/Sstar_vec.npy")
+
+    vmax = 1; vmin = 0
+    normalize = colors.Normalize(vmin=vmin, vmax=vmax)
+    all_markers = ['o','^','D','s','H','*']
+    all_linestyles = ['dotted', 'dashdot', 'dashed', 'solid']
+    C_i_samples = [i for i in range(pproc.C_vec.size)][::1]
+
+    for line_i, C_i in enumerate(C_i_samples):
+        plot_vec = np.ones(len(Sstar_vec)) * np.nan
+        c_vec = np.ones(len(Sstar_vec)) * np.nan
+        for thresh_i, thresh in enumerate(Sstar_vec):
+            # Get the maximum robustness across (ncell, sl) at this C
+            if maxrob[thresh_i, C_i] < 1:
+                plot_vec[thresh_i] = maxrob[thresh_i, C_i]
+            if not np.isnan(plot_vec[thresh_i]):
+                c_vec[thresh_i] = pproc.ncell_vec[int(argmaxrob[thresh_i, C_i][0])] / pproc.ncell_tot
+        # Filter out some samples for clarity
+        samp_spacing = 4
+        scatter = axes[1,1].scatter(Sstar_vec[::samp_spacing], plot_vec[::samp_spacing], cmap=colormap, norm=normalize,
+                            c=c_vec[::samp_spacing], marker=all_markers[line_i])
+        axes[1,1].scatter([], [], label=fr"$R~/~n_{{tot}}=${np.round(pproc.C_vec[C_i]/pproc.ncell_tot, 1)}",
+                   c='black', marker=all_markers[line_i])
+
+        # Get the max robustness under Sstar=S_baseline_nochange for y lim
+        if C_i == max(C_i_samples):
+            Sstar_i = np.abs(Sstar_vec - meta_metric_nochange).argmin()
+            ymax = maxrob[Sstar_i, C_i]
+    axes[1,1].set_ylabel(fr"$\text{{max}}~P(S \geq S^*)$")
+    axes[1,1].set_xlabel(fr"target range-wide stability, $S^*$")
+    handles, labels = axes[1,1].get_legend_handles_labels()
+    axes[1,1].legend(handles[::-1], labels[::-1], fontsize=17)
+    axes[1,1].set_xlim(1, meta_metric_nochange)
+    xticks = np.arange(0., 1.2, 0.2)
+    axes[1,1].set_yticks(xticks)
+    axes[1,1].set_ylim(-0.01, ymax)
+
+    # Add colorbar on separate axis
+    cbar_ax = fig.add_axes([0.2, 0.009, 0.6, 0.025])  # [left, bottom, width, height]
+    fig.colorbar(scatter, cax=cbar_ax, orientation='horizontal',
+        label=r"optimal fraction of populations managed $n~/~n_{tot}$")
+
+    fig.savefig(pproc.figs_dir + '/fig3_pre.png', bbox_inches='tight', dpi=dpi)
+    fig.savefig(pproc.figs_dir + '/fig3_pre.svg', bbox_inches='tight')
+
+#########
+# FIG 4 #
+#########
+
+if 4 in flist:
+    xlens = np.array([1.0433, 1.0433]) # left to right
+    ylens = np.array([0.2, 2.25/3, 0.55, 1])  # legend row, top, mid, bottom
+    scale = 5
+    xlens *= scale; ylens *= scale
+    figsize = np.array([np.sum(xlens), np.sum(ylens)])
+
+    # Define subplot mosaic
+    fig, axd = plt.subplot_mosaic(
+        [
+         ['legend', 'legend'],
+         ['top', 'top'],
+         ['mid left', 'mid right'],
+         ['bottom left', 'bottom right']
+        ],
+        figsize=figsize,
+        layout="constrained",
+        height_ratios=ylens
+    )
+
+    # Hide the legend axes frame and ticks
+    axd['legend'].axis('off')
+
+    # Make legend handles
+    custom_colors_forlegend = np.array(custom_colors)[[1,3,2,0]]
+    legend_labels = ['baseline only', 'uncertain only', 'both', 'neither']
+    handles = [Patch(facecolor=c, edgecolor='black', label=l)
+               for c, l in zip(custom_colors_forlegend, legend_labels)]
+
+    # Place legend in the 'legend' subplot
+    axd['legend'].axis('off')
+    axd['legend'].legend(
+        handles=handles,
+        loc='center',
+        frameon=False,
+        ncol=len(handles),   # all in one row
+        handlelength=2.,
+        title=r'conditions where $\hat{\tau}_k$ optimal for management',
+        #title_fontsize=mpl.rcParams['legend.fontsize']
+        title_fontsize=mpl.rcParams['axes.labelsize']
+    )
+
+    # Reinitialize phase instance with samples taken at optimal decisions
+    constants.update({'extra_attributes': ['maps_filt', 'metric_spl_all']})
+    pproc = Phase(**constants)
+    pproc.initialize()
+    pproc.load_decision_parameters(suffix="_optdecisions")
+
+    # Load some other stuff we need
+    S_opt_baseline = np.load(pproc.data_dir + '/S_opt_baseline.npy')
+    n_opt_baseline, l_opt_baseline = np.load(pproc.data_dir + '/decision_opt_baseline.npy')
+    decision_opt_uncertain = np.load(pproc.data_dir + '/decision_opt_uncertain.npy')
+    n_opt_interp = decision_opt_uncertain[:,0]
+    l_opt_interp = decision_opt_uncertain[:,1]
+    rob_all = np.load(pproc.data_dir + "/rob_all.npy")
+    decision_indices = np.load(pproc.data_dir + '/decision_indices_optdecisions.npy')
+    tau_sorted = pproc.tau_flat[pproc.tau_argsort_ref]
+    mapindices = np.argwhere(pproc.maps_filt)
+    Sstar_vec = np.load(pproc.data_dir + "/Sstar_vec.npy")
+
+    q_vec = np.arange(0.0, 1.0, 0.05)
+    delta_taul_interp = np.full(q_vec.size, np.nan)
+    delta_tauh_interp = np.full(q_vec.size, np.nan)
+    taul_interp = np.full(q_vec.size, np.nan)
+    tauh_interp = np.full(q_vec.size, np.nan)
+    tau_range = [18, 40]
+
+    for q_i, q in enumerate(q_vec):
+        # Now get the optimal decisions for (1-q) * optimal S baseline
+        Sstar_i = np.argmin(np.abs(Sstar_vec - ((1 - q) * S_opt_baseline)) )
+        n_opt_rob = int(n_opt_interp[Sstar_i])
+        l_opt_rob = int(l_opt_interp[Sstar_i])
+        
+        # Replace this q value with the closest one we have available
+        Sstar = Sstar_vec[Sstar_i]
+        q_vec[q_i] = 1 - (Sstar / S_opt_baseline)
+            
+        delta_taul_interp[q_i] = tau_sorted[l_opt_rob] - tau_sorted[l_opt_baseline]
+        delta_tauh_interp[q_i] = tau_sorted[l_opt_rob+n_opt_rob] - tau_sorted[l_opt_baseline+n_opt_baseline]
+        taul_interp[q_i] = tau_sorted[l_opt_rob]
+        tauh_interp[q_i] = tau_sorted[l_opt_rob+n_opt_rob]
+
+    # Restrict the range of plotting to a desired q value
+    q_lim = 0.5
+
+    # Get the points where before and after crossing baseline and color them differently
+    alpha = 0.85
+
+    # Interpolate optimal tau over decreasing Sstar
+    s=len(q_vec)-np.sqrt(2*len(q_vec)) #recommended by scipy doc
+    tauh_spl = make_splrep(q_vec, tauh_interp, s=s)
+    taul_spl = make_splrep(q_vec, taul_interp, s=s)
+
+    # Find intersections with baseline optima
+    tauh_baseline = tau_sorted[l_opt_baseline + n_opt_baseline]
+    qcrit_h = root_scalar(lambda x: tauh_baseline - tauh_spl(x), bracket=[0.1,0.9]).root
+    taul_baseline = tau_sorted[l_opt_baseline]
+    qcrit_l = root_scalar(lambda x: taul_baseline - taul_spl(x), bracket=[0.1,0.9]).root
+
+    # Make shared, resampled q axis
+    q1 = np.linspace(0, qcrit_l, 100)
+    q2 = np.linspace(qcrit_l, qcrit_h, 30)
+    q3 = np.linspace(qcrit_h, q_lim, 100)
+    q_new = np.concatenate((q1, q2, q3))
+
+    # First handle lower bound of optimal tau slice
+    # Handle less than baseline
+    q_sub = q_new[q_new < qcrit_l]
+    y2 = np.full(len(q_sub), taul_baseline)
+    axd['top'].fill_between( 
+        q_sub*100, taul_spl(q_sub), y2,
+        color=custom_colors[3],
+        alpha=alpha,
+        zorder=-1
+    )
+    # Handle greater than baseline
+    q_sub = q_new[q_new >= qcrit_l]
+    y1 = np.full(len(q_sub), taul_baseline)
+    axd['top'].fill_between( 
+        q_sub*100, y1, taul_spl(q_sub),
+        color=custom_colors[1],
+        alpha=alpha,
+        zorder=-1
+    )
+    # Combine things to fill middle later
+    y_l = np.concatenate((y2, taul_spl(q_sub)))
+
+    # Now handle upper bound of optimal tau slice
+    # Handle less than baseline
+    q_sub1 = q_new[q_new < qcrit_h]
+    y2 = np.full(len(q_sub1), tauh_baseline)
+    axd['top'].fill_between( 
+        q_sub1*100, tauh_spl(q_sub1), y2,
+        color=custom_colors[1],
+        alpha=alpha,
+        zorder=-1
+    )
+    # Handle greater than baseline
+    q_sub2 = q_new[q_new >= qcrit_h]
+    y1 = np.full(len(q_sub2), tauh_baseline)
+    axd['top'].fill_between( 
+        q_sub2*100, y1, tauh_spl(q_sub2),
+        color=custom_colors[3],
+        alpha=alpha,
+        zorder=-1
+    )
+    # Combine things to fill middle later
+    y_h = np.concatenate((tauh_spl(q_sub1), y1))
+
+    # Finally, fill in the middle (both) section
+    axd['top'].fill_between(
+        q_new*100, y_h, y_l,
+        color=custom_colors[2],
+        alpha=alpha,
+        zorder=-1
+    )
+
+    # Include a label for the R value being used
+    axd['top'].annotate('$R~/~n_{tot}=6.0$', (1, 36))
+
+    axd['top'].set_xlabel(r'target range-wide stability, $S^*$')
+    axd['top'].set_xlim(-1, 51)
+    xticks = np.arange(0, 0.6, 0.1)
+    xtick_labels = np.round(S_opt_baseline * (1 - xticks), 2)
+    axd['top'].set_xticks(xticks*100, labels=xtick_labels)
+    axd['top'].set_ylabel(r'$\hat{\tau}_k$')
+    axd['top'].set_ylim(tau_range[0], tau_range[1])
+
+    # Define reference indices for per population tau
+    tau_indices = np.arange(tau_sorted.size)
+
+    q_samples = [0.0, 0.5]
+    for i, q in enumerate(q_samples):
+        # Set the S^* value we're plotting
+        q_i = np.argmin(np.abs(q_vec - q))
+        q = q_vec[q_i]
+
+        # Get the optimal decision at this {S^*, R} combination
+        Sstar_rob_i = np.argmin(np.abs(Sstar_vec - ((1 - q) * S_opt_baseline)) )
+        n_opt = int(n_opt_interp[Sstar_rob_i])
+        l_opt = int(l_opt_interp[Sstar_rob_i])
+
+        # Define results vector
+        results_vector = np.full(tau_sorted.size, np.nan)
+        # where each population is given a number to indicate optimality under:
+        #   1 -> baseline condiitons only
+        #   2 -> baseline and uncertain conditions (risk aversion)
+        #   3 -> uncertain conditions only
+        #   0 -> everything else
+
+        # Create relevant masks
+        baseline_mask = (tau_indices > l_opt_baseline) & (tau_indices < l_opt_baseline + n_opt_baseline)
+        uncertain_mask = (tau_indices > l_opt) & (tau_indices < l_opt + n_opt)
+        baseline_only_mask = baseline_mask & (~uncertain_mask)
+        uncertain_only_mask = uncertain_mask & (~baseline_mask)
+        both_mask = baseline_mask & uncertain_mask
+        neither_mask = ~(baseline_mask | uncertain_mask)
+
+        # Use masks to assign values to each population
+        results_vector[neither_mask] = 0
+        results_vector[baseline_only_mask] = 1
+        results_vector[both_mask] = 2
+        results_vector[uncertain_only_mask] = 3
+
+        # Define colormaping for categories
+        labels = ['neither', 'baseline only', 'both', 'uncertain only']
+        cmap = colors.ListedColormap(custom_colors)
+        vmin = 0; vmax = len(custom_colors) - 1
+        norm = colors.Normalize(vmin=vmin, vmax=vmax)
+
+        ### TAU DISTRIBUTION VIZ ###
+
+        stack_data = [tau_sorted[results_vector == i] for i in range(len(custom_colors))]
+
+        #bins = np.linspace(min(pproc.tau_flat), 50, 80)
+        bins = np.linspace(tau_range[0], tau_range[1], 80)
+
+        # Plot the stacked histogram
+        ax_label = 'mid left' if i == 0 else 'mid right'
+        axd[ax_label].hist(
+            stack_data,
+            bins=bins,
+            stacked=True,
+            color=custom_colors,
+            label=[labels[i] for i in range(len(custom_colors))]
+        )
+
+        axd[ax_label].set_xlabel(r'$\hat{\tau}_k$')
+        axd[ax_label].set_ylabel(r'$\hat{\tau}_k$ frequency')
+        axd[ax_label].set_yticks([])
+
+        ### GEOGRAPHICAL MAP ###
+
+        mapi_sorted = mapindices[pproc.tau_argsort_ref].T
+
+        colored_data = np.ones(pproc.maps_filt.shape + (4,)) * np.nan #colors in rgba
+        colored_data[mapi_sorted[0], mapi_sorted[1]] = cmap(norm(results_vector))
+        # Color background
+        colored_data[pproc.maps_filt == False] = colors.to_rgba('black', alpha=0.3)
+        # Crop out border where all nans
+        nonzero_indices = np.nonzero(pproc.maps_filt)
+        row_min, row_max = nonzero_indices[0].min(), nonzero_indices[0].max()
+        col_min, col_max = nonzero_indices[1].min(), nonzero_indices[1].max()
+        colored_data = colored_data[row_min:row_max + 1, col_min:col_max + 1]
+
+        ax_label = 'bottom left' if i == 0 else 'bottom right'
+        im = axd[ax_label].imshow(colored_data, extent=extent)
+        axd[ax_label].set_yticks([])
+        axd[ax_label].set_xticks([])
+
+        # Plot ocean overlay
+        add_ocean_overlay(axd[ax_label], extent)
+
+        # Add city markers
+        for name, x, y, x_off, y_off in zip(names, x_cities, y_cities, x_offsets, y_offsets):
+            if name == 'Los Angeles':
+                y_off -= 6000
+                x_off -= 15000
+            elif name == 'San Diego':
+                y_off -= 2000
+                x_off -= 24000
+            else:
+                continue
+            # Plot the marker
+            axd[ax_label].scatter(x, y, color='white', marker='o', s=150, zorder=3)
+
+            # Plot the text label with offset
+            txt = axd[ax_label].text(
+                x + x_off, y + y_off,  # slightly offset from marker
+                name,
+                color='white',
+                fontsize=mpl.rcParams['legend.fontsize']*0.7,
+                ha='left',
+                va='bottom',
+                zorder=4
+            )
+
+    fig.savefig(pproc.figs_dir + '/fig4_pre.png', bbox_inches='tight', dpi=dpi)
+    fig.savefig(pproc.figs_dir + '/fig4_pre.svg', bbox_inches='tight')
 
 #########
 # Conditional probability heatmap #
