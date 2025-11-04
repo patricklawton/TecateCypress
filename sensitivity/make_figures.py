@@ -36,8 +36,8 @@ rc('font', weight='light')
 rc('font', size=19)
 histlw = 5.5
 cbar_lpad = 30
-dpi = 50
-#dpi = 200
+#dpi = 50
+dpi = 200
 custom_colors = ['lightgrey', '#e69f00', '#ee6778', '#a04a95'] #pop
 
 def add_map_decorations(
@@ -387,7 +387,8 @@ if 2 in flist:
 if 3 in flist:
     # Initalize figure
     fig = plt.figure(figsize=np.array([7.75, 5])*2.5)
-    gs = GridSpec(3, 2, figure=fig, width_ratios=[1,1], height_ratios=[1.5,1,1])
+    gs = GridSpec(3, 2, figure=fig, width_ratios=[1,1], height_ratios=[1.5,1,1],
+                 wspace=10)
     ax1 = fig.add_subplot(gs[0, 0])
     ax2 = fig.add_subplot(gs[0, 1])
     ax3 = fig.add_subplot(gs[1:, 0])
@@ -598,6 +599,7 @@ if 3 in flist:
 if 4 in flist:
     xlens = np.array([1.0433, 1.0433]) # left to right
     ylens = np.array([0.2, 2.25/3, 0.55, 1])  # legend row, top, mid, bottom
+    #ylens = np.array([0.2, 2.15/3, 0.1, 0.5, 1])  # legend row, top, mid, bottom
     scale = 5
     xlens *= scale; ylens *= scale
     figsize = np.array([np.sum(xlens), np.sum(ylens)])
@@ -607,6 +609,7 @@ if 4 in flist:
         [
          ['legend', 'legend'],
          ['top', 'top'],
+         #['space', 'space'],
          ['mid left', 'mid right'],
          ['bottom left', 'bottom right']
         ],
@@ -617,6 +620,7 @@ if 4 in flist:
 
     # Hide the legend axes frame and ticks
     axd['legend'].axis('off')
+    #axd['space'].axis('off')
 
     # Make legend handles
     custom_colors_forlegend = np.array(custom_colors)[[1,3,2,0]]
@@ -822,6 +826,10 @@ if 4 in flist:
             label=[labels[i] for i in range(len(custom_colors))]
         )
 
+        # Annotate Sstar value
+        Sstar = S_opt_baseline * (1-q_samples[i])
+        axd[ax_label].annotate(fr'$S^*={np.round(Sstar, 2)}$', (0.55, 0.6), xycoords='axes fraction')
+
         axd[ax_label].set_xlabel(r'$\hat{\tau}_k$')
         axd[ax_label].set_ylabel(r'$\hat{\tau}_k$ frequency')
         axd[ax_label].set_yticks([])
@@ -872,7 +880,18 @@ if 4 in flist:
                 zorder=4
             )
 
-    fig.savefig(pproc.figs_dir + '/fig4_pre.png', bbox_inches='tight', dpi=dpi)
+    #fig.tight_layout(pad=2)
+    #fig.subplots_adjust(wspace=0.4, hspace=0.6, left=0.1, right=0.9, bottom=0.1, top=0.9)
+    #pads = {}
+    #fig.set_constrained_layout_pads(w_pad=0.14, h_pad=0.15, 
+    #                                wspace=0.05, hspace=0.05)
+    #fig.get_layout_engine().set(w_pad=0.14, h_pad=0.15, 
+    #                            hspace=0.0, wspace=0.0)
+    fig.get_layout_engine().set(w_pad=0.08, h_pad=0.02, 
+                                wspace=0.04, hspace=0.09)
+
+    #fig.savefig(pproc.figs_dir + '/fig4_pre.png', bbox_inches='tight', dpi=dpi)
+    fig.savefig(pproc.figs_dir + '/fig4_pre.png', dpi=dpi)
     fig.savefig(pproc.figs_dir + '/fig4_pre.svg', bbox_inches='tight')
 
 #########
