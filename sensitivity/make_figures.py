@@ -20,7 +20,7 @@ import copy as copy
 from itertools import combinations, product
 
 # Which figures to run
-flist = [2, 4]
+flist = [2,4]
 
 # Update global plotting parameters
 rc('axes', labelsize=24)  # Font size for x and y labels
@@ -342,9 +342,20 @@ if 2 in flist:
                     density=False,
                     cmap=cmap)
 
+    # Plot interpolation function for <metric> wrt tau
+    metric_spl = pproc.metric_spl_all[0]
+    tau_samples = np.arange(0, 140, 2)
+    ax3.plot(tau_samples, metric_spl(tau_samples), color='k',
+             label=r'baseline: $\hat{\lambda}(\tau_k)$')
+
+    # Add dashed line for stability threshold
+    ax3.axhline(metric_thresh, ls='--', c='k', alpha=0.6,
+                lw=mpl.rcParams['lines.linewidth']*0.75,
+                label='subpopulation stability threshold')
+
     # Add the colorbar to inset axis
     cbar_ax = inset_axes(ax3, width="5%", height="50%", loc='center',
-                         bbox_to_anchor=(0.5, -0.2, 0.55, 1.1),
+                         bbox_to_anchor=(0.55, -0.2, 0.55, 1.1), #x,y,w,h
                          bbox_transform=ax3.transAxes, borderpad=0)
     sm = cm.ScalarMappable(cmap=cmap, norm=norm)
     ticks = np.array([1,10, 100, 500]) * 10
@@ -352,16 +363,11 @@ if 2 in flist:
     cbar = fig.colorbar(sm, cax=cbar_ax, orientation="vertical", ticks=ticks,
                        format=mticker.FixedFormatter(ticklabels))
 
-    # Plot interpolation function for <metric> wrt tau
-    metric_spl = pproc.metric_spl_all[0]
-    tau_samples = np.arange(0, 140, 2)
-    ax3.plot(tau_samples, metric_spl(tau_samples), color='k')
-
     # Labels etc
     cbar.set_label(rf'$P(\lambda|\tau_k)$', rotation=-90, labelpad=cbar_lpad)
     ax3.set_ylabel(rf'growth rate, $\lambda(\tau_k)$')
-    ax3.plot([], [], color='k', label=r'baseline: $\hat{\lambda}(\tau_k)$')
-    ax3.legend(bbox_to_anchor=(0.2, -0.05, 0.5, 0.5), fontsize=24)
+    #ax3.plot([], [], color='k', label=r'baseline: $\hat{\lambda}(\tau_k)$')
+    ax3.legend(bbox_to_anchor=(0.1, -0.05, 0.5, 0.5), fontsize=24)
     ax3.set_ylim(metric_edges[np.nonzero(im[0][min_edge_i])[0].min()], max(metric_edges))
     ax3.set_xlim(tau_edges[min_edge_i], max(tau_edges))
     ax3.set_xlabel(r'fire return interval, $\tau_k$')
@@ -609,7 +615,6 @@ if 4 in flist:
         [
          ['legend', 'legend'],
          ['top', 'top'],
-         #['space', 'space'],
          ['mid left', 'mid right'],
          ['bottom left', 'bottom right']
         ],
@@ -620,11 +625,10 @@ if 4 in flist:
 
     # Hide the legend axes frame and ticks
     axd['legend'].axis('off')
-    #axd['space'].axis('off')
 
     # Make legend handles
-    custom_colors_forlegend = np.array(custom_colors)[[1,3,2,0]]
-    legend_labels = ['baseline only', 'uncertain only', 'both', 'neither']
+    custom_colors_forlegend = np.array(custom_colors)[[1,3,2]]
+    legend_labels = ['baseline only', 'uncertain only', 'both']
     handles = [Patch(facecolor=c, edgecolor='black', label=l)
                for c, l in zip(custom_colors_forlegend, legend_labels)]
 
@@ -637,7 +641,6 @@ if 4 in flist:
         ncol=len(handles),   # all in one row
         handlelength=2.,
         title=r'conditions where $\hat{\tau}_k$ optimal for management',
-        #title_fontsize=mpl.rcParams['legend.fontsize']
         title_fontsize=mpl.rcParams['axes.labelsize']
     )
 
@@ -859,22 +862,22 @@ if 4 in flist:
         # Add city markers
         for name, x, y, x_off, y_off in zip(names, x_cities, y_cities, x_offsets, y_offsets):
             if name == 'Los Angeles':
-                y_off -= 6000
-                x_off -= 15000
+                y_off -= 3000
+                x_off -= 13000
             elif name == 'San Diego':
-                y_off -= 2000
-                x_off -= 24000
+                y_off += 500
+                x_off -= 19000
             else:
                 continue
             # Plot the marker
-            axd[ax_label].scatter(x, y, color='white', marker='o', s=150, zorder=3)
+            axd[ax_label].scatter(x, y, color='white', marker='o', s=100, zorder=3)
 
             # Plot the text label with offset
             txt = axd[ax_label].text(
                 x + x_off, y + y_off,  # slightly offset from marker
                 name,
                 color='white',
-                fontsize=mpl.rcParams['legend.fontsize']*0.7,
+                fontsize=mpl.rcParams['legend.fontsize']*0.55,
                 ha='left',
                 va='bottom',
                 zorder=4
@@ -897,219 +900,220 @@ if 4 in flist:
 #########
 # Conditional probability heatmap #
 #########
-overwrite_results = True
+if 5 in flist:
+    overwrite_results = True
 
-# Define keys and labels for parameters
-uncertain_params = ['tau', 'Deltatau', 'tau_crit']
-param_labels = [r'$p_{\tau}$', r'$p_{\Delta\tau}$', r'$\tau^*$']
+    # Define keys and labels for parameters
+    uncertain_params = ['tau', 'Deltatau', 'tau_crit']
+    param_labels = [r'$p_{\tau}$', r'$p_{\Delta\tau}$', r'$\tau^*$']
 
-# Get all possible parameter pairs
-param_pairs = [pair for pair in combinations(range(len(uncertain_params)), 2)]
+    # Get all possible parameter pairs
+    param_pairs = [pair for pair in combinations(range(len(uncertain_params)), 2)]
 
-# Read in data run at optimal decisions
-phase = h5py.File(pproc.data_dir + '/phase_optdecisions.h5', 'r')
-Sstar_i_optdecisions = np.load(pproc.data_dir + '/Sstar_i_optdecisions.npy')
+    # Read in data run at optimal decisions
+    phase = h5py.File(pproc.data_dir + '/phase_optdecisions.h5', 'r')
+    Sstar_i_optdecisions = np.load(pproc.data_dir + '/Sstar_i_optdecisions.npy')
 
-# I don't trust interpolation of robustness between Sstar values,
-# so use the closest one we sampled for interpolator fitting
-'''This probably isnt necessary'''
-Sstar_i_baseline = np.argmin(np.abs(Sstar_vec - S_opt_baseline))
-S_opt_baseline = Sstar_vec[Sstar_i_baseline]
+    # I don't trust interpolation of robustness between Sstar values,
+    # so use the closest one we sampled for interpolator fitting
+    '''This probably isnt necessary'''
+    Sstar_i_baseline = np.argmin(np.abs(Sstar_vec - S_opt_baseline))
+    S_opt_baseline = Sstar_vec[Sstar_i_baseline]
 
-# Summarize uncertainty in demography by critical tau values where pops are 'stabilized'
-demographic_i_vec = np.arange(0, pproc.num_demographic_samples, 1).astype(int)
-tau_crit_vec = np.full(demographic_i_vec.size, np.nan)
-tau_samples = np.linspace(pproc.tau_vec[1], pproc.tau_vec.max(), 1_000)
-for demographic_i in demographic_i_vec:
-    lam_samples = pproc.metric_spl_all[demographic_i](tau_samples)
-    if np.any(lam_samples >= metric_thresh):
-        if np.all(lam_samples[tau_samples < pproc.tau_vec[3]] > metric_thresh):
-            # These are rare cases where lam always greater than threshold
-            tau_crit = pproc.tau_vec[0]
-        else:
-            test_points = pproc.metric_spl_all[demographic_i](pproc.tau_vec[1:4])
-            if np.any(np.diff(test_points) < 0):
-                # Something weird is happening very rarely at the first tau sample
-                tau_samples = np.linspace(pproc.tau_vec[2], pproc.tau_vec.max(), 1_000)
-                lam_samples = pproc.metric_spl_all[demographic_i](tau_samples) 
-            # Find intersection between line connecting points on either side of metric_thresh
-            lam_diffs = lam_samples - metric_thresh
-            pos_lam_i = np.nonzero(lam_diffs > 0)[0]
-            ydiff = (lam_samples[pos_lam_i[0]+1] - lam_samples[pos_lam_i[0]-1])
-            xdiff = (tau_samples[pos_lam_i[0]+1] - tau_samples[pos_lam_i[0]-1])
-            slope = ydiff / xdiff
-            tau_crit = ((metric_thresh - lam_samples[pos_lam_i[0]-1]) / slope) + tau_samples[pos_lam_i[0]-1]
-        tau_crit_vec[demographic_i] = tau_crit
-print("ATTENTION: CAPPING tau_crit AT 40 FOR THE SAKE OF PLOTTING")
-tau_crit_vec[tau_crit_vec >= 40] = 40
+    # Summarize uncertainty in demography by critical tau values where pops are 'stabilized'
+    demographic_i_vec = np.arange(0, pproc.num_demographic_samples, 1).astype(int)
+    tau_crit_vec = np.full(demographic_i_vec.size, np.nan)
+    tau_samples = np.linspace(pproc.tau_vec[1], pproc.tau_vec.max(), 1_000)
+    for demographic_i in demographic_i_vec:
+        lam_samples = pproc.metric_spl_all[demographic_i](tau_samples)
+        if np.any(lam_samples >= metric_thresh):
+            if np.all(lam_samples[tau_samples < pproc.tau_vec[3]] > metric_thresh):
+                # These are rare cases where lam always greater than threshold
+                tau_crit = pproc.tau_vec[0]
+            else:
+                test_points = pproc.metric_spl_all[demographic_i](pproc.tau_vec[1:4])
+                if np.any(np.diff(test_points) < 0):
+                    # Something weird is happening very rarely at the first tau sample
+                    tau_samples = np.linspace(pproc.tau_vec[2], pproc.tau_vec.max(), 1_000)
+                    lam_samples = pproc.metric_spl_all[demographic_i](tau_samples) 
+                # Find intersection between line connecting points on either side of metric_thresh
+                lam_diffs = lam_samples - metric_thresh
+                pos_lam_i = np.nonzero(lam_diffs > 0)[0]
+                ydiff = (lam_samples[pos_lam_i[0]+1] - lam_samples[pos_lam_i[0]-1])
+                xdiff = (tau_samples[pos_lam_i[0]+1] - tau_samples[pos_lam_i[0]-1])
+                slope = ydiff / xdiff
+                tau_crit = ((metric_thresh - lam_samples[pos_lam_i[0]-1]) / slope) + tau_samples[pos_lam_i[0]-1]
+            tau_crit_vec[demographic_i] = tau_crit
+    print("ATTENTION: CAPPING tau_crit AT 40 FOR THE SAKE OF PLOTTING")
+    tau_crit_vec[tau_crit_vec >= 40] = 40
 
-def get_pair_results(C_i, n_i, l_i, Sstar, num_param_bins):
-    # Get the slice of range-wide stability at the specified decision parameters
-    idx = ".".join(str(i) for i in [C_i, n_i, l_i])
-    S_slice = np.array(phase[idx])
-    x_uncertain = np.array(phase[idx + 'uncertainty_samples'])
+    def get_pair_results(C_i, n_i, l_i, Sstar, num_param_bins):
+        # Get the slice of range-wide stability at the specified decision parameters
+        idx = ".".join(str(i) for i in [C_i, n_i, l_i])
+        S_slice = np.array(phase[idx])
+        x_uncertain = np.array(phase[idx + 'uncertainty_samples'])
 
-    # Make a temporary version of x_uncertain for summary statistics
-    x_uncertain_temp = np.full((x_uncertain.shape[0], len(uncertain_params)), np.nan)
+        # Make a temporary version of x_uncertain for summary statistics
+        x_uncertain_temp = np.full((x_uncertain.shape[0], len(uncertain_params)), np.nan)
 
-    # Compute robustness
-    counts = np.count_nonzero(S_slice >= Sstar)
-    robustness = counts / len(S_slice)
-    print(f'robustness={robustness}')
+        # Compute robustness
+        counts = np.count_nonzero(S_slice >= Sstar)
+        robustness = counts / len(S_slice)
+        print(f'robustness={robustness}')
 
-    # Replace demographic samples in x_uncertain with our summary
-    x_uncertain_temp[:, 2] = tau_crit_vec[x_uncertain[:,4].astype(int)]
+        # Replace demographic samples in x_uncertain with our summary
+        x_uncertain_temp[:, 2] = tau_crit_vec[x_uncertain[:,4].astype(int)]
 
-    # Just look at p_tau and p_Deltatau
-    x_uncertain_temp[:, 0] = x_uncertain[:,0]
-    x_uncertain_temp[:, 1] = x_uncertain[:,2]
+        # Just look at p_tau and p_Deltatau
+        x_uncertain_temp[:, 0] = x_uncertain[:,0]
+        x_uncertain_temp[:, 1] = x_uncertain[:,2]
 
-    # Replace x_uncertain with summary stats version
-    x_uncertain = x_uncertain_temp
+        # Replace x_uncertain with summary stats version
+        x_uncertain = x_uncertain_temp
 
-    # Preallocate filters for samples within bins of each parameter
-    bin_filts = {i: np.full((num_param_bins, x_uncertain.shape[0]), False) for i in range(x_uncertain.shape[-1])}
-    param_cntrs = {i: np.empty(num_param_bins) for i in range(x_uncertain.shape[-1])}
+        # Preallocate filters for samples within bins of each parameter
+        bin_filts = {i: np.full((num_param_bins, x_uncertain.shape[0]), False) for i in range(x_uncertain.shape[-1])}
+        param_cntrs = {i: np.empty(num_param_bins) for i in range(x_uncertain.shape[-1])}
 
-    for param_i in range(x_uncertain.shape[-1]):
-        # Bin the parameter along its sampled range
-        if uncertain_params[param_i] == 'tau_crit':
-            param_low = np.nanmin(tau_crit_vec)
-            param_high = np.nanmax(tau_crit_vec)
-        else:
-            param_low = x_uncertain[:, param_i].min()
-            param_high = x_uncertain[:, param_i].max()
-        param_edges, step = np.linspace(param_low, param_high, num_param_bins + 1, retstep=True)
+        for param_i in range(x_uncertain.shape[-1]):
+            # Bin the parameter along its sampled range
+            if uncertain_params[param_i] == 'tau_crit':
+                param_low = np.nanmin(tau_crit_vec)
+                param_high = np.nanmax(tau_crit_vec)
+            else:
+                param_low = x_uncertain[:, param_i].min()
+                param_high = x_uncertain[:, param_i].max()
+            param_edges, step = np.linspace(param_low, param_high, num_param_bins + 1, retstep=True)
 
-        # Store bin centers for use in plotting
-        _param_cntrs = param_edges[:-1] + step/2
-        param_cntrs[param_i] = _param_cntrs
-        for bin_i, edge in enumerate(param_edges[:-1]):
-            _filt = (x_uncertain[:, param_i] > edge) & (x_uncertain[:, param_i] <= edge + step)
-            bin_filts[param_i][bin_i] = _filt
+            # Store bin centers for use in plotting
+            _param_cntrs = param_edges[:-1] + step/2
+            param_cntrs[param_i] = _param_cntrs
+            for bin_i, edge in enumerate(param_edges[:-1]):
+                _filt = (x_uncertain[:, param_i] > edge) & (x_uncertain[:, param_i] <= edge + step)
+                bin_filts[param_i][bin_i] = _filt
 
-    # Initialize matrix to store results in
-    results = np.full((len(param_pairs), num_param_bins, num_param_bins), np.nan)
+        # Initialize matrix to store results in
+        results = np.full((len(param_pairs), num_param_bins, num_param_bins), np.nan)
 
-    # Loop over each bin for each parameter pair and compute a statistic on S
-    for pair_i, (param_i, param_j) in enumerate(param_pairs):
-        # Loop over bin combinations
-        bin_combinations = product(range(num_param_bins), range(num_param_bins))
-        for i, j in bin_combinations:
-            # Make filter for being within each bin
-            joint_filt = bin_filts[param_i][i] & bin_filts[param_j][j]
+        # Loop over each bin for each parameter pair and compute a statistic on S
+        for pair_i, (param_i, param_j) in enumerate(param_pairs):
+            # Loop over bin combinations
+            bin_combinations = product(range(num_param_bins), range(num_param_bins))
+            for i, j in bin_combinations:
+                # Make filter for being within each bin
+                joint_filt = bin_filts[param_i][i] & bin_filts[param_j][j]
 
-            # Compute fraction of samples at or above Sstar (i.e. probability of target outcome)
-            # within each joint parameter bin
-            if np.any(joint_filt):
-                # Store probability of meeting target outcome
-                P_targetmet = np.count_nonzero(S_slice[joint_filt] >= Sstar) / np.count_nonzero(joint_filt)
-                results[pair_i, i, j] = P_targetmet
+                # Compute fraction of samples at or above Sstar (i.e. probability of target outcome)
+                # within each joint parameter bin
+                if np.any(joint_filt):
+                    # Store probability of meeting target outcome
+                    P_targetmet = np.count_nonzero(S_slice[joint_filt] >= Sstar) / np.count_nonzero(joint_filt)
+                    results[pair_i, i, j] = P_targetmet
 
-    return results, param_cntrs
+        return results, param_cntrs
 
-# Specify number of bins for each uncertainty parameter
-num_param_bins = 13
+    # Specify number of bins for each uncertainty parameter
+    num_param_bins = 13
 
-# Get results under baseline conditions
-if overwrite_results:
-    all_results = {}
-    results, param_cntrs = get_pair_results(0, 0, 0, S_opt_baseline, num_param_bins)
-    all_results['baseline'] = results
-    all_results['param_cntrs'] = param_cntrs
-else:
-    with open(pproc.data_dir + '/pair_results.pkl', 'rb') as handle:
-        all_results = pickle.load(handle)
-        param_cntrs = all_results['param_cntrs']
+    # Get results under baseline conditions
+    if overwrite_results:
+        all_results = {}
+        results, param_cntrs = get_pair_results(0, 0, 0, S_opt_baseline, num_param_bins)
+        all_results['baseline'] = results
+        all_results['param_cntrs'] = param_cntrs
+    else:
+        with open(pproc.data_dir + '/pair_results.pkl', 'rb') as handle:
+            all_results = pickle.load(handle)
+            param_cntrs = all_results['param_cntrs']
 
-# Get results at robust optima with max baseline outcome targeted
-q_i = 0 #Could select a different q value if desired
-C_i = 0 #Assuming only 1 C value was run 
-Sstar_i = Sstar_i_optdecisions[q_i]
-Sstar = Sstar_vec[Sstar_i]
-if overwrite_results:
-    results, _ = get_pair_results(C_i, q_i+1, q_i+1, Sstar, num_param_bins)
-    all_results['uncertain'] = results
+    # Get results at robust optima with max baseline outcome targeted
+    q_i = 0 #Could select a different q value if desired
+    C_i = 0 #Assuming only 1 C value was run 
+    Sstar_i = Sstar_i_optdecisions[q_i]
+    Sstar = Sstar_vec[Sstar_i]
+    if overwrite_results:
+        results, _ = get_pair_results(C_i, q_i+1, q_i+1, Sstar, num_param_bins)
+        all_results['uncertain'] = results
 
-    # Take difference between results
-    all_results['uncertain-baseline'] = all_results['uncertain'] - all_results['baseline']
+        # Take difference between results
+        all_results['uncertain-baseline'] = all_results['uncertain'] - all_results['baseline']
 
-for condition_key in ['baseline', 'uncertain', 'uncertain-baseline']:
-    # Plot them
-    figdim = np.array([5,4])
-    fig, axes = plt.subplots(len(uncertain_params)-1, len(uncertain_params)-1, figsize=figdim*4)
+    for condition_key in ['baseline', 'uncertain', 'uncertain-baseline']:
+        # Plot them
+        figdim = np.array([5,4])
+        fig, axes = plt.subplots(len(uncertain_params)-1, len(uncertain_params)-1, figsize=figdim*4)
 
-    for pair_i, (param_i, param_j) in enumerate(param_pairs):
-        results_pair = all_results[condition_key][pair_i]
+        for pair_i, (param_i, param_j) in enumerate(param_pairs):
+            results_pair = all_results[condition_key][pair_i]
 
-        # Get limits of parameters on x and y axes
-        x_diff = np.diff(param_cntrs[param_j])[0]
-        x_min = param_cntrs[param_j][0] - x_diff/2
-        x_max = param_cntrs[param_j][-1] + x_diff/2
-        x_bounds = np.array([x_min, x_max])
+            # Get limits of parameters on x and y axes
+            x_diff = np.diff(param_cntrs[param_j])[0]
+            x_min = param_cntrs[param_j][0] - x_diff/2
+            x_max = param_cntrs[param_j][-1] + x_diff/2
+            x_bounds = np.array([x_min, x_max])
 
-        y_diff = np.diff(param_cntrs[param_i])[0]
-        y_min = param_cntrs[param_i][0] - y_diff/2
-        y_max = param_cntrs[param_i][-1] + y_diff/2
-        y_bounds = np.array([y_min, y_max])
+            y_diff = np.diff(param_cntrs[param_i])[0]
+            y_min = param_cntrs[param_i][0] - y_diff/2
+            y_max = param_cntrs[param_i][-1] + y_diff/2
+            y_bounds = np.array([y_min, y_max])
 
-        if condition_key == 'uncertain-baseline':
-            cmap = 'RdPu'
-            # Get extreme value of result for colorbar limits
-            extreme = max([np.abs(np.nanmin(results_pair)), np.nanmax(results_pair)])
-            print("HARDCODING IN COLORBAR LIMIT")
-            extreme = 0.4
-            #norm = colors.TwoSlopeNorm(vmin=-extreme, vcenter=0, vmax=extreme)
-            norm = colors.Normalize(vmin=0, vmax=extreme)
-        else:
-            cmap = 'viridis'
-            norm = colors.Normalize(vmin=np.nanmin(results_pair), vmax=np.nanmax(results_pair))
+            if condition_key == 'uncertain-baseline':
+                cmap = 'RdPu'
+                # Get extreme value of result for colorbar limits
+                extreme = max([np.abs(np.nanmin(results_pair)), np.nanmax(results_pair)])
+                print("HARDCODING IN COLORBAR LIMIT")
+                extreme = 0.4
+                #norm = colors.TwoSlopeNorm(vmin=-extreme, vcenter=0, vmax=extreme)
+                norm = colors.Normalize(vmin=0, vmax=extreme)
+            else:
+                cmap = 'viridis'
+                norm = colors.Normalize(vmin=np.nanmin(results_pair), vmax=np.nanmax(results_pair))
 
-        if param_i in [0,1]:
-            origin = 'upper'
-            # Also flip ymin and ymax
-            y_bounds = np.flip(y_bounds)
-        else:
-            origin = 'lower'
+            if param_i in [0,1]:
+                origin = 'upper'
+                # Also flip ymin and ymax
+                y_bounds = np.flip(y_bounds)
+            else:
+                origin = 'lower'
 
-        if param_j  in [0,1]:
-            results_pair = np.fliplr(results_pair.copy())
-            x_axis = np.flip(param_cntrs[param_j])
-            # Also flip xmin, xmax
-            x_bounds = np.flip(x_bounds)
-        else:
-            x_axis = param_cntrs[param_j]
+            if param_j  in [0,1]:
+                results_pair = np.fliplr(results_pair.copy())
+                x_axis = np.flip(param_cntrs[param_j])
+                # Also flip xmin, xmax
+                x_bounds = np.flip(x_bounds)
+            else:
+                x_axis = param_cntrs[param_j]
 
-        extent = np.concatenate((x_bounds, y_bounds))
-        im = axes[param_i,param_j-1].imshow(results_pair, origin=origin, norm=norm, cmap=cmap, extent=extent, aspect='auto')
-        axes[param_i, param_j-1].set_box_aspect(1)
-        if param_j == len(uncertain_params) - 1:
-            label = r'$\Delta P(S \geq S^*)$' if condition_key == 'uncertain-baseline' else r'$P(S \geq S^*)$'
-            cbar = fig.colorbar(im, shrink=0.80)
-            cbar.set_label(label, fontsize=mpl.rcParams['legend.fontsize']*1.75, labelpad=17)
+            extent = np.concatenate((x_bounds, y_bounds))
+            im = axes[param_i,param_j-1].imshow(results_pair, origin=origin, norm=norm, cmap=cmap, extent=extent, aspect='auto')
+            axes[param_i, param_j-1].set_box_aspect(1)
+            if param_j == len(uncertain_params) - 1:
+                label = r'$\Delta P(S \geq S^*)$' if condition_key == 'uncertain-baseline' else r'$P(S \geq S^*)$'
+                cbar = fig.colorbar(im, shrink=0.80)
+                cbar.set_label(label, fontsize=mpl.rcParams['legend.fontsize']*1.75, labelpad=17)
 
-            # Plot vertical line at critical tau under baseline
-            '''Hardcoded for now'''
-            axes[param_i, param_j-1].axvline(32.895, ls='--', c='k')
-        tick_spacing = 1 if num_param_bins <= 5 else 3
-        numround = 1 if param_j-1 == 3 else 2
-        axes[param_i,param_j-1].set_xticks(x_axis[::tick_spacing],
-                                           np.round(x_axis, numround)[::tick_spacing])
-        axes[param_i,param_j-1].set_yticks(param_cntrs[param_i][::tick_spacing], 
-                                           np.round(param_cntrs[param_i], 2)[::tick_spacing])
-        axes[param_i,param_j-1].tick_params(axis='both', labelsize=plt.rcParams['axes.labelsize'] * 1)
-        if param_i == param_j - 1:
-            axes[param_i,param_j-1].set_xlabel(param_labels[param_j], fontsize=plt.rcParams['axes.titlesize']*2.5)
-            axes[param_i,param_j-1].set_ylabel(param_labels[param_i], fontsize=plt.rcParams['axes.titlesize']*2.5)
+                # Plot vertical line at critical tau under baseline
+                '''Hardcoded for now'''
+                axes[param_i, param_j-1].axvline(32.895, ls='--', c='k')
+            tick_spacing = 1 if num_param_bins <= 5 else 3
+            numround = 1 if param_j-1 == 3 else 2
+            axes[param_i,param_j-1].set_xticks(x_axis[::tick_spacing],
+                                               np.round(x_axis, numround)[::tick_spacing])
+            axes[param_i,param_j-1].set_yticks(param_cntrs[param_i][::tick_spacing], 
+                                               np.round(param_cntrs[param_i], 2)[::tick_spacing])
+            axes[param_i,param_j-1].tick_params(axis='both', labelsize=plt.rcParams['axes.labelsize'] * 1)
+            if param_i == param_j - 1:
+                axes[param_i,param_j-1].set_xlabel(param_labels[param_j], fontsize=plt.rcParams['axes.titlesize']*2.5)
+                axes[param_i,param_j-1].set_ylabel(param_labels[param_i], fontsize=plt.rcParams['axes.titlesize']*2.5)
 
-    for param_i, param_j in [[1,0]]:
-        axes[param_i, param_j].set_axis_off()
+        for param_i, param_j in [[1,0]]:
+            axes[param_i, param_j].set_axis_off()
 
-    if (q_i == 0) and (condition_key == 'uncertain-baseline'): 
-        fig.savefig(pproc.figs_dir + f'/uncertainty_pairs_{condition_key}_{np.round(q_vec[q_i],2)}.png', bbox_inches='tight', dpi=dpi)
-    plt.close(fig)
+        if (q_i == 0) and (condition_key == 'uncertain-baseline'): 
+            fig.savefig(pproc.figs_dir + f'/uncertainty_pairs_{condition_key}_{np.round(q_vec[q_i],2)}.png', bbox_inches='tight', dpi=dpi)
+        plt.close(fig)
 
-with open(pproc.data_dir + '/pair_results.pkl', 'wb') as handle:
-    pickle.dump(all_results, handle)
+    with open(pproc.data_dir + '/pair_results.pkl', 'wb') as handle:
+        pickle.dump(all_results, handle)
 
-phase.close()
+    phase.close()
