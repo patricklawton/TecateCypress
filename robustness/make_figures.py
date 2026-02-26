@@ -20,7 +20,7 @@ import copy as copy
 from itertools import combinations, product
 
 # Which figures to run
-flist = [2,4]
+flist = [2,3,4]
 
 # Update global plotting parameters
 rc('axes', labelsize=24)  # Font size for x and y labels
@@ -37,7 +37,7 @@ rc('font', size=19)
 histlw = 5.5
 cbar_lpad = 30
 #dpi = 50
-dpi = 200
+dpi = 600
 custom_colors = ['lightgrey', '#e69f00', '#ee6778', '#a04a95'] #pop
 
 def add_map_decorations(
@@ -50,8 +50,6 @@ def add_map_decorations(
     """
     Adds an automatically sized scale bar and north arrow to a projected map.
 
-    Parameters
-    ----------
     ax : matplotlib.axes.Axes
         Axes containing the map in projected units (meters).
     scale_fraction : float
@@ -435,8 +433,8 @@ if 3 in flist:
     tau_current = pproc.tau_flat.copy()
     current_counts, _ = np.histogram(tau_current, bins=tau_edges)
     mask = np.ones(tau_current.size, dtype=bool)
-    C_i = np.argmin(np.abs((pproc.C_vec/pproc.ncell_tot) - 10))
-    C = pproc.C_vec[C_i]
+    R_i = np.argmin(np.abs((pproc.R_vec/pproc.ncell_tot) - 10))
+    R = pproc.R_vec[R_i]
 
     vmin = 0; vmax = 1
     norm = colors.Normalize(vmin=vmin, vmax=vmax)
@@ -458,7 +456,8 @@ if 3 in flist:
         bin_f = np.argmin(np.abs(tau_edges - tau_f))
         ncell = np.count_nonzero(pproc.tau_flat < tau_edges[bin_f]) - sl
         color = colormap(norm(ncell/pproc.ncell_tot))
-        tauc = C / ncell
+        tauc = R / ncell
+        print(R / pproc.ncell_tot, tauc)
         mask[pproc.tau_argsort_ref[sl:sl+ncell]] = False
 
         axes[0,1].hist(pproc.tau_flat[(pproc.tau_flat >= tau_edges[bin_i]) & (pproc.tau_flat < tau_edges[bin_f])],
@@ -510,13 +509,13 @@ if 3 in flist:
         meta_metric_all = np.array(phase['0.0.0'])
     meta_metric_nochange = float(np.load(pproc.data_dir + '/meta_metric_nochange.npy'))
 
-    plot_vec = np.ones_like(pproc.C_vec) * np.nan
-    c_vec = np.ones_like(pproc.C_vec) * np.nan
-    for C_i, C in enumerate(pproc.C_vec):
-        _filt = decision_samples[:,0] == C
+    plot_vec = np.ones_like(pproc.R_vec) * np.nan
+    c_vec = np.ones_like(pproc.R_vec) * np.nan
+    for R_i, R in enumerate(pproc.R_vec):
+        _filt = decision_samples[:,0] == R
         argmax = np.nanargmax(meta_metric_all[_filt])
-        plot_vec[C_i] = meta_metric_all[_filt][argmax]
-        c_vec[C_i] = decision_samples[_filt,:][argmax][1]
+        plot_vec[R_i] = meta_metric_all[_filt][argmax]
+        c_vec[R_i] = decision_samples[_filt,:][argmax][1]
     c_vec = c_vec / pproc.ncell_tot
 
     width = 0.875
@@ -524,21 +523,21 @@ if 3 in flist:
     norm = colors.Normalize(vmin=vmin, vmax=vmax)
     sm = cm.ScalarMappable(cmap=colormap, norm=norm)
     bar_colors = colormap(norm(c_vec))
-    bar = axes[1,0].bar(np.arange(pproc.C_vec.size), plot_vec, color=bar_colors, width=width)
+    bar = axes[1,0].bar(np.arange(pproc.R_vec.size), plot_vec, color=bar_colors, width=width)
     axes[1,0].set_ylim(0, 1.02*np.max(plot_vec))
     yticks = np.arange(0., 1.2, 0.2)
     axes[1,0].set_yticks(yticks)
     axes[1,0].set_ylabel(fr"$\text{{max}}~S$")
     xtick_spacing = 2
-    if len(pproc.C_vec) % 2 == 0:
-        xticks = np.arange(1, len(pproc.C_vec)+1, xtick_spacing)
-        xtick_labels = np.round((pproc.C_vec/(pproc.ncell_tot))[1::xtick_spacing], 1)
+    if len(pproc.R_vec) % 2 == 0:
+        xticks = np.arange(1, len(pproc.R_vec)+1, xtick_spacing)
+        xtick_labels = np.round((pproc.R_vec/(pproc.ncell_tot))[1::xtick_spacing], 1)
     else:
-        xticks = np.arange(0, len(pproc.C_vec), xtick_spacing)
-        xtick_labels = np.round((pproc.C_vec/(pproc.ncell_tot))[0::xtick_spacing], 1)
+        xticks = np.arange(0, len(pproc.R_vec), xtick_spacing)
+        xtick_labels = np.round((pproc.R_vec/(pproc.ncell_tot))[0::xtick_spacing], 1)
     axes[1,0].set_xticks(xticks, labels=xtick_labels);
     axes[1,0].set_xlabel(r"minimum $\hat{\Delta\tau}_k$, $R~/~n_{tot}$")
-    axes[1,0].set_xlim(-(width/2)*1.4, len(pproc.C_vec)-1+((width/2)*1.4))
+    axes[1,0].set_xlim(-(width/2)*1.4, len(pproc.R_vec)-1+((width/2)*1.4))
     # Plot baseline value
     axes[1,0].axhline(meta_metric_nochange, ls=':', label=f'no management', c='k')
     axes[1,0].legend()
@@ -559,28 +558,28 @@ if 3 in flist:
     normalize = colors.Normalize(vmin=vmin, vmax=vmax)
     all_markers = ['o','^','D','s','H','*']
     all_linestyles = ['dotted', 'dashdot', 'dashed', 'solid']
-    C_i_samples = [i for i in range(pproc.C_vec.size)][::1]
+    R_i_samples = [i for i in range(pproc.R_vec.size)][::1]
 
-    for line_i, C_i in enumerate(C_i_samples):
+    for line_i, R_i in enumerate(R_i_samples):
         plot_vec = np.ones(len(Sstar_vec)) * np.nan
         c_vec = np.ones(len(Sstar_vec)) * np.nan
         for thresh_i, thresh in enumerate(Sstar_vec):
-            # Get the maximum robustness across (ncell, sl) at this C
-            if maxrob[thresh_i, C_i] < 1:
-                plot_vec[thresh_i] = maxrob[thresh_i, C_i]
+            # Get the maximum robustness across (ncell, sl) at this R
+            if maxrob[thresh_i, R_i] < 1:
+                plot_vec[thresh_i] = maxrob[thresh_i, R_i]
             if not np.isnan(plot_vec[thresh_i]):
-                c_vec[thresh_i] = pproc.ncell_vec[int(argmaxrob[thresh_i, C_i][0])] / pproc.ncell_tot
+                c_vec[thresh_i] = pproc.ncell_vec[int(argmaxrob[thresh_i, R_i][0])] / pproc.ncell_tot
         # Filter out some samples for clarity
         samp_spacing = 4
         scatter = axes[1,1].scatter(Sstar_vec[::samp_spacing], plot_vec[::samp_spacing], cmap=colormap, norm=normalize,
                             c=c_vec[::samp_spacing], marker=all_markers[line_i])
-        axes[1,1].scatter([], [], label=fr"$R~/~n_{{tot}}=${np.round(pproc.C_vec[C_i]/pproc.ncell_tot, 1)}",
+        axes[1,1].scatter([], [], label=fr"$R~/~n_{{tot}}=${np.round(pproc.R_vec[R_i]/pproc.ncell_tot, 1)}",
                    c='black', marker=all_markers[line_i])
 
         # Get the max robustness under Sstar=S_baseline_nochange for y lim
-        if C_i == max(C_i_samples):
+        if R_i == max(R_i_samples):
             Sstar_i = np.abs(Sstar_vec - meta_metric_nochange).argmin()
-            ymax = maxrob[Sstar_i, C_i]
+            ymax = maxrob[Sstar_i, R_i]
     axes[1,1].set_ylabel(fr"$\text{{max}}~P(S \geq S^*)$")
     axes[1,1].set_xlabel(fr"target range-wide stability, $S^*$")
     handles, labels = axes[1,1].get_legend_handles_labels()
@@ -826,7 +825,8 @@ if 4 in flist:
             bins=bins,
             stacked=True,
             color=custom_colors,
-            label=[labels[i] for i in range(len(custom_colors))]
+            label=[labels[i] for i in range(len(custom_colors))],
+            linewidth=0
         )
 
         # Annotate Sstar value
@@ -947,9 +947,9 @@ if 5 in flist:
     print("ATTENTION: CAPPING tau_crit AT 40 FOR THE SAKE OF PLOTTING")
     tau_crit_vec[tau_crit_vec >= 40] = 40
 
-    def get_pair_results(C_i, n_i, l_i, Sstar, num_param_bins):
+    def get_pair_results(R_i, n_i, l_i, Sstar, num_param_bins):
         # Get the slice of range-wide stability at the specified decision parameters
-        idx = ".".join(str(i) for i in [C_i, n_i, l_i])
+        idx = ".".join(str(i) for i in [R_i, n_i, l_i])
         S_slice = np.array(phase[idx])
         x_uncertain = np.array(phase[idx + 'uncertainty_samples'])
 
@@ -1028,11 +1028,11 @@ if 5 in flist:
 
     # Get results at robust optima with max baseline outcome targeted
     q_i = 0 #Could select a different q value if desired
-    C_i = 0 #Assuming only 1 C value was run 
+    R_i = 0 #Assuming only 1 R value was run 
     Sstar_i = Sstar_i_optdecisions[q_i]
     Sstar = Sstar_vec[Sstar_i]
     if overwrite_results:
-        results, _ = get_pair_results(C_i, q_i+1, q_i+1, Sstar, num_param_bins)
+        results, _ = get_pair_results(R_i, q_i+1, q_i+1, Sstar, num_param_bins)
         all_results['uncertain'] = results
 
         # Take difference between results

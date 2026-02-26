@@ -168,10 +168,10 @@ class Phase:
                 tau_all = np.load(fn)
 
             self.data_dir = f"{self.meta_metric}/data/Aeff_{self.Aeff}/tfinal_{self.t_final}/metric_{self.metric}"
-            self.figs_dir = f"{self.meta_metric}/figs/Aeff_{self.Aeff}/tfinal_{self.t_final}/metric_{self.metric}"
+            #self.figs_dir = f"{self.meta_metric}/figs/Aeff_{self.Aeff}/tfinal_{self.t_final}/metric_{self.metric}"
             self.figs_dir = os.path.join('/','Volumes', 'Macintosh HD', 'Users', 'patrick',
                                          'Google Drive', 'My Drive', 'Research', 'Regan', 'Figs/')
-            #fn = self.data_dir + f"/metric_all.npy"
+            fn = self.data_dir + f"/metric_all.npy"
             if (not os.path.isfile(fn)) or self.overwrite_metrics:
                 # Loop over all jobs and process metric data
                 metric_all = np.array([]) # To collect data across all jobs
@@ -268,8 +268,8 @@ class Phase:
     def init_decision_parameters(self, overwrite=False, suffix=''): 
         tau_sorted = self.tau_flat[self.tau_argsort_ref] 
         # Generate samples of remaining state variables
-        # Get samples of total shift to fire regime (C)  
-        self.C_vec = self.tauc_min_samples * self.ncell_tot
+        # Get samples of total shift to fire regime (R)  
+        self.R_vec = self.tauc_min_samples * self.ncell_tot
         # Min left bound set by user-defined constant
         slice_left_min = np.nonzero(tau_sorted > self.min_tau)[0][0]
         # Generate slice sizes of the tau distribution
@@ -294,7 +294,7 @@ class Phase:
         if self.rank == self.root:
             if overwrite:
                 # Save all state variables
-                np.save(self.data_dir + f"/C_vec{suffix}.npy", self.C_vec)
+                np.save(self.data_dir + f"/R_vec{suffix}.npy", self.R_vec)
                 np.save(self.data_dir + f"/ncell_vec{suffix}.npy", self.ncell_vec)
                 np.save(self.data_dir + f"/slice_left_all{suffix}.npy", self.slice_left_all)
 
@@ -306,12 +306,12 @@ class Phase:
         '''
         Load pre-existing decision parameters given an initialized Phase instance
         '''
-        self.C_vec = np.load(self.data_dir + f'/C_vec{suffix}.npy')
+        self.R_vec = np.load(self.data_dir + f'/R_vec{suffix}.npy')
         self.ncell_vec = np.load(self.data_dir + f'/ncell_vec{suffix}.npy')
         self.slice_left_all = np.load(self.data_dir + f'/slice_left_all{suffix}.npy')
         self.slice_left_max = self.slice_right_max - min(self.ncell_vec)
 
-    def change_tau_expect(self, C, ncell, slice_left):
+    def change_tau_expect(self, R, ncell, slice_left):
         slice_indices = self.tau_argsort_ref[slice_left:slice_left + ncell]
         tau_slice = self.tau_expect[slice_indices]
         # Set max tauc per cell
@@ -319,7 +319,7 @@ class Phase:
         # First create array of replacement tau
         replacement_tau = np.ones(ncell) #Initialize
         '''could pre-generate tauc slices to speed up'''
-        tauc = C / ncell
+        tauc = R / ncell
         
         # Add uncertainty to tauc slice
         '''
@@ -413,7 +413,7 @@ class Phase:
 
     def process_samples(self, minima, maxima, suffix, metric_thresh):
         # Define ordered list of parameter keys
-        param_keys = ['C', 'ncell', 'slice_left',
+        param_keys = ['R', 'ncell', 'slice_left',
                       'mu_tau', 'sigm_tau', 'mu_tauc', 'sigm_tauc', 'demographic_index']
 
         # Read in all splined interpolations of metric(tau)
@@ -439,14 +439,14 @@ class Phase:
             print(f'{np.count_nonzero(fixed_metric_mask)} of {len(metric_spl_all)} demograhpic samples are always unstable')
 
             ## Initialize decision combinations ### 
-            max_decision_combs = self.C_vec.size * self.ncell_vec.size * self.slice_left_all.size
+            max_decision_combs = self.R_vec.size * self.ncell_vec.size * self.slice_left_all.size
             x_decision = np.full((max_decision_combs, 3), np.nan)
 
             # Generate combinations
             if isinstance(self.ncell_samples, np.ndarray) and isinstance(self.slice_samples, np.ndarray):
-                decision_combs = [_ for _ in zip(self.C_vec, self.ncell_vec, self.slice_left_all)]
+                decision_combs = [_ for _ in zip(self.R_vec, self.ncell_vec, self.slice_left_all)]
             elif isinstance(self.ncell_samples, int) and isinstance(self.slice_samples, int):
-                decision_combs = product(self.C_vec,
+                decision_combs = product(self.R_vec,
                                 self.ncell_vec,
                                 self.slice_left_all)
             else:
@@ -473,21 +473,21 @@ class Phase:
 
             if suffix != "_baseline":
                 # Generate keys for each decision combination for use in the h5 file
-                # for example, (C_i=0, n_i=1, l_i=0) -> '0.1.0'
+                # for example, (R_i=0, n_i=1, l_i=0) -> '0.1.0'
                 decision_indices = np.zeros((num_decision_combs, 3)).astype(int)
                 
                 # Make sure all parameter values can be mapped to decision vectors
-                assert np.all(np.isin(x_decision[:,0], self.C_vec))
+                assert np.all(np.isin(x_decision[:,0], self.R_vec))
                 assert np.all(np.isin(x_decision[:,1], self.ncell_vec))
                 assert np.all(np.isin(x_decision[:,2], self.slice_left_all))
 
                 # Now actually generate and save the index keys 
                 if isinstance(self.ncell_samples, np.ndarray) and isinstance(self.slice_samples, np.ndarray):
-                    decision_indices[:,0] = np.array([np.argwhere(self.C_vec == v)[0][0] for v in x_decision[:,0]])
+                    decision_indices[:,0] = np.array([np.argwhere(self.R_vec == v)[0][0] for v in x_decision[:,0]])
                     decision_indices[:,1] = np.array([np.argwhere(self.ncell_vec == v)[0][0] for v in x_decision[:,1]])
                     decision_indices[:,2] = np.array([np.argwhere(self.slice_left_all == v)[0][0] for v in x_decision[:,2]])
                 else:
-                    decision_indices[:,0] = np.searchsorted(self.C_vec, x_decision[:,0])
+                    decision_indices[:,0] = np.searchsorted(self.R_vec, x_decision[:,0])
                     decision_indices[:,1] = np.searchsorted(self.ncell_vec, x_decision[:,1])
                     decision_indices[:,2] = np.searchsorted(self.slice_left_all, x_decision[:,2])
                 decision_indices = np.array(['.'.join([str(x) for x in indices]) for indices in decision_indices])
@@ -597,7 +597,7 @@ class Phase:
                     self.generate_tau() 
 
                     # Shift selected tau values (including uncertainty)
-                    self.change_tau_expect(self.C, self.ncell, self.slice_left)
+                    self.change_tau_expect(self.R, self.ncell, self.slice_left)
 
                     # Compute and store metric value
                     if self.meta_metric == 'gte_thresh':
@@ -645,34 +645,34 @@ class Phase:
 
         # Calculate the robustness at each threshold and strategy combination
         rob_all = np.full((
-                            Sstar_vec.size, self.C_vec.size, 
+                            Sstar_vec.size, self.R_vec.size, 
                             self.ncell_vec.size, self.slice_left_all.size
                           ), np.nan)
         for thresh_i, thresh in enumerate(Sstar_vec):
             for indices in decision_indices:
-                C_i, ncell_i, sl_i = [int(i) for i in indices.split('.')]
+                R_i, ncell_i, sl_i = [int(i) for i in indices.split('.')]
                 key = ''.join([str(x) for x in indices])
                 meta_metric_samples = np.array(phase[key])
                 counts = np.count_nonzero(meta_metric_samples >= thresh)
                 robustness = counts / self.num_eps_combs 
-                rob_all[thresh_i, C_i, ncell_i, sl_i] = robustness
+                rob_all[thresh_i, R_i, ncell_i, sl_i] = robustness
 
         # Save robustness results to file
         if self.rank == self.root:
             np.save(self.data_dir + "/rob_all.npy", rob_all)
             
-        # Now find the strategies which optimize robustness per threshold, C combination
-        maxrob = np.full((len(Sstar_vec), len(self.C_vec)), np.nan)
-        argmaxrob = np.full((len(Sstar_vec), len(self.C_vec), 2), np.nan)
-        for (thresh_i, thresh), (C_i, C) in product(enumerate(Sstar_vec), enumerate(self.C_vec)):
-            rob_slice = rob_all[thresh_i, C_i]
+        # Now find the strategies which optimize robustness per threshold, R combination
+        maxrob = np.full((len(Sstar_vec), len(self.R_vec)), np.nan)
+        argmaxrob = np.full((len(Sstar_vec), len(self.R_vec), 2), np.nan)
+        for (thresh_i, thresh), (R_i, R) in product(enumerate(Sstar_vec), enumerate(self.R_vec)):
+            rob_slice = rob_all[thresh_i, R_i]
             if np.any(~np.isnan(rob_slice)):
-                # Store the max robustness at this (thresh, C) coordinate
-                maxrob[thresh_i, C_i] = np.nanmax(rob_slice)
+                # Store the max robustness at this (thresh, R) coordinate
+                maxrob[thresh_i, R_i] = np.nanmax(rob_slice)
                 
                 # Also store the optimal param indices
                 optimal_param_i = np.unravel_index(np.nanargmax(rob_slice, axis=None), rob_slice.shape)
-                argmaxrob[thresh_i, C_i] = optimal_param_i
+                argmaxrob[thresh_i, R_i] = optimal_param_i
 
         # Save maxrob and argmaxrob to files
         np.save(self.data_dir + "/maxrob.npy", maxrob)
@@ -687,12 +687,12 @@ class Phase:
             x_obs = np.array(phase['0.0.0decision_samples'])
             y_obs = np.array(phase['0.0.0'])
 
-        # Filter for selected C val, checking that its in data first
-        assert np.any(np.isclose(self.C_vec/self.ncell_tot, taucmin))
-        C_i = np.isclose(self.C_vec/self.ncell_tot, taucmin).argmax()
-        C_mask = (x_obs[:, 0] == (self.C_vec[C_i]))
-        x_obs = x_obs[C_mask, 1:]
-        y_obs = y_obs[C_mask]
+        # Filter for selected R val, checking that its in data first
+        assert np.any(np.isclose(self.R_vec/self.ncell_tot, taucmin))
+        R_i = np.isclose(self.R_vec/self.ncell_tot, taucmin).argmax()
+        R_mask = (x_obs[:, 0] == (self.R_vec[R_i]))
+        x_obs = x_obs[R_mask, 1:]
+        y_obs = y_obs[R_mask]
 
         # Rescale inputs and outputs
         x_rescaler = Rescaler(x_obs.min(axis=0), x_obs.max(axis=0))
@@ -732,10 +732,10 @@ class Phase:
         S_opt_baseline = np.load(self.data_dir + '/S_opt_baseline.npy')
         n_opt_baseline, l_opt_baseline = np.load(self.data_dir + '/decision_opt_baseline.npy')
 
-        # Filter for selected C val, checking that its in data first
-        assert np.any(np.isclose(self.C_vec/self.ncell_tot, taucmin))
-        C_i = np.isclose(self.C_vec/self.ncell_tot, taucmin).argmax()
-        rob_all_filtered = rob_all[:, C_i, ...]
+        # Filter for selected R val, checking that its in data first
+        assert np.any(np.isclose(self.R_vec/self.ncell_tot, taucmin))
+        R_i = np.isclose(self.R_vec/self.ncell_tot, taucmin).argmax()
+        rob_all_filtered = rob_all[:, R_i, ...]
 
         # Read robustness vals and decision params into y_obs and x_obs, respectively
         y_obs = rob_all_filtered.flatten()
@@ -755,7 +755,7 @@ class Phase:
         y_rescaler = Rescaler(y_obs.min(axis=0), y_obs.max(axis=0))
         y_obs = y_rescaler.rescale(y_obs)
 
-        # Interpolate robustness(S^*, n, l) given C
+        # Interpolate robustness(S^*, n, l) given R
         interp = RBFInterpolator(x_obs, y_obs, neighbors=nn, smoothing=smoothing)
 
         # Define objective function for optimization 
